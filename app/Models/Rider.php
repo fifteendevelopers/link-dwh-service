@@ -12,6 +12,7 @@ class Rider extends Model
 {
     use HasFactory, LinkEncryptableTrait;
 
+    protected $connection = 'mysql_src';
     protected $guarded = [
         'id',
         'created_at',

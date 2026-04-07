@@ -101,10 +101,56 @@ class SyncToDataWarehouse extends Command
             $this->comment("Syncing courses...");
 
             try {
-                $result = $syncService->syncCourseDimensions($this);
+                $result = $syncService->syncCourses($this);
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("Failed to sync courses: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'consents') {
+            $this->comment("Syncing Consents...");
+
+            try {
+                $result = $syncService->syncConsents($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("Failed to sync Consents: " . $e->getMessage());
+            }
+        }
+
+        /* Now Sync the FACTS */
+
+        if ($table === 'all' || $table === 'fact_course_delivery') {
+            $this->comment("Syncing Facts from Course Deliveries...");
+
+            try {
+                $result = $syncService->syncFactCourseDelivery($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("Failed to sync Course Deliveries: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_parent_survey') {
+            $this->comment("Syncing Facts from Parent Survey...");
+
+            try {
+                $result = $syncService->syncFactParentSurvey($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("Failed to sync Parent Survey facts: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_hands_up_survey') {
+            $this->comment("Syncing Facts from Hands Up Survey...");
+
+            try {
+                $result = $syncService->syncFactHandsupSurvey($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("Failed to sync Hands Up Survey facts: " . $e->getMessage());
             }
         }
 
