@@ -614,7 +614,7 @@ class DataWarehouseSyncService
                         'Ability_Has_Level_2'           => in_array("4", $abilities) ? 1 : 0,
 
                         'Cycle_Ability_Raw'     => json_encode($abilities), // Normalize to JSON string
-                        'Is_FSM'                => $consent->is_fsm,
+                        'Is_Pupil_premium'      => $consent->is_fsm,
                         'Is_SEND'               => $consent->is_SEND,
                         'Attended'              => $consent->attended,
                         'Gender'                => $consent->gender,
@@ -647,9 +647,56 @@ class DataWarehouseSyncService
     /**
      * Synchronise the "Facts"
      */
+    private function mapEthnicityToColumn($code)
+    {
+        $code = strtoupper($code);
+
+        return match ($code) {
+            'WBRI' => 'Count_Ethnicity_White_British',
+            'WIRI' => 'Count_Ethnicity_White_Irish',
+            'WIRT' => 'Count_Ethnicity_Irish_Traveller',
+            'WOTH' => 'Count_Ethnicity_White_Other',
+            'WROM' => 'Count_Ethnicity_Gypsy_Romany',
+            'MWBC' => 'Count_Ethnicity_Mixed_White_Black_Carib',
+            'MWBA' => 'Count_Ethnicity_Mixed_White_Black_African',
+            'MWAS' => 'Count_Ethnicity_Mixed_White_Asian',
+            'MOTH' => 'Count_Ethnicity_Mixed_Other',
+            'AIND' => 'Count_Ethnicity_Asian_Indian',
+            'APKN' => 'Count_Ethnicity_Asian_Pakistani',
+            'ABAN' => 'Count_Ethnicity_Asian_Bangladeshi',
+            'AOTH' => 'Count_Ethnicity_Asian_Other',
+            'BCRB' => 'Count_Ethnicity_Black_Caribbean',
+            'BAFR' => 'Count_Ethnicity_Black_African',
+            'BOTH' => 'Count_Ethnicity_Black_Other',
+            'CHNE' => 'Count_Ethnicity_Asian_Chinese',
+            'OOTH' => 'Count_Ethnicity_Other_Any',
+            'NA', 'N' => 'Count_Ethnicity_Refused',
+            default => 'Count_Ethnicity_Refused',
+        };
+
+    }
+
+    private function initializeExtendedMetricArray()
+    {
+        return [
+            'Count_Female' => 0, 'Count_Male' => 0,
+            'Count_Ethnicity_White_British' => 0, 'Count_Ethnicity_White_Irish' => 0, 'Count_Ethnicity_White_Other' => 0,
+            'Count_Ethnicity_Mixed_White_Black_Carib' => 0, 'Count_Ethnicity_Mixed_White_Black_African' => 0,
+            'Count_Ethnicity_Mixed_White_Asian' => 0, 'Count_Ethnicity_Mixed_Other' => 0,
+            'Count_Ethnicity_Asian_Indian' => 0, 'Count_Ethnicity_Asian_Pakistani' => 0,
+            'Count_Ethnicity_Asian_Bangladeshi' => 0, 'Count_Ethnicity_Asian_Chinese' => 0, 'Count_Ethnicity_Asian_Other' => 0,
+            'Count_Ethnicity_Black_African' => 0, 'Count_Ethnicity_Black_Caribbean' => 0, 'Count_Ethnicity_Black_Other' => 0,
+            'Count_Ethnicity_Other_Arab' => 0, 'Count_Ethnicity_Other_Any' => 0, 'Count_Ethnicity_Not_Stated' => 0,
+            'Count_Pupil_Premium' => 0, 'Count_SEND' => 0
+        ];
+    }
+
     public function syncFactCourseDelivery($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+
+        $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+            ->hasColumn('deliveries', 'delivery_details');
 
         // Get Courses updated sunce last sync
         $watermark = $this->dwh->table('Sync_Log')
@@ -664,7 +711,13 @@ class DataWarehouseSyncService
                 'courses.start_date',
                 'courses.updated_at',
                 'deliveries.consent_src_characteristics'
-            ])
+            ]);
+
+        if ($useLegacy) {
+            $query->addSelect('deliveries.delivery_details');
+        }
+
+        $query->where('deliveries.digitisation_booking', 1)
             ->where('courses.updated_at', '>', $watermark)
             ->orderBy('courses.updated_at', 'asc');
 
@@ -676,7 +729,7 @@ class DataWarehouseSyncService
 
         $highestTimestampSeen = $watermark;
 
-        $query->chunk(500, function ($courses) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+        $query->chunk(500, function ($courses) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy) {
             foreach ($courses as $course) {
 
                 // Resolve Keys
@@ -684,6 +737,17 @@ class DataWarehouseSyncService
                 $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $course->delivery_id)->first();
 
                 if (!$courseKey || !$delivery) continue;
+
+                $enrolledCount = $this->source->table('join_riders_courses')
+                    ->where('course_id', $course->id)
+                    ->count();
+
+                $completedCount = $this->source->table('join_riders_courses')
+                    ->where('course_id', $course->id)
+                    ->where('has_completed_course', 1)
+                    ->count();
+
+                $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($course, $useLegacy);
 
                 // Check where demographic data is sourced from
                 // Course data from the query above joins the deliveries table
@@ -699,7 +763,9 @@ class DataWarehouseSyncService
                 // Upsert into Fact Table
                 $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                     ['Course_Key' => $courseKey],
-                    array_merge($metrics, [
+                    array_merge($metrics, $deliveryDetailMetrics,[
+                        'Riders_Enrolled_Count'  => $enrolledCount,
+                        'Riders_Completed_Count' => $completedCount,
                         'Date_Key'     => $course->start_date ? str_replace('-', '', substr($course->start_date, 0, 10)) : null,
                         'Delivery_Key' => $delivery->Delivery_Key,
                         'School_Key'   => $delivery->School_Key,
@@ -723,34 +789,93 @@ class DataWarehouseSyncService
         return "Fact_Course_Delivery synced.";
     }
 
+    private function getCourseDeliveryMetrics($course, $useLegacy)
+    {
+        // Check if the 'delivery_details' column exists in the source 'deliveries' table
+        // If it doesn't exist, it means the JSON normalization has happened so we will use
+        // the delivery_modules and delivery_metrics
+
+        if (is_null($useLegacy)) {
+            $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+                ->hasColumn('deliveries', 'delivery_details');
+        }
+
+        if ($useLegacy) {
+            return $this->extractFromLegacyJson($course);
+        }
+
+        return $this->extractFromNormalizedTables($course);
+    }
+
+    private function extractFromLegacyJson($course)
+    {
+        $details = json_decode($course->delivery_details ?? '[]', true);
+        $metrics = ['Count_Booked_Provisional' => 0, 'Count_Booked_Confirmed' => 0, 'Count_Attended_Confirmed' => 0];
+
+        foreach ($details as $entry) {
+            if (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id) {
+                $delivery = $entry['delivery'] ?? [];
+                $metrics['Count_Booked_Provisional'] = (int)($delivery['booked']['provisional'] ?? 0);
+
+                if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
+                    $metrics['Count_Booked_Confirmed'] = (int)($delivery['booked']['total'] ?? 0);
+                    $metrics['Count_Attended_Confirmed'] = (int)($delivery['attended']['total'] ?? 0);
+                }
+                break;
+            }
+        }
+        return $metrics;
+    }
+
+    private function extractFromNormalizedTables($course)
+    {
+        // Query the new delivery_modules table
+        $module = $this->source->table('delivery_modules')
+            ->where('entity_id', $course->id)
+            ->first();
+
+        if (!$module) {
+            return ['Count_Booked_Provisional' => 0, 'Count_Booked_Confirmed' => 0, 'Count_Attended_Confirmed' => 0];
+        }
+
+        return [
+            // In the new schema, provisional is likely stored in input_metadata or a specific column
+            // Adjusting based on your migration:
+            'Count_Booked_Provisional' => 0, // Update this if you add a provisional column to delivery_modules
+            'Count_Booked_Confirmed'   => ($module->confirmed) ? $module->booked_total : 0,
+            'Count_Attended_Confirmed' => ($module->confirmed) ? $module->attended_total : 0,
+        ];
+    }
+
+
     private function aggregateFromDWHConsents($deliveryKey)
     {
-        // Filter only for riders who actually attended
         $consents = $this->dwh->table('Dim_Consent')
             ->where('Delivery_Key', $deliveryKey)
             ->where('Attended', 1)
             ->get();
 
-        //TODO: Handle All genders, Ethnicities, Pupil Premium and Send
-        $m = [
-            'Count_Female' => 0, 'Count_Male' => 0,
-            'Count_Ethnicity_White' => 0, 'Count_Ethnicity_Asian' => 0,
-            'Count_Ethnicity_Black' => 0, 'Count_Ethnicity_Mixed' => 0,
-            'Count_Ethnicity_Other' => 0
-        ];
+        $m = $this->initializeExtendedMetricArray();
 
         foreach ($consents as $consent) {
-            // Gender logic
+            // Gender
             if ($consent->Gender === 'Female') $m['Count_Female']++;
-            if ($consent->Gender === 'Male')   $m['Count_Male']++;
+            elseif ($consent->Gender === 'Male') $m['Count_Male']++;
 
-            // Ethnicity logic (Mapping string values to the Fact columns)
+            // Detailed Ethnicity Mapping
             $eth = strtolower($consent->Ethnicity);
-            if (str_contains($eth, 'white')) $m['Count_Ethnicity_White']++;
-            elseif (str_contains($eth, 'asian')) $m['Count_Ethnicity_Asian']++;
-            elseif (str_contains($eth, 'black')) $m['Count_Ethnicity_Black']++;
-            elseif (str_contains($eth, 'mixed')) $m['Count_Ethnicity_Mixed']++;
-            else $m['Count_Ethnicity_Other']++;
+
+            // Use a helper or match to find the specific column
+            $column = $this->mapEthnicityToColumn($eth);
+            if (isset($m[$column])) {
+                $m[$column]++;
+            } else {
+                $m['Count_Ethnicity_Not_Stated']++;
+            }
+
+            // Pupil Premium & SEND
+            if ($consent->Is_Pupil_Premium) $m['Count_Pupil_Premium']++;
+            if ($consent->Is_SEND) $m['Count_SEND']++;
         }
 
         return $m;
@@ -758,35 +883,31 @@ class DataWarehouseSyncService
 
     private function aggregateFromSourceTable($tableName, $courseId)
     {
-        $rows = $this->source->table($tableName)
-            ->where('course_id', $courseId)
-            ->get();
-
-        //TODO: Handle All genders, Ethnicities, Pupil Premium and Send
-
-        $m = [
-            'Count_Female' => 0, 'Count_Male' => 0,
-            'Count_Ethnicity_White' => 0, 'Count_Ethnicity_Asian' => 0,
-            'Count_Ethnicity_Black' => 0, 'Count_Ethnicity_Mixed' => 0,
-            'Count_Ethnicity_Other' => 0
-        ];
+        $rows = $this->source->table($tableName)->where('course_id', $courseId)->get();
+        $m = $this->initializeExtendedMetricArray();
 
         foreach ($rows as $row) {
+            $cat = strtolower($row->category);
             $sub = strtolower($row->sub_category);
+            $val = (int)$row->value;
 
-            if ($row->category === 'gender') {
-                if ($sub === 'female') $m['Count_Female'] += $row->value;
-                if ($sub === 'male')   $m['Count_Male']   += $row->value;
+            if ($cat === 'gender') {
+                if ($sub === 'female') $m['Count_Female'] += $val;
+                elseif ($sub === 'male') $m['Count_Male'] += $val;
             }
 
-            if ($row->category === 'ethnicity') {
-                $key = 'Count_Ethnicity_' . ucfirst($sub);
-                if (array_key_exists($key, $m)) {
-                    $m[$key] += $row->value;
+            if ($cat === 'ethnicity') {
+                // We expect the source 'sub_category' to match our grouping names (e.g., 'white_british')
+                $column = 'Count_Ethnicity_' . str_replace(' ', '_', $sub);
+                if (isset($m[$column])) {
+                    $m[$column] += $val;
                 } else {
-                    $m['Count_Ethnicity_Other'] += $row->value;
+                    $m['Count_Ethnicity_Other_Any'] += $val;
                 }
             }
+
+            if ($cat === 'pupil_premium') $m['Count_Pupil_Premium'] += $val;
+            if ($cat === 'send') $m['Count_SEND'] += $val;
         }
         return $m;
     }

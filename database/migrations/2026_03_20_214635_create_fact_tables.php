@@ -27,16 +27,48 @@ return new class extends Migration
                 // Activity Metrics
                 $table->integer('Riders_Enrolled_Count')->default(0);
                 $table->integer('Riders_Completed_Count')->default(0);
-                $table->decimal('Total_Cost', 10, 2)->default(0);
+
+                // Booking Status Metrics
+                $table->integer('Count_Booked_Provisional')->default(0);
+                $table->integer('Count_Booked_Confirmed')->default(0);
+                $table->integer('Count_Attended_Confirmed')->default(0);
 
                 // Demographic Metrics
                 $table->integer('Count_Female')->default(0);
                 $table->integer('Count_Male')->default(0);
-                $table->integer('Count_Ethnicity_White')->default(0);
-                $table->integer('Count_Ethnicity_Asian')->default(0);
-                $table->integer('Count_Ethnicity_Black')->default(0);
-                $table->integer('Count_Ethnicity_Mixed')->default(0);
-                $table->integer('Count_Ethnicity_Other')->default(0);
+                $table->integer('Count_Gender_Other')->default(0);
+
+                $table->integer('Count_Pupil_Premium')->default(0);
+                $table->integer('Count_SEND')->default(0);
+
+                // White Groups
+                $table->integer('Count_Ethnicity_White_British')->default(0);
+                $table->integer('Count_Ethnicity_White_Irish')->default(0);
+                $table->integer('Count_Ethnicity_Gypsy_Romany')->default(0);
+                $table->integer('Count_Ethnicity_White_Other')->default(0);
+
+                // Mixed Groups
+                $table->integer('Count_Ethnicity_Mixed_White_Black_Carib')->default(0);
+                $table->integer('Count_Ethnicity_Mixed_White_Black_African')->default(0);
+                $table->integer('Count_Ethnicity_Mixed_White_Asian')->default(0);
+                $table->integer('Count_Ethnicity_Mixed_Other')->default(0);
+
+                // Asian Groups
+                $table->integer('Count_Ethnicity_Asian_Indian')->default(0);
+                $table->integer('Count_Ethnicity_Asian_Pakistani')->default(0);
+                $table->integer('Count_Ethnicity_Asian_Bangladeshi')->default(0);
+                $table->integer('Count_Ethnicity_Asian_Chinese')->default(0);
+                $table->integer('Count_Ethnicity_Asian_Other')->default(0);
+
+                // Black Groups
+                $table->integer('Count_Ethnicity_Black_African')->default(0);
+                $table->integer('Count_Ethnicity_Black_Caribbean')->default(0);
+                $table->integer('Count_Ethnicity_Black_Other')->default(0);
+
+                // Other
+                $table->integer('Count_Ethnicity_Other_Arab')->default(0);
+                $table->integer('Count_Ethnicity_Other_Any')->default(0);
+                $table->integer('Count_Ethnicity_Not_Stated')->default(0);
 
                 // Foreign Key Constraints
                 $table->foreign('Date_Key')->references('Date_Key')->on('Dim_Date');

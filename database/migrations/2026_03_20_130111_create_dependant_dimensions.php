@@ -130,7 +130,7 @@ return new class extends Migration
             // We still keep the raw JSON just in case
             $table->text('Cycle_Ability_Raw')->nullable();
 
-            $table->tinyInteger('Is_FSM')->nullable();
+            $table->tinyInteger('Is_Pupil_Premium')->nullable(); //source from is_FSM in link database
             $table->tinyInteger('Is_SEND')->nullable();
             $table->tinyInteger('Has_Medical_Condition')->nullable();
             $table->tinyInteger('Attended')->default(1);
