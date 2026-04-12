@@ -261,7 +261,10 @@ class DataWarehouseSyncService
         $highestTimestampSeen = $watermark;
 
         $query = $this->source->table('deliveries')
-            ->where('updated_at', '>', $watermark);
+            ->where(function($q) use ($watermark) {
+                $q->where('deliveries.updated_at', '>', $watermark)
+                    ->orWhereNull('deliveries.updated_at');
+            });
 
         $total = $query->count();
 
@@ -275,7 +278,10 @@ class DataWarehouseSyncService
 
         $this->source->table('deliveries')
             ->select('id', 'grant_id', 'school_urn', 'training_provider_id', 'status', 'date_delivery_start', 'date_delivery_end','digitisation_booking','organisation_id', 'updated_at')
-            ->where('updated_at', '>', $watermark)
+            ->where(function($q) use ($watermark) {
+                $q->where('deliveries.updated_at', '>', $watermark)
+                    ->orWhereNull('deliveries.updated_at');
+            })
             ->orderBy('id')
             ->chunk(1000, function ($deliveries) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
                 foreach ($deliveries as $delivery) {
@@ -352,7 +358,10 @@ class DataWarehouseSyncService
         $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
 
         $query = $this->source->table('courses')
-            ->where('updated_at', '>', $watermark);
+            ->where(function($q) use ($watermark) {
+                $q->where('courses.updated_at', '>', $watermark)
+                    ->orWhereNull('courses.updated_at');
+            });
 
         $total = $query->count();
 
@@ -365,7 +374,10 @@ class DataWarehouseSyncService
         // Fetch courses with their delivery relationship
         $sourceCourses = $this->source->table('courses')
             ->select('id', 'course_id', 'parent_course_id', 'delivery_id', 'status','start_date','date_complete','year_group', 'updated_at')
-            ->where('updated_at', '>', $watermark)
+            ->where(function($q) use ($watermark) {
+                $q->where('courses.updated_at', '>', $watermark)
+                    ->orWhereNull('courses.updated_at');
+            })
             ->get();
 
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
@@ -458,8 +470,10 @@ class DataWarehouseSyncService
             'free_school_meals',
             'send_code',
             'updated_at'
-        ])->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+        ])->where(function($q) use ($watermark) {
+            $q->where('updated_at', '>', $watermark)
+                ->orWhereNull('updated_at');
+        })->orderBy('updated_at', 'asc');
 
         $total = $query->count();
         if ($total === 0) return "No new rider changes detected.";
@@ -561,8 +575,10 @@ class DataWarehouseSyncService
                 'cycle_ability', 'is_fsm', 'is_SEND', 'has_medical_condition',
                 'attended', 'gender', 'ethnicity', 'updated_at'
             ])
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhereNull('updated_at');
+            })->orderBy('updated_at', 'asc');
 
         $total = $query->count();
         if ($total === 0) return "No new consent changes detected.";
@@ -704,12 +720,14 @@ class DataWarehouseSyncService
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
 
         $query = $this->source->table('courses')
+
             ->join('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
             ->select([
                 'courses.id',
                 'courses.delivery_id',
                 'courses.start_date',
                 'courses.updated_at',
+                'deliveries.date_delivery_start',
                 'deliveries.consent_src_characteristics'
             ]);
 
@@ -718,7 +736,10 @@ class DataWarehouseSyncService
         }
 
         $query->where('deliveries.digitisation_booking', 1)
-            ->where('courses.updated_at', '>', $watermark)
+            ->where(function($q) use ($watermark) {
+                $q->where('courses.updated_at', '>', $watermark)
+                    ->orWhereNull('courses.updated_at');
+            })
             ->orderBy('courses.updated_at', 'asc');
 
         $total = $query->count();
@@ -760,13 +781,16 @@ class DataWarehouseSyncService
                     $metrics = $this->aggregateFromSourceTable('course_characteristics', $course->id);
                 }
 
+                //Determine which date to use - if there is a course start date use that otherwise drop to delivery start date
+                $fact_date = $course->start_date?:$course->date_delivery_start;
+
                 // Upsert into Fact Table
                 $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                     ['Course_Key' => $courseKey],
                     array_merge($metrics, $deliveryDetailMetrics,[
                         'Riders_Enrolled_Count'  => $enrolledCount,
                         'Riders_Completed_Count' => $completedCount,
-                        'Date_Key'     => $course->start_date ? str_replace('-', '', substr($course->start_date, 0, 10)) : null,
+                        'Date_Key'     => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
                         'Delivery_Key' => $delivery->Delivery_Key,
                         'School_Key'   => $delivery->School_Key,
                         'Organisation_Key'   => $delivery->Organisation_Key,
@@ -839,9 +863,7 @@ class DataWarehouseSyncService
         }
 
         return [
-            // In the new schema, provisional is likely stored in input_metadata or a specific column
-            // Adjusting based on your migration:
-            'Count_Booked_Provisional' => 0, // Update this if you add a provisional column to delivery_modules
+            'Count_Booked_Provisional' => $module->booked_provisional,
             'Count_Booked_Confirmed'   => ($module->confirmed) ? $module->booked_total : 0,
             'Count_Attended_Confirmed' => ($module->confirmed) ? $module->attended_total : 0,
         ];
