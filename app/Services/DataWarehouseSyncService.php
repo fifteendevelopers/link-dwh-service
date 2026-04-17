@@ -1133,9 +1133,6 @@ class DataWarehouseSyncService
             $course = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $sourceCourseId)->first();
             if (!$course) continue;
 
-            // Fetch all the "Tall" results for this course
-            $results = $this->source->table('course_survey_results')->where('course_id', $sourceCourseId)->get();
-
             // Initialize the metrics array
             $m = $this->initializeHandsupMetrics();
 
