@@ -987,6 +987,9 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
+        $useLegacyFeedback = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+            ->hasColumn('parent_survey', 'rider_feedback');
+
         $query = $this->source->table('parent_survey')
             ->where('status', 1)
             ->orderBy('updated_at', 'asc');
@@ -995,7 +998,7 @@ class DataWarehouseSyncService
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
-        $query->chunk(500, function ($surveys) use ($sourceSystemKey, $bar) {
+        $query->chunk(500, function ($surveys) use ($sourceSystemKey, $bar, $useLegacyFeedback) {
             foreach ($surveys as $survey) {
 
                 // Resolve Keys
@@ -1006,10 +1009,16 @@ class DataWarehouseSyncService
                 if (!$riderKey || !$courseKey || !$delivery) continue;
 
                 // Resolve Multi-select Feedback (Pivoted)
-                $feedbackKeys = $this->source->table('parent_survey_feedback')
-                    ->where('parent_survey_id', $survey->id)
-                    ->pluck('feedback_key')
-                    ->toArray();
+                if ($useLegacyFeedback) {
+                    // TIER 1: Extract from JSON column (e.g., ["rfq1_rf1", "rfq1_rf3"])
+                    $feedbackKeys = json_decode($survey->rider_feedback ?? '[]', true);
+                } else {
+                    // TIER 2: Pull from the normalized pivot table
+                    $feedbackKeys = $this->source->table('parent_survey_feedback')
+                        ->where('parent_survey_id', $survey->id)
+                        ->pluck('feedback_key')
+                        ->toArray();
+                }
 
                 // 1. Handle OQ1 Multi-choice (Encouragers)
                 $oq1_data = json_decode($survey->optional_questions, true) ?? [];
@@ -1108,7 +1117,14 @@ class DataWarehouseSyncService
 
     public function syncFactHandsupSurvey($command = null)
     {
-        $courseIds = $this->source->table('course_survey_results')->distinct()->pluck('course_id');
+        $useLegacySurvey = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+            ->hasColumn('courses', 'survey_details');
+
+        if ($useLegacySurvey) {
+            $courseIds = $this->source->table('courses')->whereNotNull('survey_details')->pluck('id');
+        } else {
+            $courseIds = $this->source->table('course_survey_results')->distinct()->pluck('course_id');
+        }
 
         $bar = $command ? $command->getOutput()->createProgressBar(count($courseIds)) : null;
         if ($bar) $bar->start();
@@ -1120,63 +1136,20 @@ class DataWarehouseSyncService
             // Fetch all the "Tall" results for this course
             $results = $this->source->table('course_survey_results')->where('course_id', $sourceCourseId)->get();
 
-            // Initialize the Wide Row with 0s
-            $m = [
-                'Exp_Enjoyed' => 0, 'Exp_Did_Not_Enjoy' => 0, 'Exp_Not_Sure' => 0, 'Exp_Absent' => 0,
-                'Base_Yes' => 0, 'Base_No' => 0, 'Base_Not_Sure' => 0,
-                'Safe_More' => 0, 'Safe_Less' => 0, 'Safe_No_Diff' => 0, 'Safe_Not_Sure' => 0,
-                'Conf_More' => 0, 'Conf_Less' => 0, 'Conf_No_Diff' => 0, 'Conf_Not_Sure' => 0,
-            ];
+            // Initialize the metrics array
+            $m = $this->initializeHandsupMetrics();
 
-            foreach ($results as $res) {
-                $qid = $res->question_id;
-                $oid = $res->option_id;
-                $val = (int)$res->total; // This is the pre-aggregated sum from source
-
-                // BUCKET 1: Experience (IDs 1, 4, 8, 12, 14, 16)
-                if (in_array($qid, [1, 4, 8, 12, 14, 16])) {
-                    // Using Modulo 4 because the pattern is: 1:Enjoy, 2:Not, 3:Sure, 0:Absent
-                    match($oid % 4) {
-                        1 => $m['Exp_Enjoyed'] += $val,
-                        2 => $m['Exp_Did_Not_Enjoy'] += $val,
-                        3 => $m['Exp_Not_Sure'] += $val,
-                        0 => $m['Exp_Absent'] += $val,
-                    };
-                }
-
-                // BUCKET 2: Baseline (IDs 5, 9)
-                if (in_array($qid, [5, 9])) {
-                    // Pattern: Yes, No, Not Sure (Assuming IDs are 1, 2, 3 in their group)
-                    match($oid % 3) {
-                        1 => $m['Base_Yes'] += $val,
-                        2 => $m['Base_No'] += $val,
-                        0 => $m['Base_Not_Sure'] += $val,
-                    };
-                }
-
-                // BUCKET 3: Safety (IDs 2, 6, 10)
-                if (in_array($qid, [2, 6, 10])) {
-                    match($oid % 5) { // Assuming 5 options: More, Less, No Diff, Not Sure, Absent
-                        1 => $m['Safe_More'] += $val,
-                        2 => $m['Safe_Less'] += $val,
-                        3 => $m['Safe_No_Diff'] += $val,
-                        4 => $m['Safe_Not_Sure'] += $val,
-                        0 => null, // Ignore Absent for safety if not needed
-                    };
-                }
-
-                // BUCKET 4: Confidence (IDs 3, 7, 11, 13, 15)
-                if (in_array($qid, [3, 7, 11, 13, 15])) {
-                    match($oid % 4) {
-                        1 => $m['Conf_More'] += $val,
-                        2 => $m['Conf_Less'] += $val,
-                        3 => $m['Conf_No_Diff'] += $val,
-                        0 => $m['Conf_Not_Sure'] += $val,
-                    };
-                }
+            if ($useLegacySurvey) {
+                // Parse from JSON - data hasnt been normalised yet
+                $legacyData = $this->source->table('courses')->where('id', $sourceCourseId)->value('survey_details');
+                $m = $this->aggregateHandsupFromLegacyJson($legacyData, $m);
+            } else {
+                // Aggregated from Normalized table
+                $results = $this->source->table('course_survey_results')->where('course_id', $sourceCourseId)->get();
+                $m = $this->aggregateHandsupFromSourceRows($results, $m);
             }
 
-            // Upsert the single wide row for this Course
+            // Upsert the single row for this Course
             $this->dwh->table('Fact_HandsUp_Survey')->updateOrInsert(
                 ['Course_Key' => $course->Course_Key],
                 array_merge($m, [
@@ -1190,6 +1163,94 @@ class DataWarehouseSyncService
 
         if ($bar) { $bar->finish(); $command->newLine(); }
         return "Hands-up Facts synced (Mapped from pre-aggregated source).";
+    }
+
+    private function aggregateHandsupFromLegacyJson($jsonString, $m)
+    {
+        $questions = json_decode($jsonString ?? '[]', true);
+
+        foreach ($questions as $q) {
+            $qid = $q['id'] ?? null;
+            $options = $q['option'] ?? [];
+
+            foreach ($options as $opt) {
+                // Reuse the shared mapping logic
+                $m = $this->mapHandsupToBucket($qid, $opt['id'], $opt['total'], $m);
+            }
+        }
+        return $m;
+    }
+
+    private function aggregateHandsupFromSourceRows($results, $m)
+    {
+        foreach ($results as $res) {
+            // Reuse the shared mapping logic
+            $m = $this->mapHandsupToBucket($res->question_id, $res->option_id, $res->total, $m);
+        }
+        return $m;
+    }
+
+    /**
+     * Helper function to set the array up
+     */
+    private function initializeHandsupMetrics()
+    {
+        return [
+            'Exp_Enjoyed' => 0, 'Exp_Did_Not_Enjoy' => 0, 'Exp_Not_Sure' => 0, 'Exp_Absent' => 0,
+            'Base_Yes'    => 0, 'Base_No'             => 0, 'Base_Not_Sure' => 0,
+            'Safe_More'   => 0, 'Safe_Less'           => 0, 'Safe_No_Diff'  => 0, 'Safe_Not_Sure' => 0,
+            'Conf_More'   => 0, 'Conf_Less'           => 0, 'Conf_No_Diff'  => 0, 'Conf_Not_Sure' => 0,
+        ];
+    }
+
+    /**
+     * Core Mapping for Hands Up metrics
+     */
+    private function mapHandsupToBucket($qid, $oid, $val, $m)
+    {
+        $val = (int)$val;
+
+        // Experience (Enjoyment)
+        if (in_array($qid, [1, 4, 8, 12, 14, 16])) {
+            match($oid % 4) {
+                1 => $m['Exp_Enjoyed'] += $val,
+                2 => $m['Exp_Did_Not_Enjoy'] += $val,
+                3 => $m['Exp_Not_Sure'] += $val,
+                0 => $m['Exp_Absent'] += $val,
+            };
+        }
+
+        // Baseline (Do you cycle to school?)
+        if (in_array($qid, [5, 9])) {
+            match($oid % 3) {
+                1 => $m['Base_Yes'] += $val,
+                2 => $m['Base_No'] += $val,
+                0 => $m['Base_Not_Sure'] += $val,
+            };
+        }
+
+        // Safety
+        if (in_array($qid, [2, 6, 10])) {
+            match($oid % 5) {
+                1 => $m['Safe_More'] += $val,
+                2 => $m['Safe_Less'] += $val,
+                3 => $m['Safe_No_Diff'] += $val,
+                4 => $m['Safe_Not_Sure'] += $val,
+                0 => null, // Ignore Absent
+            };
+        }
+
+        // Confidence
+        if (in_array($qid, [3, 7, 11, 13, 15])) {
+            match($oid % 4) {
+                1 => $m['Conf_More'] += $val,
+                2 => $m['Conf_Less'] += $val,
+                3 => $m['Conf_No_Diff'] += $val,
+                0 => $m['Conf_Not_Sure'] += $val,
+            };
+        }
+
+        return $m;
     }
 
     /**
