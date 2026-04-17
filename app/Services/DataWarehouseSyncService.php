@@ -714,6 +714,9 @@ class DataWarehouseSyncService
         $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('deliveries', 'delivery_details');
 
+        $useLegacyCourseCharacteristicss = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+            ->hasColumn('courses', 'characteristics');
+
         // Get Courses updated sunce last sync
         $watermark = $this->dwh->table('Sync_Log')
             ->where('Table_Name', 'Fact_Course_Delivery')
@@ -735,6 +738,10 @@ class DataWarehouseSyncService
             $query->addSelect('deliveries.delivery_details');
         }
 
+        if ($useLegacyCourseCharacteristicss) {
+            $query->addSelect('courses.characteristics');
+        }
+
         $query->where('deliveries.digitisation_booking', 1)
             ->where(function($q) use ($watermark) {
                 $q->where('courses.updated_at', '>', $watermark)
@@ -750,7 +757,7 @@ class DataWarehouseSyncService
 
         $highestTimestampSeen = $watermark;
 
-        $query->chunk(500, function ($courses) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy) {
+        $query->chunk(500, function ($courses) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristicss) {
             foreach ($courses as $course) {
 
                 // Resolve Keys
@@ -777,8 +784,13 @@ class DataWarehouseSyncService
                     // Get from Rider's Consent data
                     $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
                 } else {
-                    // Get from the Course Characteristics table
-                    $metrics = $this->aggregateFromSourceTable('course_characteristics', $course->id);
+                    if ($useLegacyCourseCharacteristicss) {
+                        // Priority 2: Legacy JSON Column
+                        $metrics = $this->aggregateFromLegacyCharacteristics($course->characteristics);
+                    } else {
+                        // Priority 3: Normalized Tables
+                        $metrics = $this->aggregateFromSourceTable('course_characteristics', $course->id);
+                    }
                 }
 
                 //Determine which date to use - if there is a course start date use that otherwise drop to delivery start date
@@ -899,6 +911,43 @@ class DataWarehouseSyncService
             if ($consent->Is_Pupil_Premium) $m['Count_Pupil_Premium']++;
             if ($consent->Is_SEND) $m['Count_SEND']++;
         }
+
+        return $m;
+    }
+
+    private function aggregateFromLegacyCharacteristics($jsonString)
+    {
+        $m = $this->initializeExtendedMetricArray();
+        $data = json_decode($jsonString ?? '[]', true);
+
+        if (!is_array($data) || empty($data)) return $m;
+
+        // Course characteristics is typically an array with a single block object at index 0
+        $block = $data[0] ?? [];
+
+        // Map Gender
+        $gender = $block['gender'] ?? [];
+        foreach ($gender as $sub => $val) {
+            if ($sub === 'female') $m['Count_Female'] += (int)$val;
+            elseif ($sub === 'male') $m['Count_Male'] += (int)$val;
+        }
+
+        // Map Ethnicity
+        $ethnicity = $block['ethnicity'] ?? [];
+        foreach ($ethnicity as $sub => $val) {
+            // We use the same column mapping logic as the DWH/Normalized tables
+            $column = 'Count_Ethnicity_' . str_replace(' ', '_', strtolower($sub));
+            if (isset($m[$column])) {
+                $m[$column] += (int)$val;
+            } else {
+                $m['Count_Ethnicity_Other_Any'] += (int)$val;
+            }
+        }
+
+        // Map Standalone Demographics
+        // Note: Use the keys from the legacy JSON structure
+        $m['Count_SEND'] += (int)($block['send'] ?? 0);
+        $m['Count_Pupil_Premium'] += (int)($block['free_school_meals'] ?? 0);
 
         return $m;
     }
