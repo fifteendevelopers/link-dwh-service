@@ -1124,14 +1124,9 @@ class DataWarehouseSyncService
                             'Like_To_Participate' => $survey->like_to_participation,
                             'Like_To_Answer_Survey' => $survey->like_to_answer_survey,
                             'Pref_Join_Bikeability' => $survey->pref_join_bikeability,
-
                             'Rider_Emotion' => $survey->rider_emotion,
                             'Pref_More_Training' => $survey->pref_more_training,
                             'Pref_Interest_In_Training' => $survey->pref_interest_in_training,
-                            // Store as Clean Integers (1-6)
-                            'Confidence_Bike_General' => $this->extractOptionInt('co',$survey->confidence_to_use_a_bike),
-                            'Confidence_Road'         => $this->extractOptionInt('co',$survey->confidence_to_use_bike_on_road),
-                            'Confidence_Independent'  => $this->extractOptionInt('co',$survey->confidence_to_use_bike_independently),
 
                             // Feedback Flags
                             'Feedback_Is_Fun'      => in_array('rfq1_rf1', $feedbackKeys) ? 1 : 0,
@@ -1144,6 +1139,16 @@ class DataWarehouseSyncService
                             'Feedback_Not_Enjoy'   => in_array('rfq1_rf8', $feedbackKeys) ? 1 : 0,
                             'Feedback_None_Apply'   => in_array('rfq1_null', $feedbackKeys) ? 1 : 0,
                             'Feedback_None_Apply_Input' => $survey->rider_feedback_input,
+
+                            // Store as Clean Integers (1-6)
+                            'Confidence_Bike_General' => $this->extractOptionInt('co',$survey->confidence_to_use_a_bike),
+                            'Confidence_Road'         => $this->extractOptionInt('co',$survey->confidence_to_use_bike_on_road),
+                            'Confidence_Independent'  => $this->extractOptionInt('co',$survey->confidence_to_use_bike_independently),
+
+                            //Frequency Flags
+                            'Frequency_School' =>$survey->frequency_usable_to_and_from_school,
+                            'Frequency_Leisure' =>$survey->frequency_usable_leisure_and_social,
+                            'Frequency_Exercise' =>$survey->frequency_usable_exercise,
 
                             //Encouragment
                             'Encouragement_Use_Bike' => $this->extractOptionInt('eo',$survey->encouragement_to_use_a_bike),
