@@ -999,35 +999,70 @@ class DataWarehouseSyncService
         $useLegacyFeedback = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('parent_survey', 'rider_feedback');
 
-        $query = $this->source->table('parent_survey')
-            ->where('status', 1)
-            ->orderBy('updated_at', 'asc');
+        $watermark = $this->dwh->table('Sync_Log')
+            ->where('Table_Name', 'Fact_Parent_Survey')
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
 
-        $total = $query->count();
+        $highestTimestampSeen = $watermark;
+
+        if ($useLegacyFeedback) {
+            // Legacy: check the parent_survey table for updates
+            $surveyData = $this->source->table('parent_survey')
+                ->where('status', 1)
+                ->where('updated_at', '>', $watermark)
+                ->select('id', 'updated_at')
+                ->get();
+
+            $surveyIds = $surveyData->pluck('id');
+            $maxTimestamp = $surveyData->max('updated_at');
+        } else {
+            // Normalized: Identify surveys where the survey OR the feedback has changed
+            $feedbackUpdates = $this->source->table('parent_survey_feedback')
+                ->where('updated_at', '>', $watermark)
+                ->pluck('parent_survey_id');
+
+            $directSurveyUpdates = $this->source->table('parent_survey')
+                ->where('status', 1)
+                ->where('updated_at', '>', $watermark)
+                ->pluck('id');
+
+            $surveyIds = $feedbackUpdates->merge($directSurveyUpdates)->unique();
+
+            // Find max timestamp across both potential update points
+            $maxF = $this->source->table('parent_survey_feedback')->where('updated_at', '>', $watermark)->max('updated_at');
+            $maxS = $this->source->table('parent_survey')->where('updated_at', '>', $watermark)->max('updated_at');
+            $maxTimestamp = max($maxF, $maxS);
+        }
+
+        if ($surveyIds->isEmpty()) {
+            return "Parent Survey Facts are up to date.";
+        }
+
+        $total = count($surveyIds);
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
-        $query->chunk(500, function ($surveys) use ($sourceSystemKey, $bar, $useLegacyFeedback) {
-            foreach ($surveys as $survey) {
+        $this->source->table('parent_survey')
+            ->whereIn('id', $surveyIds)
+            ->orderBy('updated_at', 'asc')
+            ->chunk(200, function ($surveys) use ($sourceSystemKey, $bar, $useLegacyFeedback) {
+                foreach ($surveys as $survey) {
+                    // ... [Existing Logic to Resolve Keys: $riderKey, $courseKey, $delivery] ...
+                    $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
+                    $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
+                    $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->first();
 
-                // Resolve Keys
-                $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
-                $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
-                $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->first();
+                    if (!$riderKey || !$courseKey || !$delivery) continue;
 
-                if (!$riderKey || !$courseKey || !$delivery) continue;
-
-                // Resolve Multi-select Feedback (Pivoted)
-                if ($useLegacyFeedback) {
-                    // TIER 1: Extract from JSON column (e.g., ["rfq1_rf1", "rfq1_rf3"])
-                    $feedbackKeys = json_decode($survey->rider_feedback ?? '[]', true);
-                } else {
-                    // TIER 2: Pull from the normalized pivot table
-                    $feedbackKeys = $this->source->table('parent_survey_feedback')
-                        ->where('parent_survey_id', $survey->id)
-                        ->pluck('feedback_key')
-                        ->toArray();
-                }
+                    // Resolve Multi-select Feedback
+                    if ($useLegacyFeedback) {
+                        $feedbackKeys = json_decode($survey->rider_feedback ?? '[]', true);
+                    } else {
+                        $feedbackKeys = $this->source->table('parent_survey_feedback')
+                            ->where('parent_survey_id', $survey->id)
+                            ->pluck('feedback_key')
+                            ->toArray();
+                    }
 
                 // 1. Handle OQ1 Multi-choice (Encouragers)
                 $oq1_data = json_decode($survey->optional_questions, true) ?? [];
@@ -1119,6 +1154,15 @@ class DataWarehouseSyncService
                 if ($bar) $bar->advance();
             }
         });
+
+        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
+            $highestTimestampSeen = $maxTimestamp;
+        }
+
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Fact_Parent_Survey'],
+            ['Last_Synced_At' => $highestTimestampSeen]
+        );
 
         if ($bar) { $bar->finish(); $command->newLine(); }
         return "Parent Survey Fact synced with integer-based Likert scores.";
