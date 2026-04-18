@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('Dim_Parent_Survey', function (Blueprint $table) {
+        Schema::table('Fact_Parent_Survey', function (Blueprint $table) {
             $table->boolean('Like_To_Participate')->default(false);
             $table->boolean('Like_To_Answer_Survey')->default(false);
             $table->boolean('Pref_Join_Bikeability')->default(false);
@@ -23,7 +23,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('Dim_Parent_Survey', function (Blueprint $table) {
+        Schema::table('Fact_Parent_Survey', function (Blueprint $table) {
             $table->dropColumn(['Like_To_Participate', 'Like_To_Answer_Survey', 'Pref_Join_Bikeability']);
         });
     }
