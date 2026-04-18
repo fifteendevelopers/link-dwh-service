@@ -43,7 +43,9 @@ class DataWarehouseSyncService
                 'Telephone'          => $provider->telephone,
                 'Public_Email'       => $provider->public_email,
                 'Public_Telephone'   => $provider->public_telephone,
-                'Provider_Type'      => $provider->provider_type
+                'Provider_Type'      => $provider->provider_type,
+                'Source_Created_At' => $provider->created_at,
+                'Source_Updated_At' => $provider->updated_at,
             ];
 
             // 2. Fetch the current active version in DWH
