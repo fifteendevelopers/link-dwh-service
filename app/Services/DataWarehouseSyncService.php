@@ -174,7 +174,24 @@ class DataWarehouseSyncService
                 'Recipient_Name'   => $recipient->recipient_name,
                 'Recipient_Number' => $recipient->recipient_number,
                 'LA_Id'            => $recipient->local_authority_id,
-                'Is_Active'        => is_null($recipient->deleted_at) ? 'Y' : 'N'
+                'Is_Active'        => is_null($recipient->deleted_at) ? 'Y' : 'N',
+                'Address_Line_1'   => $recipient->address_01,
+                'Address_Line_2'   => $recipient->address_02,
+                'City'             => $recipient->city,
+                'Postcode'         => $recipient->postcode,
+                'Website'          => $recipient->website,
+
+                // Dates
+                'Inception_Date'   => $recipient->date_inception,
+                'Renewal_Date'     => $recipient->date_renewal,
+                'Deregistered_Date'=> $recipient->date_deregistered,
+
+                // Derived Field: Is_SGO
+                'Is_SGO'           => ($recipient->pref_sgoh == 1) ? 1 : 0,
+
+                // Source Metadata
+                'Source_Created_At'=> $recipient->created_at,
+                'Source_Updated_At'=> $recipient->updated_at,
             ];
 
             $current = $this->dwh->table('Dim_Grant_Recipient')
