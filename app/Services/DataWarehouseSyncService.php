@@ -34,7 +34,16 @@ class DataWarehouseSyncService
             $incomingData = [
                 'Provider_Name'   => $provider->provider_name,
                 'Provider_Number' => $provider->provider_number,
-                'Is_Active'       => is_null($provider->deleted_at) ? 'Y' : 'N'
+                'Is_Active'       => is_null($provider->deleted_at) ? 'Y' : 'N',
+                'Address_Line_1'     => $provider->address_01,
+                'Address_Line_2'     => $provider->address_02,
+                'City'               => $provider->city,
+                'Postcode'           => $provider->postcode,
+                'Website'            => $provider->website,
+                'Telephone'          => $provider->telephone,
+                'Public_Email'       => $provider->public_email,
+                'Public_Telephone'   => $provider->public_telephone,
+                'Provider_Type'      => $provider->provider_type
             ];
 
             // 2. Fetch the current active version in DWH
@@ -1167,7 +1176,7 @@ class DataWarehouseSyncService
         $questions = json_decode($jsonString ?? '[]', true);
 
         foreach ($questions as $q) {
-            $qid = $q['id'] ?? null;
+            $qid = $q['question_id'] ?? null;
             $options = $q['option'] ?? [];
 
             foreach ($options as $opt) {
@@ -1207,45 +1216,33 @@ class DataWarehouseSyncService
     {
         $val = (int)$val;
 
-        // Experience (Enjoyment)
-        if (in_array($qid, [1, 4, 8, 12, 14, 16])) {
-            match($oid % 4) {
-                1 => $m['Exp_Enjoyed'] += $val,
-                2 => $m['Exp_Did_Not_Enjoy'] += $val,
-                3 => $m['Exp_Not_Sure'] += $val,
-                0 => $m['Exp_Absent'] += $val,
-            };
-        }
+        // BUCKET 1: Experience (Enjoyed / Not Enjoyed)
+        // Questions: 1, 4, 8, 12, 14, 16
+        if (in_array($oid, [1, 15, 33, 51, 60, 69])) $m['Exp_Enjoyed'] += $val;
+        if (in_array($oid, [2, 16, 34, 52, 61, 70])) $m['Exp_Did_Not_Enjoy'] += $val;
+        if (in_array($oid, [3, 17, 35, 53, 62, 71])) $m['Exp_Not_Sure'] += $val;
+        if (in_array($oid, [4, 18, 36, 54, 63, 72])) $m['Exp_Absent'] += $val;
 
-        // Baseline (Do you cycle to school?)
-        if (in_array($qid, [5, 9])) {
-            match($oid % 3) {
-                1 => $m['Base_Yes'] += $val,
-                2 => $m['Base_No'] += $val,
-                0 => $m['Base_Not_Sure'] += $val,
-            };
-        }
+        // BUCKET 2: Baseline (Cycled on roads before?)
+        // Questions: 5, 9
+        if (in_array($oid, [19, 37])) $m['Base_Yes'] += $val;
+        if (in_array($oid, [20, 38])) $m['Base_No'] += $val;
+        if (in_array($oid, [21, 39])) $m['Base_Not_Sure'] += $val;
+        // (Note: Absent IDs 22/40 are ignored here as they don't fit the Y/N/NotSure columns)
 
-        // Safety
-        if (in_array($qid, [2, 6, 10])) {
-            match($oid % 5) {
-                1 => $m['Safe_More'] += $val,
-                2 => $m['Safe_Less'] += $val,
-                3 => $m['Safe_No_Diff'] += $val,
-                4 => $m['Safe_Not_Sure'] += $val,
-                0 => null, // Ignore Absent
-            };
-        }
+        // BUCKET 3: Safety (How safe do you feel?)
+        // Questions: 2, 6, 10
+        if (in_array($oid, [5, 23, 41])) $m['Safe_More'] += $val;
+        if (in_array($oid, [6, 24, 42])) $m['Safe_Less'] += $val;
+        if (in_array($oid, [7, 25, 43])) $m['Safe_No_Diff'] += $val;
+        if (in_array($oid, [8, 26, 44])) $m['Safe_Not_Sure'] += $val;
 
-        // Confidence
-        if (in_array($qid, [3, 7, 11, 13, 15])) {
-            match($oid % 4) {
-                1 => $m['Conf_More'] += $val,
-                2 => $m['Conf_Less'] += $val,
-                3 => $m['Conf_No_Diff'] += $val,
-                0 => $m['Conf_Not_Sure'] += $val,
-            };
-        }
+        // BUCKET 4: Confidence (How confident do you feel?)
+        // Questions: 3, 7, 11, 13, 15
+        if (in_array($oid, [10, 28, 46, 55, 64])) $m['Conf_More'] += $val;
+        if (in_array($oid, [11, 29, 47, 56, 65])) $m['Conf_Less'] += $val;
+        if (in_array($oid, [12, 30, 48, 57, 66])) $m['Conf_No_Diff'] += $val;
+        if (in_array($oid, [13, 31, 49, 58, 67])) $m['Conf_Not_Sure'] += $val;
 
         return $m;
     }
