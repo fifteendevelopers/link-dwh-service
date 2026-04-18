@@ -1129,10 +1129,34 @@ class DataWarehouseSyncService
         $useLegacySurvey = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('courses', 'survey_details');
 
+        $watermark = $this->dwh->table('Sync_Log')
+            ->where('Table_Name', 'Fact_HandsUp_Survey')
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+
+        $highestTimestampSeen = $watermark;
+
+
         if ($useLegacySurvey) {
-            $courseIds = $this->source->table('courses')->whereNotNull('survey_details')->pluck('id');
+            $courseData = $this->source->table('courses')
+                ->whereNotNull('survey_details')
+                ->where('updated_at', '>', $watermark)
+                ->select('id', 'updated_at')
+                ->get();
+
+            $courseIds = $courseData->pluck('id');
+            $maxTimestamp = $courseData->max('updated_at');
         } else {
-            $courseIds = $this->source->table('course_survey_results')->distinct()->pluck('course_id');
+            $resultData = $this->source->table('course_survey_results')
+                ->where('updated_at', '>', $watermark)
+                ->select('course_id', 'updated_at')
+                ->get();
+
+            $courseIds = $resultData->pluck('course_id')->distinct();
+            $maxTimestamp = $resultData->max('updated_at');
+        }
+
+        if ($courseIds->isEmpty()) {
+            return "Hands-up Facts are up to date.";
         }
 
         $bar = $command ? $command->getOutput()->createProgressBar(count($courseIds)) : null;
@@ -1166,6 +1190,15 @@ class DataWarehouseSyncService
 
             if ($bar) $bar->advance();
         }
+
+        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
+            $highestTimestampSeen = $maxTimestamp;
+        }
+
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Fact_HandsUp_Survey'],
+            ['Last_Synced_At' => $highestTimestampSeen]
+        );
 
         if ($bar) { $bar->finish(); $command->newLine(); }
         return "Hands-up Facts synced (Mapped from pre-aggregated source).";
