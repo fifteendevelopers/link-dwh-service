@@ -12,9 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('Fact_Parent_Survey', function (Blueprint $table) {
-            $table->boolean('Like_To_Participate')->default(false);
-            $table->boolean('Like_To_Answer_Survey')->default(false);
-            $table->boolean('Pref_Join_Bikeability')->default(false);
+            $table->boolean('Like_To_Participate')->default(false)->after('Grant_Key');
+            $table->boolean('Like_To_Answer_Survey')->default(false)->after('Like_To_Participate');
+            $table->boolean('Pref_Join_Bikeability')->default(false)->after('Like_To_Answer_Survey');
         });
     }
 
