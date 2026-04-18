@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('dim_grant_recipient', function (Blueprint $table) {
+        Schema::table('Dim_Grant_Recipient', function (Blueprint $table) {
             $table->string('Address_Line_1')->nullable();
             $table->string('Address_Line_2')->nullable();
             $table->string('City')->nullable();
@@ -31,7 +31,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('dim_grant_recipient', function (Blueprint $table) {
+        Schema::table('Dim_Grant_Recipient', function (Blueprint $table) {
             $table->dropColumn(['Address_Line_1','Address_Line_2','City','Postcode','Website','Inception_Date','Renewal_Date','Deregistration_Date','Is_SGO','Source_Created_At','Source_Updated_At']);
         });
     }
