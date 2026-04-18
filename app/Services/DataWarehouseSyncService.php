@@ -1121,7 +1121,7 @@ class DataWarehouseSyncService
                             'Delivery_Key' => $delivery->Delivery_Key,
                             'Grant_Key'    => $delivery->Grant_Key,
 
-                            'Like_To_Participate' => $survey->like_to_participate,
+                            'Like_To_Participate' => $survey->like_to_participation,
                             'Like_To_Answer_Survey' => $survey->like_to_answer_survey,
                             'Pref_Join_Bikeability' => $survey->pref_join_bikeability,
 
