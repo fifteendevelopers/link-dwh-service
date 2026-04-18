@@ -1024,34 +1024,14 @@ class DataWarehouseSyncService
 
         $highestTimestampSeen = $watermark;
 
-        if ($useLegacyFeedback) {
-            // Legacy: check the parent_survey table for updates
-            $surveyData = $this->source->table('parent_survey')
-                ->where('status', 1)
-                ->where('updated_at', '>', $watermark)
-                ->select('id', 'updated_at')
-                ->get();
+        $surveyData = $this->source->table('parent_survey')
+            ->where('status', 1)
+            ->where('updated_at', '>', $watermark)
+            ->select('id', 'updated_at')
+            ->get();
 
-            $surveyIds = $surveyData->pluck('id');
-            $maxTimestamp = $surveyData->max('updated_at');
-        } else {
-            // Normalized: Identify surveys where the survey OR the feedback has changed
-            $feedbackUpdates = $this->source->table('parent_survey_feedback')
-                ->where('updated_at', '>', $watermark)
-                ->pluck('parent_survey_id');
-
-            $directSurveyUpdates = $this->source->table('parent_survey')
-                ->where('status', 1)
-                ->where('updated_at', '>', $watermark)
-                ->pluck('id');
-
-            $surveyIds = $feedbackUpdates->merge($directSurveyUpdates)->unique();
-
-            // Find max timestamp across both potential update points
-            $maxF = $this->source->table('parent_survey_feedback')->where('updated_at', '>', $watermark)->max('updated_at');
-            $maxS = $this->source->table('parent_survey')->where('updated_at', '>', $watermark)->max('updated_at');
-            $maxTimestamp = max($maxF, $maxS);
-        }
+        $surveyIds = $surveyData->pluck('id');
+        $maxTimestamp = $surveyData->max('updated_at');
 
         if ($surveyIds->isEmpty()) {
             return "Parent Survey Facts are up to date.";
@@ -1066,7 +1046,7 @@ class DataWarehouseSyncService
             ->orderBy('updated_at', 'asc')
             ->chunk(200, function ($surveys) use ($sourceSystemKey, $bar, $useLegacyFeedback) {
                 foreach ($surveys as $survey) {
-                    // ... [Existing Logic to Resolve Keys: $riderKey, $courseKey, $delivery] ...
+                    //Logic to Resolve Keys: $riderKey, $courseKey, $delivery
                     $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
                     $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
                     $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->first();
@@ -1083,96 +1063,100 @@ class DataWarehouseSyncService
                             ->toArray();
                     }
 
-                // 1. Handle OQ1 Multi-choice (Encouragers)
-                $oq1_data = json_decode($survey->optional_questions, true) ?? [];
-                $encouragers = [
-                    'Encourage_More_Direct_Routes'     => in_array('oq1_o1', $oq1_data) ? 1 : 0,
-                    'Encourage_Local_Route_Awareness'     => in_array('oq1_o2', $oq1_data) ? 1 : 0,
-                    'Encourage_Storage'    => in_array('oq1_o3', $oq1_data) ? 1 : 0,
-                    'Encourage_Road_Surfaces'    => in_array('oq1_o4', $oq1_data) ? 1 : 0,
-                    'Encourage_Confidence' => in_array('oq1_o5', $oq1_data) ? 1 : 0,
-                    'Encourage_Cycle_Maintenance' => in_array('oq1_o6', $oq1_data) ? 1 : 0,
-                    'Encourage_Local_Initiatives' => in_array('oq1_o7', $oq1_data) ? 1 : 0,
-                    'Encourage_Purchase_Ability' => in_array('oq1_o8', $oq1_data) ? 1 : 0,
-                    'Encourage_Doesnt_Want_To_Cycle_More' => in_array('oq1_o9', $oq1_data) ? 1 : 0,
-                    'Encourage_None'       => in_array('oq1_null', $oq1_data) ? 1 : 0,
-                    'Encourage_Other_Reason' => $survey->optional_questions_input,
-                ];
+                    // 1. Handle OQ1 Multi-choice (Encouragers)
+                    $oq1_data = json_decode($survey->optional_questions, true) ?? [];
+                    $encouragers = [
+                        'Encourage_More_Direct_Routes'     => in_array('oq1_o1', $oq1_data) ? 1 : 0,
+                        'Encourage_Local_Route_Awareness'     => in_array('oq1_o2', $oq1_data) ? 1 : 0,
+                        'Encourage_Storage'    => in_array('oq1_o3', $oq1_data) ? 1 : 0,
+                        'Encourage_Road_Surfaces'    => in_array('oq1_o4', $oq1_data) ? 1 : 0,
+                        'Encourage_Confidence' => in_array('oq1_o5', $oq1_data) ? 1 : 0,
+                        'Encourage_Cycle_Maintenance' => in_array('oq1_o6', $oq1_data) ? 1 : 0,
+                        'Encourage_Local_Initiatives' => in_array('oq1_o7', $oq1_data) ? 1 : 0,
+                        'Encourage_Purchase_Ability' => in_array('oq1_o8', $oq1_data) ? 1 : 0,
+                        'Encourage_Doesnt_Want_To_Cycle_More' => in_array('oq1_o9', $oq1_data) ? 1 : 0,
+                        'Encourage_None'       => in_array('oq1_null', $oq1_data) ? 1 : 0,
+                        'Encourage_Other_Reason' => $survey->optional_questions_input,
+                    ];
 
-                // 2. Handle OQ2-OQ19 (Agree/Disagree Array)
-                $agree_disagree_data = json_decode($survey->agree_disagree_options, true) ?? [];
+                    // 2. Handle OQ2-OQ19 (Agree/Disagree Array)
+                    $agree_disagree_data = json_decode($survey->agree_disagree_options, true) ?? [];
 
-                // Convert the flat array ["oq2_o5", "oq3_o4"] into a keyed lookup for easy extraction
-                $pivoted = [];
-                foreach ($agree_disagree_data as $item) {
-                    // e.g., "oq2_o5" -> key: "oq2", value: 5
-                    if (preg_match('/(oq\d+)_o(\d+)/', $item, $matches)) {
-                        $pivoted[$matches[1]] = (int)$matches[2];
+                    // Convert the flat array ["oq2_o5", "oq3_o4"] into a keyed lookup for easy extraction
+                    $pivoted = [];
+                    foreach ($agree_disagree_data as $item) {
+                        // e.g., "oq2_o5" -> key: "oq2", value: 5
+                        if (preg_match('/(oq\d+)_o(\d+)/', $item, $matches)) {
+                            $pivoted[$matches[1]] = (int)$matches[2];
+                        }
                     }
+
+                    $likertMetrics = [
+                        'Likert_Life_Skill'  => $pivoted['oq2'] ?? null, // oq2
+                        'Likert_Self_Esteem' => $pivoted['oq3'] ?? null, // oq3
+                        'Likert_Fitness'     => $pivoted['oq4'] ?? null, // oq4
+                        'Likert_Active'      => $pivoted['oq5'] ?? null, // oq5
+                        'Likert_Mindfulness' => $pivoted['oq6'] ?? null, // oq6
+                        'Likert_Improve_Self_Regulate' => $pivoted['oq7'] ?? null, // oq7
+                        'Likert_Improve_Concentration' => $pivoted['oq8'] ?? null, // oq8
+                        'Likert_Improve_Academic_Performance' => $pivoted['oq9'] ?? null, // oq9
+                        'Likert_Independence' => $pivoted['oq10'] ?? null, // oq10
+                        'Likert_Improve_Road_Awareness' => $pivoted['oq11'] ?? null, // oq11
+                        'Likert_Improve_Environment_Awareness' => $pivoted['oq12'] ?? null, // oq12
+                        'Likert_Help_Socialise' => $pivoted['oq13'] ?? null, // oq13
+                        'Likert_Make_Children_Happy' => $pivoted['oq14'] ?? null, // oq14
+                        'Likert_Keep_Children_Occupied' => $pivoted['oq15'] ?? null, // oq15
+                        'Likert_Encourage_Children_Outside' => $pivoted['oq16'] ?? null, // oq16
+                        'Likert_Children_Less_Dependent' => $pivoted['oq17'] ?? null, // oq17
+                        'Likert_Reduce_Other_Transport_Expense' => $pivoted['oq18'] ?? null, // oq18
+                        'Likert_Enable_Cycle_As_Family' => $pivoted['oq19'] ?? null //oq19
+                    ];
+
+                    $this->dwh->table('Fact_Parent_Survey')->updateOrInsert(
+                        ['Source_Survey_Id' => $survey->id],
+                        array_merge($encouragers, $likertMetrics,[
+                            'Date_Key'     => str_replace('-', '', substr($survey->created_at, 0, 10)),
+                            'Rider_Key'    => $riderKey,
+                            'Course_Key'   => $courseKey,
+                            'Delivery_Key' => $delivery->Delivery_Key,
+                            'Grant_Key'    => $delivery->Grant_Key,
+
+                            'Rider_Emotion' => $survey->rider_emotion,
+                            'Pref_More_Training' => $survey->pref_more_training,
+                            'Pref_Interest_In_Training' => $survey->pref_interest_in_training,
+                            // Store as Clean Integers (1-6)
+                            'Confidence_Bike_General' => $this->extractOptionInt('co',$survey->confidence_to_use_a_bike),
+                            'Confidence_Road'         => $this->extractOptionInt('co',$survey->confidence_to_use_bike_on_road),
+                            'Confidence_Independent'  => $this->extractOptionInt('co',$survey->confidence_to_use_bike_independently),
+
+                            // Feedback Flags
+                            'Feedback_Is_Fun'      => in_array('rfq1_rf1', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Is_Hard'      => in_array('rfq1_rf2', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Is_Healthy'  => in_array('rfq1_rf3', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Still_New'  => in_array('rfq1_rf4', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Family_Friends' => in_array('rfq1_rf5', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Dont_See_Others_Like_Me' => in_array('rfq1_rf6', $feedbackKeys) ? 1 : 0,
+                            'Feedback_On_Own'      => in_array('rfq1_rf7', $feedbackKeys) ? 1 : 0,
+                            'Feedback_Not_Enjoy'   => in_array('rfq1_rf8', $feedbackKeys) ? 1 : 0,
+                            'Feedback_None_Apply'   => in_array('rfq1_null', $feedbackKeys) ? 1 : 0,
+                            'Feedback_None_Apply_Input' => $survey->rider_feedback_input,
+
+                            //Encouragment
+                            'Encouragement_Use_Bike' => $this->extractOptionInt('eo',$survey->encouragement_to_use_a_bike),
+                            'Encouragement_Use_Bike_On_Road' => $this->extractOptionInt('eo',$survey->encouragement_to_use_bike_on_road),
+
+                            //Recommend
+                            'Likely_To_Recommend' => $survey->like_to_recommend,
+
+                            //Timestamps
+                            'Source_Created_At' => $survey->created_at,
+                            'Source_Updated_At' => $survey->updated_at
+                        ])
+                    );
+
+                    if ($bar) $bar->advance();
                 }
-
-                $likertMetrics = [
-                    'Likert_Life_Skill'  => $pivoted['oq2'] ?? null, // oq2
-                    'Likert_Self_Esteem' => $pivoted['oq3'] ?? null, // oq3
-                    'Likert_Fitness'     => $pivoted['oq4'] ?? null, // oq4
-                    'Likert_Active'      => $pivoted['oq5'] ?? null, // oq5
-                    'Likert_Mindfulness' => $pivoted['oq6'] ?? null, // oq6
-                    'Likert_Improve_Self_Regulate' => $pivoted['oq7'] ?? null, // oq7
-                    'Likert_Improve_Concentration' => $pivoted['oq8'] ?? null, // oq8
-                    'Likert_Improve_Academic_Performance' => $pivoted['oq9'] ?? null, // oq9
-                    'Likert_Independence' => $pivoted['oq10'] ?? null, // oq10
-                    'Likert_Improve_Road_Awareness' => $pivoted['oq11'] ?? null, // oq11
-                    'Likert_Improve_Environment_Awareness' => $pivoted['oq12'] ?? null, // oq12
-                    'Likert_Help_Socialise' => $pivoted['oq13'] ?? null, // oq13
-                    'Likert_Make_Children_Happy' => $pivoted['oq14'] ?? null, // oq14
-                    'Likert_Keep_Children_Occupied' => $pivoted['oq15'] ?? null, // oq15
-                    'Likert_Encourage_Children_Outside' => $pivoted['oq16'] ?? null, // oq16
-                    'Likert_Children_Less_Dependent' => $pivoted['oq17'] ?? null, // oq17
-                    'Likert_Reduce_Other_Transport_Expense' => $pivoted['oq18'] ?? null, // oq18
-                    'Likert_Enable_Cycle_As_Family' => $pivoted['oq19'] ?? null //oq19
-                ];
-
-                $this->dwh->table('Fact_Parent_Survey')->updateOrInsert(
-                    ['Source_Survey_Id' => $survey->id],
-                    array_merge($encouragers, $likertMetrics,[
-                        'Date_Key'     => str_replace('-', '', substr($survey->created_at, 0, 10)),
-                        'Rider_Key'    => $riderKey,
-                        'Course_Key'   => $courseKey,
-                        'Delivery_Key' => $delivery->Delivery_Key,
-                        'Grant_Key'    => $delivery->Grant_Key,
-
-                        'Rider_Emotion' => $survey->rider_emotion,
-                        'Pref_More_Training' => $survey->pref_more_training,
-                        'Pref_Interest_In_Training' => $survey->pref_interest_in_training,
-                        // Store as Clean Integers (1-6)
-                        'Confidence_Bike_General' => $this->extractOptionInt('co',$survey->confidence_to_use_a_bike),
-                        'Confidence_Road'         => $this->extractOptionInt('co',$survey->confidence_to_use_bike_on_road),
-                        'Confidence_Independent'  => $this->extractOptionInt('co',$survey->confidence_to_use_bike_independently),
-
-                        // Feedback Flags
-                        'Feedback_Is_Fun'      => in_array('rfq1_rf1', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Is_Hard'      => in_array('rfq1_rf2', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Is_Healthy'  => in_array('rfq1_rf3', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Still_New'  => in_array('rfq1_rf4', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Family_Friends' => in_array('rfq1_rf5', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Dont_See_Others_Like_Me' => in_array('rfq1_rf6', $feedbackKeys) ? 1 : 0,
-                        'Feedback_On_Own'      => in_array('rfq1_rf7', $feedbackKeys) ? 1 : 0,
-                        'Feedback_Not_Enjoy'   => in_array('rfq1_rf8', $feedbackKeys) ? 1 : 0,
-                        'Feedback_None_Apply'   => in_array('rfq1_null', $feedbackKeys) ? 1 : 0,
-                        'Feedback_None_Apply_Input' => $survey->rider_feedback_input,
-
-                        //Encouragment
-                        'Encouragement_Use_Bike' => $this->extractOptionInt('eo',$survey->encouragement_to_use_a_bike),
-                        'Encouragement_Use_Bike_On_Road' => $this->extractOptionInt('eo',$survey->encouragement_to_use_bike_on_road),
-
-                        //Recommend
-                        'Likely_To_Recommend' => $survey->like_to_recommend,
-                    ])
-                );
-
-                if ($bar) $bar->advance();
-            }
-        });
+            });
 
         if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
             $highestTimestampSeen = $maxTimestamp;
