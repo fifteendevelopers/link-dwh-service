@@ -1146,9 +1146,9 @@ class DataWarehouseSyncService
                             'Confidence_Independent'  => $this->extractOptionInt('co',$survey->confidence_to_use_bike_independently),
 
                             //Frequency Flags
-                            'Frequency_School' =>$survey->frequency_usable_to_and_from_school,
-                            'Frequency_Leisure' =>$survey->frequency_usable_leisure_and_social,
-                            'Frequency_Exercise' =>$survey->frequency_usable_exercise,
+                            'Frequency_School' => $this->extractOptionInt('fo', $survey->frequency_usable_to_and_from_school),
+                            'Frequency_Leisure' => $this->extractOptionInt('fo', $survey->frequency_usable_leisure_and_social),
+                            'Frequency_Exercise' => $this->extractOptionInt('fo', $survey->frequency_usable_exercise),
 
                             //Encouragment
                             'Encouragement_Use_Bike' => $this->extractOptionInt('eo',$survey->encouragement_to_use_a_bike),
