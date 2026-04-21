@@ -323,7 +323,7 @@ class DataWarehouseSyncService
         if ($bar) $bar->start();
 
         $this->source->table('deliveries')
-            ->select('id', 'grant_id', 'school_urn', 'training_provider_id', 'status', 'date_delivery_start', 'date_delivery_end','digitisation_booking','organisation_id', 'updated_at')
+            ->select('id', 'grant_id', 'school_urn', 'training_provider_id', 'status', 'date_delivery_start', 'date_delivery_end','digitisation_booking','organisation_id', 'fleet_cycles_used', 'updated_at')
             ->where(function($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
