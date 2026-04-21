@@ -354,6 +354,7 @@ class DataWarehouseSyncService
                             'Date_Delivery_Start' => $delivery->date_delivery_start,
                             'Date_Delivery_End' => $delivery->date_delivery_end,
                             'Digitisation_Booking' => $delivery->digitisation_booking,
+                            'Fleet_Cycles_Used' => $delivery->fleet_cycles_used,
                         ]
                     );
 
