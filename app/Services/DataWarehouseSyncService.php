@@ -105,7 +105,7 @@ class DataWarehouseSyncService
 
         // 2. Chunking to avoid the memory exhaustion error
         $this->source->table('vendor_edubase')
-            ->select('id', 'urn', 'establishment_name', 'la_code', 'la_name')
+            ->select('id', 'urn', 'establishment_name', 'la_code', 'la_name', 'updated_at')
             ->orderBy('id')
             ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
                 foreach ($schools as $school) {
