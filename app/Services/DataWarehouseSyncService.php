@@ -83,18 +83,31 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
-        // 1. Get total count for the progress bar
-        $total = $this->source->table('vendor_edubase')->count();
+        $watermark = $this->dwh->table('Sync_Log')
+            ->where('Table_Name', 'Dim_School')
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+
+        // 2. Count only new or changed schools
+        $query = $this->source->table('vendor_edubase')
+            ->where('updated_at', '>', $watermark);
+
+        $total = $query->count();
+
+        if ($total === 0) {
+            return "Schools are already up to date.";
+        }
+
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
+        $highestTimestampSeen = $watermark;
         $syncCount = 0;
 
         // 2. Chunking to avoid the memory exhaustion error
         $this->source->table('vendor_edubase')
             ->select('id', 'urn', 'establishment_name', 'la_code', 'la_name')
             ->orderBy('id')
-            ->chunk(1000, function ($schools) use (&$syncCount, $sourceSystemKey, $bar) {
+            ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
                 foreach ($schools as $school) {
 
                     // Using updateOrInsert (SCD Type 1)
@@ -111,6 +124,11 @@ class DataWarehouseSyncService
                             'La_Name'     => $school->la_name
                         ]
                     );
+
+                    // Track the latest timestamp processed
+                    if ($school->updated_at > $highestTimestampSeen) {
+                        $highestTimestampSeen = $school->updated_at;
+                    }
 
                     if ($bar) $bar->advance();
                     $syncCount++;
