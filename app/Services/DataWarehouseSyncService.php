@@ -136,7 +136,7 @@ class DataWarehouseSyncService
             });
 
         $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Schools'],
+            ['Table_Name' => 'Dim_School'],
             [
                 'Last_Synced_At' => $highestTimestampSeen,
                 'Records_Processed' => $total
