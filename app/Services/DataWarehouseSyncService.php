@@ -135,6 +135,14 @@ class DataWarehouseSyncService
                 }
             });
 
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Dim_Schools'],
+            [
+                'Last_Synced_At' => $highestTimestampSeen,
+                'Records_Processed' => $total
+            ]
+        );
+
         if ($bar) { $bar->finish(); $command->newLine(); }
 
         return "Successfully synced {$syncCount} Schools (Overwritten/Updated).";
