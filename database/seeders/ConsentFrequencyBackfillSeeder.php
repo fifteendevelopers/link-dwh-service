@@ -17,7 +17,7 @@ class ConsentFrequencyBackfillSeeder extends Seeder
             ->chunk(1000, function ($consents) {
                 $sourceIds = $consents->pluck('Source_Consent_Id')->toArray();
 
-                $allFreqs = DB::connection('mysql_src')->table('cycle_frequencies')
+                $allFreqs = DB::connection('mysql_src')->table('cycle_frequency')
                     ->whereIn('consent_id', $sourceIds)
                     ->get()
                     ->groupBy('consent_id');

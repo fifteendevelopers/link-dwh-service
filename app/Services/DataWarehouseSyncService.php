@@ -646,7 +646,7 @@ class DataWarehouseSyncService
 
             $consentIds = $consents->pluck('id')->toArray();
 
-            $allFrequencies = $this->source->table('cycle_frequencies')
+            $allFrequencies = $this->source->table('cycle_frequency')
                 ->whereIn('consent_id', $consentIds)
                 ->get()
                 ->groupBy('consent_id');
