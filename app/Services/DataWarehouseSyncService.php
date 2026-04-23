@@ -643,6 +643,15 @@ class DataWarehouseSyncService
 
         // 3. Process in Chunks
         $query->chunk(1000, function ($consents) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+
+            $consentIds = $consents->pluck('id')->toArray();
+
+            $allFrequencies = $this->source->table('cycle_frequencies')
+                ->whereIn('consent_id', $consentIds)
+                ->get()
+                ->groupBy('consent_id');
+
+
             foreach ($consents as $consent) {
 
                 // Resolve Rider Key from DWH
@@ -668,12 +677,23 @@ class DataWarehouseSyncService
                     ? $consent->cycle_ability
                     : json_decode($consent->cycle_ability, true) ?? [];
 
+                $freqs = $allFrequencies->get($consent->id) ?? collect();
+
+                // Map based on the label_lookup_id (1: School, 2: Leisure, 3: Exercise, 4: Other)
+                $freqData = [
+                    'Pre_Freq_To_School' => $freqs->where('label_lookup_id', 1)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Leisure'   => $freqs->where('label_lookup_id', 2)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Exercise'  => $freqs->where('label_lookup_id', 3)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Other'     => $freqs->where('label_lookup_id', 4)->first()->grading_lookup_id ?? null,
+                ];
+
+
                 $this->dwh->table('Dim_Consent')->updateOrInsert(
                     [
                         'Source_Consent_Id' => $consent->id,
                         'Source_System_Key' => $sourceSystemKey
                     ],
-                    [
+                    array_merge($freqData, [
                         'Rider_Key'             => $riderKey,
                         'Delivery_Key'          => $deliveryKey,
                         'Consent_Status'        => $consent->consent_status,
@@ -690,7 +710,7 @@ class DataWarehouseSyncService
                         'Attended'              => $consent->attended,
                         'Gender'                => $consent->gender,
                         'Ethnicity'             => $consent->ethnicity,
-                    ]
+                    ])
                 );
 
                 // Update Watermark tracker
