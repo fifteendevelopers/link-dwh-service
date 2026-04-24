@@ -22,7 +22,7 @@ class ConsentAndDeliveryBackfillSeeder extends Seeder
 
             $sourceData = DB::connection('mysql_src')->table('consents')
                 ->whereIn('id', $sourceIds)
-                ->get(['id', 'pref_join_bikeclub', 'pref_further_research', 'pref_receive_news',
+                ->get(['id', 'pref_join_bikeability_club', 'pref_further_research', 'pref_receive_news',
                     'year_group', 'send_details', 'medical_condition_details', 'has_medical_condition'])
                 ->keyBy('id');
 
@@ -33,7 +33,7 @@ class ConsentAndDeliveryBackfillSeeder extends Seeder
                     DB::connection('mysql')->table('Dim_Consent')
                         ->where('Consent_Key', $consent->Consent_Key)
                         ->update([
-                            'Pref_Join_Bikeclub'    => (bool)$src->pref_join_bikeclub,
+                            'Pref_Join_Bikeclub'    => (bool)$src->pref_join_bikeability_club,
                             'Pref_Further_Research' => (bool)$src->pref_further_research,
                             'Pref_Receive_News'     => (bool)$src->pref_receive_news,
                             'Year_Group'            => $src->year_group,

@@ -702,7 +702,7 @@ class DataWarehouseSyncService
                         'Rider_Key'             => $riderKey,
                         'Delivery_Key'          => $deliveryKey,
                         'Consent_Status'        => $consent->consent_status,
-                        'Pref_Join_Bikeclub'     => $consent->pref_join_bikeclub,
+                        'Pref_Join_Bikeclub'     => $consent->pref_join_bikeability_club,
                         'Pref_Further_Research' => $consent->pref_further_research,
                         'Pref_Receive_News'     => $consent->pref_receive_news,
 
