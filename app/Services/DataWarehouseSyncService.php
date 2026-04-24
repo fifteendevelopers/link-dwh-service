@@ -331,7 +331,9 @@ class DataWarehouseSyncService
         if ($bar) $bar->start();
 
         $this->source->table('deliveries')
-            ->select('id', 'grant_id', 'school_urn', 'training_provider_id', 'status', 'date_delivery_start', 'date_delivery_end','digitisation_booking','organisation_id', 'fleet_cycles_used', 'updated_at')
+            ->select('id', 'grant_id', 'school_urn', 'training_provider_id',
+                'status', 'date_delivery_start', 'date_delivery_end','digitisation_booking',
+                'organisation_id', 'fleet_cycles_used','consent_cutoff_date','updated_at')
             ->where(function($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
@@ -381,6 +383,7 @@ class DataWarehouseSyncService
                             'Date_Delivery_End' => $delivery->date_delivery_end,
                             'Digitisation_Booking' => $delivery->digitisation_booking,
                             'Fleet_Cycles_Used' => $delivery->fleet_cycles_used,
+                            'Consent_Cutoff_Date' => $delivery->consent_cutoff_date,
                         ]
                     );
 
@@ -626,9 +629,11 @@ class DataWarehouseSyncService
 
         $query = $this->source->table('consents')
             ->select([
-                'id', 'rider_id', 'delivery_id', 'consent_status', 'has_bike',
-                'cycle_ability', 'is_fsm', 'is_SEND', 'has_medical_condition',
-                'attended', 'gender', 'ethnicity', 'updated_at'
+                'id', 'rider_id', 'delivery_id', 'consent_status',
+                'pref_join_bikeability_club','pref_further_research','pref_receive_news',
+                'has_bike', 'cycle_ability', 'is_fsm',
+                'is_SEND', 'send_details','has_medical_condition','medical_details',
+                'attended', 'year_group','gender', 'ethnicity', 'updated_at'
             ])
             ->where(function($q) use ($watermark) {
                 $q->where('updated_at', '>', $watermark)
@@ -697,17 +702,23 @@ class DataWarehouseSyncService
                         'Rider_Key'             => $riderKey,
                         'Delivery_Key'          => $deliveryKey,
                         'Consent_Status'        => $consent->consent_status,
+                        'Pref_Join_Bikeclub'     => $consent->pref_join_bikeclub,
+                        'Pref_Further_Research' => $consent->pref_further_research,
+                        'Pref_Receive_News'     => $consent->pref_receive_news,
 
                         // Flatten Ability Flags
                         'Ability_Cannot_Cycle'          => in_array("1", $abilities) ? 1 : 0,
                         'Ability_Can_Look_Over_Shoulder' => in_array("2", $abilities) ? 1 : 0,
                         'Ability_Can_One_Hand_Signal'   => in_array("3", $abilities) ? 1 : 0,
                         'Ability_Has_Level_2'           => in_array("4", $abilities) ? 1 : 0,
-
                         'Cycle_Ability_Raw'     => json_encode($abilities), // Normalize to JSON string
                         'Is_Pupil_premium'      => $consent->is_fsm,
                         'Is_SEND'               => $consent->is_SEND,
+                        'SEND_Details'           => $consent->send_details,
+                        'Has_Medical_Condition' => $consent->has_medical_condition,
+                        'Medical_Details'        => $consent->medical_details,
                         'Attended'              => $consent->attended,
+                        'Year_Group'             => $consent->year_group,
                         'Gender'                => $consent->gender,
                         'Ethnicity'             => $consent->ethnicity,
                     ])
