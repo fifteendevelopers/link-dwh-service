@@ -154,6 +154,17 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'fact_parent_follow_up_survey') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Parent Follow Up Survey...");
+
+            try {
+                $result = $syncService->syncFactParentFollowUpSurveys($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Parent Follow Up Survey facts: " . $e->getMessage());
+            }
+        }
+
         $this->info("[".now()->format('Y-m-d H:i:s')."] Sync Process Completed.");
     }
 }

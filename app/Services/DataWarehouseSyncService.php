@@ -1394,6 +1394,141 @@ class DataWarehouseSyncService
         return $m;
     }
 
+    public function syncFactParentFollowUpSurveys($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+
+        $watermark = $this->dwh->table('Sync_Log')
+            ->where('Table_Name', 'Fact_Follow_Up_Survey')
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+
+        $highestTimestampSeen = $watermark;
+
+        $surveys = $this->source->table('parent_follow_up_surveys')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc')->get();
+
+        $maxTimestamp = $surveys->max('updated_at');
+
+        $total = $surveys->count();
+        if ($total === 0) return 'No parent follow up surveys found.';
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+
+        foreach ($surveys as $survey) {
+
+            $data = json_decode($survey->parent_follow_up_survey, true) ?? [];
+            $label = strtolower($survey->course_label);
+
+            $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
+            $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
+            $deliveryKey = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->value('Delivery_Key');
+
+            // Mapping logic based on array position in your examples
+            $mapped = $this->mapSurveyByCourse($label, $data);
+
+            $this->dwh->table('Fact_Follow_Up_Survey')->updateOrInsert(
+                ['Source_Survey_Id' => $survey->id, 'Source_System_Key' => $sourceSystemKey],
+                array_merge($mapped, [
+                    'Delivery_Key' => $deliveryKey,
+                    'Rider_Key' => $riderKey,
+                    'Course_Key' => $courseKey,
+                    'Course_Label_Raw' => $survey->course_label,
+                    'Invitation_Month' => $survey->invitation_month,
+                    'Source_Created_At' => $survey->created_at,
+                    'updated_at' => now()
+                ])
+            );
+
+            if ($bar) $bar->advance();
+        }
+
+        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
+            $highestTimestampSeen = $maxTimestamp;
+        }
+
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Fact_Follow_Up_Survey'],
+            ['Last_Synced_At' => $highestTimestampSeen]
+        );
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Parent Follow Up survey Facts synced.";
+
+    }
+
+    private function mapSurveyByCourse($label, $data)
+    {
+        $mapped = [
+            'q1a_freq_school'   => null,
+            'q1b_freq_leisure'  => null,
+            'q1c_freq_exercise' => null,
+            'q2a_conf_use_cycle'=> null,
+            'q2b_conf_cycle_roads' => null,
+            'q3a_enc_use_cycle' => null,
+            'q3b_enc_cycle_roads' => null,
+            'q4_safety_roads'   => null,
+            'q5_child_desire'   => null,
+            'q6_encouragement_factors' => null,
+            'q7_conf_change'    => null,
+            'q8_physical_activity' => null,
+        ];
+
+        foreach ($data as $value) {
+            // Handle Multi-select (Arrays) - Usually q5 or q6 depending on level
+            if (is_array($value)) {
+                $mapped['q6_encouragement_factors'] = json_encode($value);
+                continue;
+            }
+
+            // Logic-based mapping by searching for question keys in the string
+            // We extract the "Option Code" (e.g., o1, o2) to store in the Fact table
+
+            // Frequencies (Universal q1)
+            if (str_contains($value, '_q1a_')) $mapped['q1a_freq_school'] = $this->extractOption($value);
+            if (str_contains($value, '_q1b_')) $mapped['q1b_freq_leisure'] = $this->extractOption($value);
+            if (str_contains($value, '_q1c_')) $mapped['q1c_freq_exercise'] = $this->extractOption($value);
+
+            // Confidence & Likelihood (Keys shift by Level)
+            if (str_contains($value, '_q2a_')) $mapped['q2a_conf_use_cycle'] = $this->extractOption($value);
+            if (str_contains($value, '_q2b_')) $mapped['q2b_conf_cycle_roads'] = $this->extractOption($value);
+            if (str_contains($value, '_q3a_')) $mapped['q3a_enc_use_cycle'] = $this->extractOption($value);
+            if (str_contains($value, '_q3b_')) $mapped['q3b_enc_cycle_roads'] = $this->extractOption($value);
+
+            // Safety (Level 2/3 q4)
+            if (str_contains($value, '_q4_') && !str_contains($value, '_q4a_')) {
+                $mapped['q4_safety_roads'] = $this->extractOption($value);
+            }
+
+            // Desire to use cycle (q4 for Level 1, q5 for Level 2/3)
+            if (str_contains($value, '_q4_o') || str_contains($value, '_q4a_o') || str_contains($value, '_q5_o')) {
+                // Note: We only map this if it's not the safety question
+                if (!str_contains($value, 'level_2_q4') && !str_contains($value, 'level_3_q4')) {
+                    $mapped['q5_child_desire'] = $this->extractOption($value);
+                }
+            }
+
+            // Change in Confidence (Level 2/3 q7)
+            if (str_contains($value, '_q7_')) $mapped['q7_conf_change'] = $this->extractOption($value);
+
+            // Physical Activity (q6 for Balance/L1, q8 for L2/L3)
+            if (str_contains($value, '_q6_o') || str_contains($value, '_q6a_o') || str_contains($value, '_q8_o')) {
+                $mapped['q8_physical_activity'] = $this->extractOption($value);
+            }
+        }
+
+        return $mapped;
+    }
+
+    private function extractOption($string) {
+        $parts = explode('_', $string);
+        return end($parts);
+    }
+
     /**
      * Extracts the integer from strings like "cq1_co1", "cq3_co6" or "eq3_eo6"
      * Returns null if no valid code is found.
