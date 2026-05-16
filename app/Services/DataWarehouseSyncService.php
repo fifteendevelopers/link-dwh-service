@@ -702,9 +702,9 @@ class DataWarehouseSyncService
                         'Rider_Key'             => $riderKey,
                         'Delivery_Key'          => $deliveryKey,
                         'Consent_Status'        => $consent->consent_status,
-                        'Pref_Join_Bikeclub'     => $consent->pref_join_bikeability_club,
-                        'Pref_Further_Research' => $consent->pref_further_research,
-                        'Pref_Receive_News'     => $consent->pref_receive_news,
+                        'Pref_Join_Bikeclub'     => $consent->pref_join_bikeability_club?:0,
+                        'Pref_Further_Research' => $consent->pref_further_research?:0,
+                        'Pref_Receive_News'     => $consent->pref_receive_news?:0,
 
                         // Flatten Ability Flags
                         'Ability_Cannot_Cycle'          => in_array("1", $abilities) ? 1 : 0,
@@ -712,10 +712,10 @@ class DataWarehouseSyncService
                         'Ability_Can_One_Hand_Signal'   => in_array("3", $abilities) ? 1 : 0,
                         'Ability_Has_Level_2'           => in_array("4", $abilities) ? 1 : 0,
                         'Cycle_Ability_Raw'     => json_encode($abilities), // Normalize to JSON string
-                        'Is_Pupil_premium'      => $consent->is_fsm,
-                        'Is_SEND'               => $consent->is_SEND,
+                        'Is_Pupil_premium'      => $consent->is_fsm?:0,
+                        'Is_SEND'               => $consent->is_SEND?:0,
                         'SEND_Details'           => $consent->send_details,
-                        'Has_Medical_Condition' => $consent->has_medical_condition,
+                        'Has_Medical_Condition' => $consent->has_medical_condition?:0,
                         'Medical_Details'        => $consent->medical_details,
                         'Attended'              => $consent->attended,
                         'Year_Group'             => $consent->year_group,
