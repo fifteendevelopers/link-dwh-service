@@ -143,11 +143,55 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'fact_grant_financials') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Format DFT (Financials)...");
+
+            try {
+                $result = $syncService->syncFactGrantFinancials($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Format DFT (Financials): " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_grant_reallocations') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Reallocations...");
+
+            try {
+                $result = $syncService->syncFactGrantReallocations($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Reallocations: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_grant_amendments') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Amendments...");
+
+            try {
+                $result = $syncService->syncFactGrantAmendments($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Amendments: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_grant_claims') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Claims...");
+
+            try {
+                $result = $syncService->syncFactGrantClaims($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Claims: " . $e->getMessage());
+            }
+        }
+
         if ($table === 'all' || $table === 'fact_instructor_course') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Courses...");
 
             try {
-                $result = $syncService->syncFactCourseDelivery($this);
+                $result = $syncService->syncFactInstructorCourse($this);
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Course: " . $e->getMessage());

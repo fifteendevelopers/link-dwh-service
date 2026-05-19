@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Rider;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class DataWarehouseSyncService
 {
@@ -1182,6 +1183,420 @@ class DataWarehouseSyncService
         return $m;
     }
 
+    /**
+     * Synchronize Core Allocation Matrix
+     */
+    public function syncFactGrantFinancials($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Grant Financials Sync...");
+
+        $watermark = $this->getWatermark('Fact_Grant_Financials');
+
+        $query = $this->source->table('grant_format_dft')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Grant Financials are already up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        $query->chunk(250, function ($formats) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+            foreach ($formats as $fmt) {
+                $grantKey = $this->resolveGrantKey($fmt->grant_id, $sourceSystemKey);
+                if (!$grantKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $this->dwh->table('Fact_Grant_Financials')->updateOrInsert(
+                    ['Source_Format_Id' => $fmt->id, 'Source_System_Key' => $sourceSystemKey],
+                    [
+                        'Grant_Key' => $grantKey,
+                        'Max_Allocation' => $fmt->max_allocation ?? 0.00,
+                        'Total_Levels' => $fmt->total_levels ?? 0,
+                        'Total_Plus' => $fmt->total_plus ?? 0,
+                        'Places_Level_1' => $fmt->places_level_1 ?? 0,
+                        'Grant_Level_1' => $fmt->grant_level_1 ?? 0.00,
+                        'Places_Level_1_2' => $fmt->places_level_1_2 ?? 0,
+                        'Grant_Level_1_2' => $fmt->grant_level_1_2 ?? 0.00,
+                        'Places_Level_2' => $fmt->places_level_2 ?? 0,
+                        'Grant_Level_2' => $fmt->grant_level_2 ?? 0.00,
+                        'Places_Level_3' => $fmt->places_level_3 ?? 0,
+                        'Grant_Level_3' => $fmt->grant_level_3 ?? 0.00,
+                        'Places_Plus_Balance' => $fmt->places_plus_balance ?? 0,
+                        'Grant_Plus_Balance' => $fmt->grant_plus_balance ?? 0.00,
+                        'Places_Plus_Bus' => $fmt->places_plus_bus ?? 0,
+                        'Grant_Plus_Bus' => $fmt->grant_plus_bus ?? 0.00,
+                        'Places_Plus_Fix' => $fmt->places_plus_fix ?? 0,
+                        'Grant_Plus_Fix' => $fmt->grant_plus_fix ?? 0.00,
+                        'Places_Plus_Learn' => $fmt->places_plus_learn ?? 0,
+                        'Grant_Plus_Learn' => $fmt->grant_plus_learn ?? 0.00,
+                        'Places_Plus_On_Show' => $fmt->places_plus_on_show ?? 0,
+                        'Grant_Plus_On_Show' => $fmt->grant_plus_on_show ?? 0.00,
+                        'Places_Plus_Parents' => $fmt->places_plus_parents ?? 0,
+                        'Grant_Plus_Parents' => $fmt->grant_plus_parents ?? 0.00,
+                        'Places_Plus_Promotion' => $fmt->places_plus_promotion ?? 0,
+                        'Grant_Plus_Promotion' => $fmt->grant_plus_promotion ?? 0.00,
+                        'Places_Plus_Recycled' => $fmt->places_plus_recycled ?? 0,
+                        'Grant_Plus_Recycled' => $fmt->grant_plus_recycled ?? 0.00,
+                        'Places_Plus_Ride' => $fmt->places_plus_ride ?? 0,
+                        'Grant_Plus_Ride' => $fmt->grant_plus_ride ?? 0.00,
+                        'Places_Plus_Transition' => $fmt->places_plus_transition ?? 0,
+                        'Grant_Plus_Transition' => $fmt->grant_plus_transition ?? 0.00,
+                        'Places_Plus_Family' => $fmt->places_plus_family ?? 0,
+                        'Grant_Plus_Family' => $fmt->grant_plus_family ?? 0.00,
+                        'Places_Plus_Adult' => $fmt->places_plus_adult ?? 0,
+                        'Grant_Plus_Adult' => $fmt->grant_plus_adult ?? 0.00,
+                        'Grant_Send' => $fmt->grant_send ?? 0.00,
+                        'Places_Send' => $fmt->places_send ?? 0,
+                        'Grant_Inclusion' => $fmt->grant_inclusion ?? 0.00,
+                        'Places_Inclusion' => $fmt->places_inclusion ?? 0,
+                        'updated_at' => now()
+                    ]
+                );
+
+                if ($fmt->updated_at > $highestTimestamp) $highestTimestamp = $fmt->updated_at;
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Grant_Financials', $highestTimestamp);
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+
+        return "Fact_Grant_Financials synced.";
+    }
+
+    /**
+     * Sync Reallocations (Header + Child Logs Split)
+     */
+    public function syncFactGrantReallocations($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Reallocations Sync...");
+
+        $watermark = $this->getWatermark('Fact_Grant_Reallocations');
+        $query = $this->source->table('grant_reallocations')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Reallocations are already up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        $query->chunk(250, function ($reallocs) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+            foreach ($reallocs as $ra) {
+                $grantKey = $this->resolveGrantKey($ra->grant_id, $sourceSystemKey);
+                if (!$grantKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $existingKeys = $this->dwh->table('Fact_Grant_Reallocations')
+                    ->where('Source_Reallocation_Id', $ra->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->pluck('Reallocation_Key')
+                    ->toArray();
+
+                if (count($existingKeys) > 0) {
+                    $this->dwh->table('Fact_Grant_Reallocation_Logs')->whereIn('Reallocation_Key', $existingKeys)->delete();
+                    $this->dwh->table('Fact_Grant_Reallocations')->whereIn('Reallocation_Key', $existingKeys)->delete();
+                }
+
+                $reallocationKey = $this->dwh->table('Fact_Grant_Reallocations')->insertGetId([
+                    'Grant_Key' => $grantKey,
+                    'Source_System_Key' => $sourceSystemKey,
+                    'Source_Reallocation_Id' => $ra->id,
+                    'Reallocation_Number' => $ra->reallocation_number,
+                    'Status_Raw' => $ra->status,
+                    'Date_Approved' => $ra->date_approved,
+                    'created_at' => now(), 'updated_at' => now()
+                ]);
+
+                if (!$this->sourceHasColumn('grant_reallocations', 'reallocation_log')) {
+                    $logs = $this->source->table('grant_reallocation_logs')->where('grant_reallocation_id', $ra->id)->get();
+                    foreach ($logs as $log) {
+                        $this->dwh->table('Fact_Grant_Reallocation_Logs')->insert([
+                            'Reallocation_Key' => $reallocationKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key' => $log->module_key,
+                            'Value_Count' => $log->value,
+                            'Amount' => $log->amount,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                } else {
+                    $logs = json_decode($ra->reallocation_log, true) ?? [];
+                    foreach ($logs as $key => $node) {
+                        $this->dwh->table('Fact_Grant_Reallocation_Logs')->insert([
+                            'Reallocation_Key' => $reallocationKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key' => $key,
+                            'Value_Count' => $node['value'] ?? 0,
+                            'Amount' => $node['amount'] ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                }
+
+                if ($ra->updated_at > $highestTimestamp) $highestTimestamp = $ra->updated_at;
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Grant_Reallocations', $highestTimestamp);
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+        return "Fact_Grant_Reallocations synced.";
+    }
+
+    /**
+     * Sync Amendments (Header + Child Logs Split)
+     */
+    public function syncFactGrantAmendments($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Amendments Sync...");
+
+        $watermark = $this->getWatermark('Fact_Grant_Amendments');
+        $query = $this->source->table('grant_amendments')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Amendments are already up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        $query->chunk(250, function ($amends) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+            foreach ($amends as $am) {
+                $grantKey = $this->resolveGrantKey($am->grant_id, $sourceSystemKey);
+                if (!$grantKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $existingKeys = $this->dwh->table('Fact_Grant_Amendments')
+                    ->where('Source_Amendment_Id', $am->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->pluck('Amendment_Key')
+                    ->toArray();
+
+                if (count($existingKeys) > 0) {
+                    $this->dwh->table('Fact_Grant_Amendment_Logs')->whereIn('Amendment_Key', $existingKeys)->delete();
+                    $this->dwh->table('Fact_Grant_Amendments')->whereIn('Amendment_Key', $existingKeys)->delete();
+                }
+
+                $amendmentKey = $this->dwh->table('Fact_Grant_Amendments')->insertGetId([
+                    'Grant_Key' => $grantKey,
+                    'Source_System_Key' => $sourceSystemKey,
+                    'Source_Amendment_Id' => $am->id,
+                    'Amendment_Number' => $am->amendment_number,
+                    'Status_Raw' => $am->status,
+                    'Date_Approved' => $am->date_approved,
+                    'created_at' => now(), 'updated_at' => now()
+                ]);
+
+                if (!$this->sourceHasColumn('grant_amendments', 'amendment_log')) {
+                    $logs = $this->source->table('grant_amendment_logs')->where('grant_amendment_id', $am->id)->get();
+                    foreach ($logs as $log) {
+                        $this->dwh->table('Fact_Grant_Amendment_Logs')->insert([
+                            'Amendment_Key' => $amendmentKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Type_Label' => $log->type,
+                            'Module_Key' => $log->module,
+                            'Value_Count' => $log->value,
+                            'Amount' => $log->amount,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                } else {
+                    $logs = json_decode($am->amendment_log, true) ?? [];
+                    foreach ($logs as $key => $node) {
+                        $this->dwh->table('Fact_Grant_Amendment_Logs')->insert([
+                            'Amendment_Key' => $amendmentKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Type_Label' => $node['type'] ?? null,
+                            'Module_Key' => $node['module'] ?? $key,
+                            'Value_Count' => $node['value'] ?? 0,
+                            'Amount' => $node['amount'] ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                }
+
+                if ($am->updated_at > $highestTimestamp) $highestTimestamp = $am->updated_at;
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Grant_Amendments', $highestTimestamp);
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+        return "Fact_Grant_Amendments synced.";
+    }
+
+    /**
+     * Sync Claims and all their downstream child metrics into separate dedicated buckets
+     */
+    public function syncFactGrantClaims($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Claims Sync...");
+
+        $watermark = $this->getWatermark('Fact_Grant_Claims');
+        $query = $this->source->table('grant_claims')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Claims are already up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        $query->chunk(250, function ($claims) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+            foreach ($claims as $cl) {
+                $grantKey = $this->resolveGrantKey($cl->grant_id, $sourceSystemKey);
+                if (!$grantKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $existingClaimKeys = $this->dwh->table('Fact_Grant_Claims')
+                    ->where('Source_Claim_Id', $cl->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->pluck('Claim_Key')
+                    ->toArray();
+
+                if (count($existingClaimKeys) > 0) {
+                    $this->dwh->table('Fact_Grant_Claim_Inclusions')->whereIn('Claim_Key', $existingClaimKeys)->delete();
+                    $this->dwh->table('Fact_Grant_Claim_Send_Records')->whereIn('Claim_Key', $existingClaimKeys)->delete();
+                    $this->dwh->table('Fact_Grant_Claim_Logs')->whereIn('Claim_Key', $existingClaimKeys)->delete();
+                    $this->dwh->table('Fact_Grant_Claims')->whereIn('Claim_Key', $existingClaimKeys)->delete();
+                }
+
+                $claimKey = $this->dwh->table('Fact_Grant_Claims')->insertGetId([
+                    'Grant_Key' => $grantKey,
+                    'Source_System_Key' => $sourceSystemKey,
+                    'Source_Claim_Id' => $cl->id,
+                    'Claim_Number' => $cl->claim_number,
+                    'Status_Raw' => $cl->status,
+                    'Pref_Authority_Given' => (bool)$cl->pref_authority_given,
+                    'Pref_Claim_Paid' => (bool)$cl->pref_claim_paid,
+                    'Date_Approved' => $cl->date_approved,
+                    'Delivery_On_Track_Prediction' => $cl->delivery_on_track_prediction,
+                    'Send_Claimable_Amount' => $cl->send_claimable_amount,
+                    'Inclusion_Claimable_Amount' => $cl->inclusion_claimable_amount,
+                    'created_at' => now(), 'updated_at' => now()
+                ]);
+
+                if (!$this->sourceHasColumn('grant_claims', 'claim_log')) {
+                    $logs = $this->source->table('grant_claim_logs')->where('grant_claim_id', $cl->id)->get();
+                    foreach ($logs as $log) {
+                        $this->dwh->table('Fact_Grant_Claim_Logs')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key' => $log->module_key, 'Item_Count' => $log->item_count,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                } else {
+                    $logs = json_decode($cl->claim_log, true) ?? [];
+                    foreach ($logs as $key => $count) {
+                        $this->dwh->table('Fact_Grant_Claim_Logs')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key' => $key, 'Item_Count' => $count,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                }
+
+                if (!$this->sourceHasColumn('grant_claims', 'send_records')) {
+                    $sends = $this->source->table('grant_claim_send_records')->where('grant_claim_id', $cl->id)->get();
+                    foreach ($sends as $s) {
+                        $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Send_Id_String' => $s->send_id_string,
+                            'Send_Riders_Count' => $s->send_riders,
+                            'Send_Amount' => $s->send_amount ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                } else {
+                    $sends = json_decode($cl->send_records, true) ?? [];
+                    foreach ($sends as $node) {
+                        $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Send_Id_String' => $node['id_string'] ?? 'raw',
+                            'Send_Riders_Count' => $node['riders'] ?? 0,
+                            'Send_Amount' => $node['amount'] ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                }
+
+                if (!$this->sourceHasColumn('grant_claims', 'inclusion_records')) {
+                    $inclusions = $this->source->table('grant_claim_inclusions')->where('grant_claim_id', $cl->id)->get();
+                    foreach ($inclusions as $inc) {
+                        $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Inclusion_Id_String' => $inc->inclusion_id_string,
+                            'Inclusion_Category' => $inc->inclusion_category,
+                            'Inclusion_Delivery' => $inc->inclusion_delivery,
+                            'Inclusion_Amount' => $inc->inclusion_amount ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                } else {
+                    $inclusions = json_decode($cl->inclusion_records, true) ?? [];
+                    foreach ($inclusions as $node) {
+                        $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
+                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Inclusion_Id_String' => $node['id_string'] ?? 'raw',
+                            'Inclusion_Category' => $node['category'] ?? 'N/A',
+                            'Inclusion_Delivery' => $node['delivery'] ?? null,
+                            'Inclusion_Amount' => $node['amount'] ?? 0.00,
+                            'created_at' => now(), 'updated_at' => now()
+                        ]);
+                    }
+                }
+
+                if ($cl->updated_at > $highestTimestamp) $highestTimestamp = $cl->updated_at;
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Grant_Claims', $highestTimestamp);
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+        return "Fact_Grant_Claims synced.";
+    }
     public function syncFactInstructorCourse($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -1276,10 +1691,8 @@ class DataWarehouseSyncService
 
         if (isset($bar)) $bar->finish();
 
-        if ($command) {
-            $command->newLine();
-            $command->info("[".now()."] Pivot Sync Complete. New relationships: {$newCount}, Closed relationships: {$closedCount}.");
-        }
+        return "Fact_Instructor_Course synced.";
+
     }
 
     public function syncFactParentSurvey($command = null)
@@ -1808,4 +2221,87 @@ class DataWarehouseSyncService
     {
         return $this->dwh->table('Dim_Source_System')->where('System_Name', 'link')->value('Source_System_Key');
     }
+
+    /**
+     * Resolves the last processed timestamp for a specific Data Warehouse table.
+     * Falls back to a safe historical date if no record exists.
+     *
+     * @param string $tableName
+     * @return string
+     */
+    private function getWatermark(string $tableName): string
+    {
+        return $this->dwh->table('Sync_Log')
+            ->where('Table_Name', $tableName)
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+    }
+
+    /**
+     * Updates the Sync Log tracking table with the highest timestamp processed.
+     *
+     * @param string $tableName
+     * @param string $highestTimestampSeen
+     * @return void
+     */
+    private function updateWatermark(string $tableName, string $highestTimestampSeen): void
+    {
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => $tableName],
+            [
+                'Last_Synced_At' => $highestTimestampSeen
+            ]
+        );
+    }
+
+    /**
+     * Resolves the internal DWH surrogate key for a given Source Grant ID.
+     * Returns null if the parent grant hasn't been synced yet (Referential Integrity Check).
+     *
+     * @param mixed $sourceGrantId
+     * @param int $sourceSystemKey
+     * @return int|null
+     */
+    private function resolveGrantKey($sourceGrantId, int $sourceSystemKey): ?int
+    {
+        if (!$sourceGrantId) {
+            return null;
+        }
+
+        return $this->dwh->table('Dim_Grant')
+            ->where('Source_Grant_Id', $sourceGrantId)
+            ->where('Source_System_Key', $sourceSystemKey)
+            ->value('Grant_Key');
+    }
+
+    /**
+     * Safely checks if a specific column exists on a source system table.
+     * Utilizes static caching to prevent redundant schema queries during loops.
+     *
+     * @param string $table
+     * @param string $column
+     * @return bool
+     */
+    private function sourceHasColumn(string $table, string $column): bool
+    {
+        static $schemaCache = [];
+
+        $cacheKey = "{$table}.{$column}";
+
+        // If we have already checked this table/column during this run, return the cached result
+        if (isset($schemaCache[$cacheKey])) {
+            return $schemaCache[$cacheKey];
+        }
+
+        try {
+            // Query the structural schema of the source database connection
+            $exists = Schema::connection('mysql_src')->hasColumn($table, $column);
+
+            $schemaCache[$cacheKey] = $exists;
+            return $exists;
+        } catch (\Exception $e) {
+            // Fallback to false if the network blips or structural access is restricted
+            return false;
+        }
+    }
+
 }
