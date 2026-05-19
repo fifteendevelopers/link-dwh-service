@@ -303,6 +303,119 @@ class DataWarehouseSyncService
 
         return "Successfully synced {$syncCount} Grants. ({$errorCount} orphans skipped).";
     }
+
+    public function syncInstructors($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructors Sync...");
+
+        // 1. Resolve Watermark tracking
+        $watermark = $this->dwh->table('Sync_Log')
+            ->where('Table_Name', 'Dim_Instructor')
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+
+        if ($command) $command->comment("Watermark: $watermark");
+
+        // 2. Query Source delta (including rows where updated_at might be missing)
+        $query = $this->source->table('instructors')
+            ->where(function($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhereNull('updated_at');
+            });
+
+        $total = $query->count();
+
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructors are already up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestampSeen = $watermark;
+        $syncCount = 0;
+
+        // 3. Process records via stable chunks
+        $query->orderBy('updated_at', 'asc')->chunk(500, function ($instructors) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
+            foreach ($instructors as $instructor) {
+
+                $this->dwh->table('Dim_Instructor')->updateOrInsert(
+                    [
+                        'Source_Instructor_Id' => $instructor->id,
+                        'Source_System_Key'    => $sourceSystemKey
+                    ],
+                    [
+                        'Instructor_Number' => $instructor->instructor_number,
+                        'Instructor_Type'   => $instructor->instructor_type,
+                        'First_Name'        => $instructor->first_name,
+                        'Last_Name'         => $instructor->last_name,
+                        'Email'             => $instructor->email,
+                        'Telephone'         => $instructor->telephone,
+                        'Landline'          => $instructor->landline,
+
+                        'Age_Range_Id'      => $instructor->age_range_id,
+                        'Ethnicity_Id'      => $instructor->ethnicity_id,
+                        'Gender_Id'         => $instructor->gender_id,
+                        'Title_Id'          => $instructor->title_id,
+
+                        'Address_01'        => $instructor->address_01,
+                        'Address_02'        => $instructor->address_02,
+                        'City'              => $instructor->city,
+                        'Postcode'          => $instructor->postcode,
+
+                        'Status_Raw'        => $instructor->status,
+                        'Is_Pending'        => (bool)$instructor->is_pending,
+                        'Flag_Nsi_Migrated' => (bool)$instructor->flag_nsi_migrated,
+
+                        'Pref_Receive_News'           => (bool)$instructor->pref_receive_news,
+                        'Pref_Delivering_Bikeability' => (bool)$instructor->pref_delivering_bikeability,
+                        'Pref_Delivering_Other'       => (bool)$instructor->pref_delivering_other,
+                        'Pref_Bursary_Eligibility'    => (bool)$instructor->pref_bursary_eligibility,
+                        'Has_Received_Bursary'        => (bool)$instructor->has_received_bursary,
+
+                        'Date_Registered'      => $instructor->date_registered,
+                        'Date_Renewal'         => $instructor->date_renewal,
+                        'Date_Deregistered'    => $instructor->date_deregistered,
+                        'Deregistration_Reason'=> $instructor->deregistration_reason,
+
+                        'First_Aid_Training_Complete_Date'   => $instructor->first_aid_training_complete_date,
+                        'Safeguarding_Training_Complete_Date'=> $instructor->safeguarding_training_complete_date,
+                        'Send_Training_Complete_Date'        => $instructor->send_training_complete_date,
+                        'Send_Training_Overridden'           => (bool)$instructor->send_training_overridden,
+                        'Send_Training_Certificate_Download_Date' => $instructor->send_training_certificate_download_date,
+
+                        'Account_Notes'      => $instructor->account_notes,
+                        'Source_Created_At'  => $instructor->created_at,
+                        'Source_Updated_At'  => $instructor->updated_at,
+                        'updated_at'         => now()
+                    ]
+                );
+
+                if ($instructor->updated_at > $highestTimestampSeen) {
+                    $highestTimestampSeen = $instructor->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+                $syncCount++;
+            }
+        });
+
+        // 4. Record the final Watermark state
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Dim_Instructor'],
+            [
+                'Last_Synced_At'    => $highestTimestampSeen,
+                'Records_Processed' => $syncCount
+            ]
+        );
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Successfully synced {$syncCount} Instructors.");
+    }
+
     public function syncDeliveryHeaders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -1067,6 +1180,106 @@ class DataWarehouseSyncService
             if ($cat === 'send') $m['Count_SEND'] += $val;
         }
         return $m;
+    }
+
+    public function syncFactInstructorCourse($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $now = now()->toDateTimeString();
+
+        if ($command) $command->info("[{$now}] Starting Instructor-Course Pivot Sync...");
+
+        // 1. Fetch all currently active allocations from the SOURCE database
+        // Pluck as "instructor_id-course_id" strings for instant O(1) lookups in PHP memory
+        $sourcePairs = $this->source->table('course_instructor') // replace with actual source table name
+        ->select('instructor_id', 'course_id')
+            ->get()
+            ->map(function ($row) {
+                return "{$row->instructor_id}-{$row->course_id}";
+            })
+            ->toArray();
+
+        // 2. Fetch all rows the DWH currently considers active
+        $dwhActiveRows = $this->dwh->table('Fact_Instructor_Course')
+            ->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
+            ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key')
+            ->where('Fact_Instructor_Course.Is_Current', 1)
+            ->where('Fact_Instructor_Course.Source_System_Key', $sourceSystemKey)
+            ->select([
+                'Fact_Instructor_Course.Instructor_Course_Key',
+                'Dim_Instructor.Source_Instructor_Id',
+                'Dim_Course.Source_Course_Id'
+            ])
+            ->get();
+
+        $dwhActivePairs = [];
+        foreach ($dwhActiveRows as $row) {
+            $dwhActivePairs["{$row->Source_Instructor_Id}-{$row->Source_Course_Id}"] = $row->Instructor_Course_Key;
+        }
+
+        // Detect Removals (Relationship disappeared) ---
+        // If it's active in DWH but missing from Source, it was deleted. Close it off.
+        $closedCount = 0;
+        foreach ($dwhActivePairs as $pairStr => $dwhKey) {
+            if (!in_array($pairStr, $sourcePairs)) {
+                $this->dwh->table('Fact_Instructor_Course')
+                    ->where('Instructor_Course_Key', $dwhKey)
+                    ->update([
+                        'Active_To'  => $now,
+                        'Is_Current' => 0
+                    ]);
+                $closedCount++;
+            }
+        }
+
+        // Detect additions (New Relationship)
+        // If it's in Source but missing from DWH active list, it's brand new.
+        $newCount = 0;
+
+        // Process additions in chunks of source array keys to handle memory safely
+        $pairsToInsert = array_diff($sourcePairs, array_keys($dwhActivePairs));
+
+        if ($command && count($pairsToInsert) > 0) {
+            $bar = $command->getOutput()->createProgressBar(count($pairsToInsert));
+            $bar->start();
+        }
+
+        foreach ($pairsToInsert as $pairStr) {
+            [$sourceInstructorId, $sourceCourseId] = explode('-', $pairStr);
+
+            // Resolve DWH Dimension keys safely
+            $instructorKey = $this->dwh->table('Dim_Instructor')
+                ->where('Source_Instructor_Id', $sourceInstructorId)
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->value('Instructor_Key');
+
+            $courseKey = $this->dwh->table('Dim_Course')
+                ->where('Source_Course_Id', $sourceCourseId)
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->value('Course_Key');
+
+            // If dimensions match, write the open-ended active row
+            if ($instructorKey && $courseKey) {
+                $this->dwh->table('Fact_Instructor_Course')->insert([
+                    'Instructor_Key'    => $instructorKey,
+                    'Course_Key'        => $courseKey,
+                    'Source_System_Key' => $sourceSystemKey,
+                    'Active_From'       => $now,
+                    'Active_To'         => null,
+                    'Is_Current'        => 1
+                ]);
+                $newCount++;
+            }
+
+            if (isset($bar)) $bar->advance();
+        }
+
+        if (isset($bar)) $bar->finish();
+
+        if ($command) {
+            $command->newLine();
+            $command->info("[".now()."] Pivot Sync Complete. New relationships: {$newCount}, Closed relationships: {$closedCount}.");
+        }
     }
 
     public function syncFactParentSurvey($command = null)

@@ -86,6 +86,17 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'instructors') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Instructors...");
+
+            try {
+                $result = $syncService->syncInstructors($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructors: " . $e->getMessage());
+            }
+        }
+
         if ($table === 'all' || $table === 'deliveries') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing deliveries...");
 
@@ -129,6 +140,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Deliveries: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_instructor_course') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Courses...");
+
+            try {
+                $result = $syncService->syncFactCourseDelivery($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Course: " . $e->getMessage());
             }
         }
 
