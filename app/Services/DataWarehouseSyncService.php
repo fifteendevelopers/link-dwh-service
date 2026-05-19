@@ -1606,7 +1606,7 @@ class DataWarehouseSyncService
 
         // 1. Fetch all currently active allocations from the SOURCE database
         // Pluck as "instructor_id-course_id" strings for instant O(1) lookups in PHP memory
-        $sourcePairs = $this->source->table('course_instructor') // replace with actual source table name
+        $sourcePairs = $this->source->table('join_instructors_courses') // replace with actual source table name
         ->select('instructor_id', 'course_id')
             ->get()
             ->map(function ($row) {
