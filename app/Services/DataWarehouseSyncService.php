@@ -1597,6 +1597,83 @@ class DataWarehouseSyncService
         if ($bar) { $bar->finish(); $command->newLine(); }
         return "Fact_Grant_Claims synced.";
     }
+
+    public function syncFactInstructorDeliveries($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor-Deliveries Sync...");
+
+        // 1. Resolve Watermark
+        $watermark = $this->getWatermark('Fact_Instructor_Delivery');
+
+        // 2. Query Source delta (including soft deleted rows so we sync the deletion status)
+        $query = $this->source->table('join_deliveries_instructors')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructor-Deliveries are up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestampSeen = $watermark;
+
+        // 3. Process Chunk Loop
+        $query->chunk(500, function ($allocations) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+            foreach ($allocations as $alloc) {
+
+                // Resolve DWH Keys securely from parent dimensions
+                $deliveryKey = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Source_Delivery_Id', $alloc->delivery_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Delivery_Key');
+
+                $instructorKey = $this->dwh->table('Dim_Instructor')
+                    ->where('Source_Instructor_Id', $alloc->instructor_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Instructor_Key');
+
+                // Enforce referential data integrity
+                if (!$deliveryKey || !$instructorKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $this->dwh->table('Fact_Instructor_Delivery')->updateOrInsert(
+                    [
+                        'Delivery_Key'      => $deliveryKey,
+                        'Instructor_Key'    => $instructorKey,
+                        'Source_System_Key' => $sourceSystemKey
+                    ],
+                    [
+                        'Instructor_Notified'=> (bool)$alloc->instructor_notified,
+                        'Source_Created_At'  => $alloc->created_at,
+                        'Source_Updated_At'  => $alloc->updated_at,
+                        'Source_Deleted_At'  => $alloc->deleted_at,
+                        'updated_at'         => now()
+                    ]
+                );
+
+                if ($alloc->updated_at > $highestTimestampSeen) {
+                    $highestTimestampSeen = $alloc->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+            }
+        });
+
+        // 4. Record safe watermark state
+        $this->updateWatermark('Fact_Instructor_Delivery', $highestTimestampSeen);
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+        return "Fact_Instructor_Delivery synced.";
+
+    }
+
     public function syncFactInstructorCourse($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
