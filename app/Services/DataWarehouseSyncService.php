@@ -1325,6 +1325,9 @@ class DataWarehouseSyncService
                     'Reallocation_Number' => $ra->reallocation_number,
                     'Status_Raw' => $ra->status,
                     'Date_Approved' => $ra->date_approved,
+                    'Reallocation_Type'             => $ra->reallocation_type,
+                    'Reallocation_Notes'            => $ra->reallocation_notes,
+                    'Reallocation_Increase_Reasons' => $ra->reallocation_increase_reasons,
                     'created_at' => now(), 'updated_at' => now()
                 ]);
 
