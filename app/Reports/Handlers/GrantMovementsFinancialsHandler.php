@@ -54,10 +54,10 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
             'gr.Recipient_Name as Grant Recipient',
             DB::raw("CASE WHEN gr.Is_SGO = 1 THEN 'SGO' ELSE '' END as 'SGO Status'"),
             'f.Reallocation_Number as Funding Change Number',
-            DB::raw("CONCAT(UPPER(LEFT(f.reallocation_type, 1)), SUBSTRING(f.reallocation_type, 2)) as 'Funding Change Type'"),
-            'f.status as Funding Change Status',
-            'f.reallocation_notes as Notes',
-            'f.reallocation_increase_reasons as Reasons for Increase',
+            DB::raw("CONCAT(UPPER(LEFT(f.Reallocation_Type, 1)), SUBSTRING(f.Reallocation_Type, 2)) as 'Funding Change Type'"),
+            'f.Status_Raw as Funding Change Status',
+            'f.Reallocation_Notes as Notes',
+            'f.Reallocation_Increase_Reasons as Reasons for Increase',
             DB::raw("DATE_FORMAT(f.created_at, '%d/%m/%Y') as 'Created Date'"),
             DB::raw("DATE_FORMAT(f.date_approved, '%d/%m/%Y') as 'Approval Date'"),
             DB::raw("'' as 'Spacer'")
@@ -70,13 +70,13 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
         }
 
         $query = DB::connection('mysql')->table('Fact_Grant_Reallocations as f')
-            ->join('Dim_Grant as g', 'f.grant_id', '=', 'g.Source_Grant_Id')
+            ->join('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
             ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             // Join onto your brand new normalized child table
             // Note: If your parent table PK uses f.Reallocation_Key instead of f.id, swap 'f.id' to match
-            ->leftJoin('Fact_Grant_Reallocation_Logs as rl', 'f.id', '=', 'rl.Reallocation_Key')
+            ->leftJoin('Fact_Grant_Reallocation_Logs as rl', 'f.Reallocation_Key', '=', 'rl.Reallocation_Key')
             ->select($selectFields)
-            ->where('f.status', 1);
+            ->where('f.Status_Raw', 1);
 
         // --- Contextual Parameter Dynamic Filtering ---
         if (isset($params['grant_source']) && $params['grant_source'] !== '' && $params['grant_source'] !== null) {
@@ -96,15 +96,15 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
             'g.Grant_Number',
             'g.Grant_Source',
             'gr.Recipient_Name',
-            'gr.pref_sgoh',
-            'f.id',
-            'f.reallocation_number',
-            'f.reallocation_type',
-            'f.status',
-            'f.reallocation_notes',
-            'f.reallocation_increase_reasons',
+            'gr.Is_SGO',
+            'f.Source_Reallocation_Id',
+            'f.Reallocation_Number',
+            'f.Reallocation_Type',
+            'f.Status_Raw',
+            'f.Reallocation_Notes',
+            'f.Reallocation_Increase_Reasons',
             'f.created_at',
-            'f.date_approved'
+            'f.Date_Approved'
         ]);
 
         return $query->orderBy('g.Grant_Number')
