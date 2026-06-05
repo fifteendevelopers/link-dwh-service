@@ -21,7 +21,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('dim_delivery_Header', function (Blueprint $table) {
+        Schema::table('Dim_Delivery_Header', function (Blueprint $table) {
             $table->dropColumn('Consent_Cutoff_Date');
         });
     }
