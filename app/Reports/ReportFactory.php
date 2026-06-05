@@ -8,6 +8,7 @@ use App\Reports\Handlers\DeliveriesPerGrantRecipientHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
 use App\Reports\Handlers\InstructorsDeliveriesAllocationHandler;
+use App\Reports\Handlers\PostCourseSurveyHandler;
 use App\Reports\Handlers\PreCourseCycleFrequencyHandler;
 use App\Reports\Handlers\PreCourseFrequencyHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
@@ -28,6 +29,7 @@ class ReportFactory
         'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
         'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
+        'post-course-survey'                => PostCourseSurveyHandler::class,
     ];
 
     /**
