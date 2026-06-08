@@ -20,6 +20,17 @@ class SyncToDataWarehouse extends Command
 
         // Starting with Training Providers only
         // TODO: Add other Dimensions and Facts for sync process
+        if ($table === 'all' || $table === 'external_systems') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing External Systems...");
+
+            try {
+                $result = $syncService->syncExternalSystems($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync External Systems: " . $e->getMessage());
+            }
+        }
+
         if ($table === 'all' || $table === 'providers') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Training Providers...");
 
@@ -187,17 +198,6 @@ class SyncToDataWarehouse extends Command
             }
         }
 
-        if ($table === 'all' || $table === 'fact_instructor_delivery') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Deliveries...");
-
-            try {
-                $result = $syncService->syncFactInstructorDeliveries($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Deliveries: " . $e->getMessage());
-            }
-        }
-
         if ($table === 'all' || $table === 'fact_instructor_course') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Courses...");
 
@@ -206,6 +206,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Course: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_instructor_delivery') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Deliveries...");
+
+            try {
+                $result = $syncService->syncFactInstructorDeliveries($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Deliveries: " . $e->getMessage());
             }
         }
 

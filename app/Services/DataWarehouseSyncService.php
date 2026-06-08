@@ -18,6 +18,42 @@ class DataWarehouseSyncService
         $this->source = DB::connection('mysql_src');
     }
 
+    public function syncExternalSystems($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $sourceExtSystems = $this->source->table('external_systems')->get();
+
+        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceExtSystems)) : null;
+        if ($bar) $bar->start();
+
+        foreach ($sourceExtSystems as $sys) {
+            // Prepare the incoming data
+            $incomingData = [
+                'Username'                  => $sys->username,
+                'Name'                      => $sys->name,
+                'Pref_Link_Managed_Consent' => $sys->pref_link_managed_consent,
+                'Pref_Use_Instructor_App'   => $sys->pref_use_instructor_app,
+                'Pref_Link_Managed_Comms'   => $sys->pref_link_managed_comms,
+                'created_at'                => $sys->created_at ?? now(),
+                'updated_at'                => $sys->updated_at ?? now(),
+            ];
+
+            $this->dwh->table('Dim_External_Systems')->updateOrInsert(
+                [
+                    'Source_External_System_Id' => $sys->id,
+                    'Source_System_Key'      => $sourceSystemKey
+                ],
+                $incomingData
+            );
+
+            if ($bar) $bar->advance();
+        }
+
+        if ($bar) { $bar->finish(); $command->newLine(); }
+
+        return "Successfully synced External Systems.";
+    }
+
     public function syncTrainingProviders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -481,6 +517,13 @@ class DataWarehouseSyncService
                         ->where('Is_Current', 1)
                         ->value('Provider_Key');
 
+                    $externalSystemKey = null;
+                    if (!empty($delivery->external_system_id)) {
+                        $externalSystemKey = DB::connection('mysql')->table('Dim_External_Systems')
+                            ->where('Source_External_System_Id', $delivery->external_system_id)
+                            ->value('External_System_Key');
+                    }
+
                     // Upsert the Delivery Header data
                     $this->dwh->table('Dim_Delivery_Header')->updateOrInsert(
                         [
@@ -492,12 +535,29 @@ class DataWarehouseSyncService
                             'School_Key'      => $schoolKey,
                             'Organisation_Key'=> $organisationKey,
                             'Training_Provider_Key'    => $providerKey,
+                            'External_System_Key'           => $externalSystemKey,
                             'Delivery_Status' => $this->mapDeliveryStatus($delivery->status),
                             'Date_Delivery_Start' => $delivery->date_delivery_start,
                             'Date_Delivery_End' => $delivery->date_delivery_end,
                             'Digitisation_Booking' => $delivery->digitisation_booking,
                             'Fleet_Cycles_Used' => $delivery->fleet_cycles_used,
                             'Consent_Cutoff_Date' => $delivery->consent_cutoff_date,
+                            'Pref_Alt_Delivery_Location'    => $delivery->pref_alt_delivery_location,
+                            'Alt_Delivery_Location'         => $delivery->alt_delivery_location,
+                            'Notes'                         => $delivery->notes,
+                            'Instructor_General_Notes'      => $delivery->instructor_general_notes,
+                            'Teacher_Notes'                 => $delivery->teacher_notes,
+                            'School_Contacts'               => $delivery->school_contacts, // Laravel passes as string, MySQL writes to JSON
+                            'Venue'                         => $delivery->venue,
+                            'Provider_Additional_Questions' => $delivery->provider_additional_questions,
+                            'Comms_Start_Date'              => $delivery->comms_start_date,
+                            'Date_Completed'                => $delivery->date_completed,
+                            'Pref_Link_Managed_Consent'     => $delivery->pref_link_managed_consent,
+                            'Include_Tp_Terms_In_Consent'   => $delivery->include_tp_terms_in_consent,
+                            'Consent_Src_Characteristics'   => $delivery->consent_src_characteristics,
+                            'Max_Consents'                  => $delivery->max_consents,
+                            'Waiting_List_Enabled'          => $delivery->waiting_list_enabled,
+                            'updated_at'                    => now()
                         ]
                     );
 
