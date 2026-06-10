@@ -9,13 +9,14 @@ use Illuminate\Support\Facades\Validator;
 class TpHandsUpSurveyHandler implements ReportHandlerInterface
 {
     /**
-     * Define and validate optional parameters for the Hands Up Survey report.
+     * Define and validate acceptable parameters for the Hands Up Survey report.
      */
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
             'provider_id' => 'nullable|integer',
             'delivery_id' => 'nullable|integer',
+            'year'        => 'nullable|integer|digits:4', // ✅ Accept a 4-digit financial start year (e.g., 2026)
         ])->validate();
     }
 
@@ -24,7 +25,7 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
      */
     public function execute(array $params): array
     {
-        // Allocate an isolated memory expansion block for this specific processing sequence
+        // Allocate an isolated memory expansion block for this processing sequence
         ini_set('memory_limit', '1024M');
         ini_set('max_execution_time', '300');
 
@@ -49,6 +50,17 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
                 'f.Conf_More as More Confident',
                 'f.Conf_Less as Less Confident'
             ]);
+
+        // 📅 --- Financial Year Date Range Calculator Layer ---
+        if (isset($params['year']) && $params['year'] !== '' && $params['year'] !== null) {
+            $startYear = (int) $params['year'];
+
+            // Porting logic: From April 1st of start year to March 31st of next year
+            $dateFrom = $startYear . '-04-01';
+            $dateTo   = ($startYear + 1) . '-03-31';
+
+            $query->whereBetween('dh.Date_Delivery_Start', [$dateFrom, $dateTo]);
+        }
 
         // Strict Parameter Checks to dynamically filter without clipping arrays on nulls
         if (isset($params['provider_id']) && $params['provider_id'] !== '' && $params['provider_id'] !== null) {
