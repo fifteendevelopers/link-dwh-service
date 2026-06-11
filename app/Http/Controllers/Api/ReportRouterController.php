@@ -4,6 +4,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\StreamReportToCallbackJob;
 use App\Reports\ReportFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -15,8 +16,10 @@ class ReportRouterController extends Controller
     {
         // 1. Validate the primary wrapper payload structure
         $wrapperValidator = Validator::make($request->all(), [
-            'report_key' => 'required|string',
-            'parameters' => 'present|array'
+            'report_key'    => 'required|string',
+            'parameters'    => 'present|array',
+            'callback_url'  => 'nullable|url',
+            'job_id'        => 'nullable|integer'
         ]);
 
         if ($wrapperValidator->fails()) {
@@ -27,19 +30,36 @@ class ReportRouterController extends Controller
             ], 422);
         }
 
+        $reportKey   = $request->input('report_key');
+        $parameters  = $request->input('parameters');
+        $callbackUrl = $request->input('callback_url');
+        $jobId       = $request->input('job_id');
+
         try {
             // 2. Resolve the concrete reporting handler class
-            $handler = ReportFactory::make($request->input('report_key'));
+            $handler = ReportFactory::make($reportKey);
 
             // 3. Enforce report-specific parameter validation rules (dates, IDs, etc.)
             $validatedParams = $handler->validate($request->input('parameters'));
+
+            if (!empty($callbackUrl)) {
+                // Offload the entire handler processing execution task to the queue workers
+                StreamReportToCallbackJob::dispatch($reportKey, $validatedParams, $callbackUrl, $jobId);
+
+                return response()->json([
+                    'success'    => true,
+                    'status'     => 'accepted',
+                    'job_uuid'   => $jobId,
+                    'message'    => 'The report generation sequence has been safely deferred to background data stream processing workers.'
+                ], 202);
+            }
 
             // 4. Run the query on the DWH connection
             $reportData = $handler->execute($validatedParams);
 
             return response()->json([
                 'success'     => true,
-                'report_key'  => $request->input('report_key'),
+                'report_key'  => $reportKey,
                 'row_count'   => count($reportData),
                 'data'        => $reportData
             ], 200);

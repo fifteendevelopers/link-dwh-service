@@ -6,12 +6,24 @@ namespace App\Reports\Handlers;
 use App\Reports\Contracts\ReportHandlerInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Http;
 
 class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
 {
+    protected ?string $callbackUrl = null;
+    protected ?string $jobId = null;
+
+    /**
+     * Set properties when invoked through an async background context loop
+     */
+    public function setAsyncProperties(string $callbackUrl, ?string $jobId): void
+    {
+        $this->callbackUrl = $callbackUrl;
+        $this->jobId       = $jobId;
+    }
+
     public function validate(array $parameters): array
     {
-        // Enforce validations unique to this specific report output
         return Validator::make($parameters, [
             'grant_id'    => 'nullable|integer',
             'provider_id' => 'nullable|integer',
@@ -22,7 +34,9 @@ class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
 
     public function execute(array $params): array
     {
-        // Build the base report query explicitly against the DWH mysql write connection
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', '0');
+
         $query = DB::connection('mysql')->table('Dim_Consent as dc')
             ->join('Dim_Rider as r', 'dc.Rider_Key', '=', 'r.Rider_Key')
             ->join('Dim_Delivery_Header as dh', 'dc.Delivery_Key', '=', 'dh.Delivery_Key')
@@ -32,44 +46,85 @@ class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
-                'g.Grant_Number as Grant Number',
-                'g.Grant_Source as Grant Source',
-                'gr.Recipient_Name as Grant Recipient',
-                'dh.Source_Delivery_Id as Delivery ID',
-                'tp.Provider_Name as Training Provider',
-                DB::raw("COALESCE(s.School_Name, o.Organisation_Name, 'N/A') as 'School/Organisation'"),
-                'r.Source_Rider_Id as Rider ID',
-                'dc.Year_Group as Year Group',
-                DB::raw("DATE_FORMAT(dh.Consent_Cutoff_Date, '%d/%m/%Y') as 'Consent Cutoff Date'"),
-
-                // Frequency Code Mappings
-                DB::raw("CASE dc.Pre_Freq_To_School
-                    WHEN 5 THEN 'Not applicable' WHEN 6 THEN 'Never' WHEN 7 THEN 'Less than once a month'
-                    WHEN 8 THEN 'Once or twice a month' WHEN 9 THEN 'One to three days a week'
-                    WHEN 10 THEN 'Four or more days a week' ELSE 'Not Provided' END as 'Frequency: To/From School'"),
-
-                DB::raw("CASE dc.Pre_Freq_Leisure
-                    WHEN 5 THEN 'Not applicable' WHEN 6 THEN 'Never' WHEN 7 THEN 'Less than once a month'
-                    WHEN 8 THEN 'Once or twice a month' WHEN 9 THEN 'One to three days a week'
-                    WHEN 10 THEN 'Four or more days a week' ELSE 'Not Provided' END as 'Frequency: Leisure'"),
+                'g.Grant_Number', 'g.Grant_Source', 'gr.Recipient_Name', 'dh.Source_Delivery_Id',
+                'tp.Provider_Name', 'r.Source_Rider_Id', 'dc.Year_Group', 'dh.Consent_Cutoff_Date',
+                'dc.Pre_Freq_To_School', 'dc.Pre_Freq_Leisure', 'dc.Pre_Freq_Exercise', 'dc.Pre_Freq_Other',
+                DB::raw("COALESCE(s.School_Name, o.Organisation_Name, 'N/A') as School_Org")
             ])
-            ->where('dc.Consent_Status', 'Approved');
+            ->where('dc.Consent_Status', 1);
 
-        // Apply Dynamic Request Parameter Filters conditionally
-        if (!empty($params['grant_id'])) {
-            $query->where('g.Source_Grant_Id', $params['grant_id']);
-        }
-        if (!empty($params['provider_id'])) {
-            $query->where('tp.Source_Provider_Id', $params['provider_id']);
-        }
-        if (!empty($params['start_date'])) {
-            $query->where('dh.Consent_Cutoff_Date', '>=', $params['start_date']);
-        }
-        if (!empty($params['end_date'])) {
-            $query->where('dh.Consent_Cutoff_Date', '<=', $params['end_date']);
+        if (!empty($params['grant_id']))    $query->where('g.Source_Grant_Id', $params['grant_id']);
+        if (!empty($params['provider_id'])) $query->where('tp.Source_Provider_Id', $params['provider_id']);
+        if (!empty($params['start_date']))  $query->where('dh.Consent_Cutoff_Date', '>=', $params['start_date']);
+        if (!empty($params['end_date']))    $query->where('dh.Consent_Cutoff_Date', '<=', $params['end_date']);
+
+        $query->orderBy('g.Grant_Number')->orderBy('dh.Source_Delivery_Id');
+
+        // If running synchronously (no callback), fall back to returning raw data array safely
+        if (empty($this->callbackUrl)) {
+            return $query->get()->toArray();
         }
 
-        // Return a clean array list of key-value maps
-        return $query->orderBy('g.Grant_Number')->orderBy('dh.Source_Delivery_Id')->get()->toArray();
+        // 🚀 STREAMING ENGINE FLOW
+        $records = $query->lazy();
+        $batch = [];
+        $batchSize = 5000;
+
+        foreach ($records as $row) {
+            $batch[] = [
+                'grant_number'      => $row->Grant_Number,
+                'grant_source'      => $row->Grant_Source,
+                'grant_recipient'   => $row->Recipient_Name,
+                'delivery_id'       => $row->Source_Delivery_Id,
+                'training_provider' => $row->Provider_Name,
+                'school_org'        => $row->School_Org,
+                'rider_id'          => $row->Source_Rider_Id,
+                'year_group'        => $row->Year_Group,
+                'consent_cutoff'    => !empty($row->Consent_Cutoff_Date) ? date('d/m/Y', strtotime($row->Consent_Cutoff_Date)) : null,
+                'freq_to_school'    => $this->translateFreq($row->Pre_Freq_To_School),
+                'freq_leisure'      => $this->translateFreq($row->Pre_Freq_Leisure),
+                'freq_exercise'     => $this->translateFreq($row->Pre_Freq_Exercise),
+                'freq_other'        => $this->translateFreq($row->Pre_Freq_Other),
+            ];
+
+            if (count($batch) >= $batchSize) {
+                $this->dispatchBatchToSourceSystem($batch, false);
+                $batch = [];
+            }
+        }
+
+        // Send remaining records and stamp EOF flag to true 🏁
+        $this->dispatchBatchToSourceSystem($batch, true);
+
+        return ['status' => 'async_completed'];
+    }
+
+    private function dispatchBatchToSourceSystem(array $payload, bool $isFinal): void
+    {
+        if (empty($payload) && !$isFinal) return;
+
+//        Http::withHeaders([
+//            'X-Report-Job-ID' => $this->jobId ?? 'anonymous',
+//            'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false'
+//        ])->post($this->callbackUrl, [
+//            'data' => $payload
+//        ]);
+        Http::withoutVerifying()
+            ->withHeaders([
+                'X-Report-Job-ID' => $this->jobId ?? 0,
+                'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false'
+            ])
+            ->post($this->callbackUrl, [
+                'data' => $payload
+            ]);
+    }
+
+    private function translateFreq($val): string
+    {
+        return match ((int) $val) {
+            5 => 'Not applicable', 6 => 'Never', 7 => 'Less than once a month',
+            8 => 'Once or twice a month', 9 => 'One to three days a week',
+            10 => 'Four or more days a week', default => 'Not Provided'
+        };
     }
 }
