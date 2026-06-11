@@ -1,0 +1,5405 @@
+{
+  "name": "link-dwh",
+  "tables": [
+    {
+      "name": "cache",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "key",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "value",
+          "type": "mediumtext",
+          "nullable": false
+        },
+        {
+          "name": "expiration",
+          "type": "int",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "cache_expiration_index",
+          "def": "KEY cache_expiration_index (expiration) USING BTREE",
+          "table": "cache",
+          "columns": [
+            "expiration"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (key) USING BTREE",
+          "table": "cache",
+          "columns": [
+            "key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (key)",
+          "table": "cache",
+          "columns": [
+            "key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `cache` (\n  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `value` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "cache_locks",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "key",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "owner",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "expiration",
+          "type": "int",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "cache_locks_expiration_index",
+          "def": "KEY cache_locks_expiration_index (expiration) USING BTREE",
+          "table": "cache_locks",
+          "columns": [
+            "expiration"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (key) USING BTREE",
+          "table": "cache_locks",
+          "columns": [
+            "key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (key)",
+          "table": "cache_locks",
+          "columns": [
+            "key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `cache_locks` (\n  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `owner` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_locks_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Consent",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Consent_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Consent_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Rider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Consent_Status",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Pref_Join_Bikeclub",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Further_Research",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Receive_News",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Has_Bike",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Ability_Cannot_Cycle",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0",
+          "comment": "1: My child cannot yet cycle"
+        },
+        {
+          "name": "Ability_Can_Look_Over_Shoulder",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0",
+          "comment": "2: Can look over shoulder"
+        },
+        {
+          "name": "Ability_Can_One_Hand_Signal",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0",
+          "comment": "3: Can signal with one hand"
+        },
+        {
+          "name": "Ability_Has_Level_2",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0",
+          "comment": "4: Already completed Level 2"
+        },
+        {
+          "name": "Cycle_Ability_Raw",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Is_Pupil_Premium",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Is_SEND",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "SEND_Details",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Has_Medical_Condition",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Medical_Details",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Attended",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Year_Group",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "Gender",
+          "type": "varchar(50)",
+          "nullable": true
+        },
+        {
+          "name": "Ethnicity",
+          "type": "varchar(100)",
+          "nullable": true
+        },
+        {
+          "name": "Pre_Freq_To_School",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Pre_Freq_Leisure",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Pre_Freq_Exercise",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Pre_Freq_Other",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_consent_delivery_key_foreign",
+          "def": "KEY dim_consent_delivery_key_foreign (Delivery_Key) USING BTREE",
+          "table": "Dim_Consent",
+          "columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "dim_consent_rider_key_foreign",
+          "def": "KEY dim_consent_rider_key_foreign (Rider_Key) USING BTREE",
+          "table": "Dim_Consent",
+          "columns": [
+            "Rider_Key"
+          ]
+        },
+        {
+          "name": "dim_consent_source_system_key_foreign",
+          "def": "KEY dim_consent_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Consent",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_consent_source",
+          "def": "KEY idx_consent_source (Source_Consent_Id) USING BTREE",
+          "table": "Dim_Consent",
+          "columns": [
+            "Source_Consent_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Consent_Key) USING BTREE",
+          "table": "Dim_Consent",
+          "columns": [
+            "Consent_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_consent_delivery_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)",
+          "table": "Dim_Consent",
+          "referenced_table": "Dim_Delivery_Header",
+          "columns": [
+            "Delivery_Key"
+          ],
+          "referenced_columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "dim_consent_rider_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Rider_Key) REFERENCES Dim_Rider (Rider_Key)",
+          "table": "Dim_Consent",
+          "referenced_table": "Dim_Rider",
+          "columns": [
+            "Rider_Key"
+          ],
+          "referenced_columns": [
+            "Rider_Key"
+          ]
+        },
+        {
+          "name": "dim_consent_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Consent",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Consent_Key)",
+          "table": "Dim_Consent",
+          "columns": [
+            "Consent_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Consent` (\n  `Consent_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Consent_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Rider_Key` bigint unsigned NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Consent_Status` tinyint DEFAULT NULL,\n  `Pref_Join_Bikeclub` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Further_Research` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Receive_News` tinyint(1) NOT NULL DEFAULT '0',\n  `Has_Bike` tinyint DEFAULT NULL,\n  `Ability_Cannot_Cycle` tinyint NOT NULL DEFAULT '0' COMMENT '1: My child cannot yet cycle',\n  `Ability_Can_Look_Over_Shoulder` tinyint NOT NULL DEFAULT '0' COMMENT '2: Can look over shoulder',\n  `Ability_Can_One_Hand_Signal` tinyint NOT NULL DEFAULT '0' COMMENT '3: Can signal with one hand',\n  `Ability_Has_Level_2` tinyint NOT NULL DEFAULT '0' COMMENT '4: Already completed Level 2',\n  `Cycle_Ability_Raw` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Is_Pupil_Premium` tinyint DEFAULT NULL,\n  `Is_SEND` tinyint DEFAULT NULL,\n  `SEND_Details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Has_Medical_Condition` tinyint DEFAULT NULL,\n  `Medical_Details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Attended` tinyint NOT NULL DEFAULT '1',\n  `Year_Group` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Gender` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Ethnicity` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Pre_Freq_To_School` int DEFAULT NULL,\n  `Pre_Freq_Leisure` int DEFAULT NULL,\n  `Pre_Freq_Exercise` int DEFAULT NULL,\n  `Pre_Freq_Other` int DEFAULT NULL,\n  PRIMARY KEY (`Consent_Key`),\n  KEY `dim_consent_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_consent_rider_key_foreign` (`Rider_Key`),\n  KEY `dim_consent_delivery_key_foreign` (`Delivery_Key`),\n  KEY `idx_consent_source` (`Source_Consent_Id`),\n  CONSTRAINT `dim_consent_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `dim_consent_rider_key_foreign` FOREIGN KEY (`Rider_Key`) REFERENCES `Dim_Rider` (`Rider_Key`),\n  CONSTRAINT `dim_consent_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Course",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Course_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Level",
+          "type": "varchar(45)",
+          "nullable": false
+        },
+        {
+          "name": "Status",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Start_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Complete",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Year_Group",
+          "type": "varchar(45)",
+          "nullable": true
+        },
+        {
+          "name": "Parent_Course_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_course_delivery_key_foreign",
+          "def": "KEY dim_course_delivery_key_foreign (Delivery_Key) USING BTREE",
+          "table": "Dim_Course",
+          "columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "dim_course_parent_course_key_foreign",
+          "def": "KEY dim_course_parent_course_key_foreign (Parent_Course_Key) USING BTREE",
+          "table": "Dim_Course",
+          "columns": [
+            "Parent_Course_Key"
+          ]
+        },
+        {
+          "name": "dim_course_source_system_key_foreign",
+          "def": "KEY dim_course_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Course",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_course_source",
+          "def": "KEY idx_course_source (Source_Course_Id, Source_System_Key) USING BTREE",
+          "table": "Dim_Course",
+          "columns": [
+            "Source_Course_Id",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Course_Key) USING BTREE",
+          "table": "Dim_Course",
+          "columns": [
+            "Course_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_course_delivery_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)",
+          "table": "Dim_Course",
+          "referenced_table": "Dim_Delivery_Header",
+          "columns": [
+            "Delivery_Key"
+          ],
+          "referenced_columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "dim_course_parent_course_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Parent_Course_Key) REFERENCES Dim_Course (Course_Key)",
+          "table": "Dim_Course",
+          "referenced_table": "Dim_Course",
+          "columns": [
+            "Parent_Course_Key"
+          ],
+          "referenced_columns": [
+            "Course_Key"
+          ]
+        },
+        {
+          "name": "dim_course_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Course",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Course_Key)",
+          "table": "Dim_Course",
+          "columns": [
+            "Course_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Course` (\n  `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Course_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int DEFAULT NULL,\n  `Start_Date` date DEFAULT NULL,\n  `Date_Complete` date DEFAULT NULL,\n  `Year_Group` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Parent_Course_Key` bigint unsigned DEFAULT NULL,\n  PRIMARY KEY (`Course_Key`),\n  KEY `dim_course_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_course_delivery_key_foreign` (`Delivery_Key`),\n  KEY `dim_course_parent_course_key_foreign` (`Parent_Course_Key`),\n  KEY `idx_course_source` (`Source_Course_Id`,`Source_System_Key`),\n  CONSTRAINT `dim_course_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `dim_course_parent_course_key_foreign` FOREIGN KEY (`Parent_Course_Key`) REFERENCES `Dim_Course` (`Course_Key`) ON DELETE SET NULL,\n  CONSTRAINT `dim_course_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Date",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Date_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Full_Date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Month_Name",
+          "type": "varchar(10)",
+          "nullable": false
+        },
+        {
+          "name": "Calendar_Year",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Financial_Year",
+          "type": "varchar(10)",
+          "nullable": false
+        },
+        {
+          "name": "Financial_Quarter",
+          "type": "char(2)",
+          "nullable": false
+        },
+        {
+          "name": "Financial_Month_Number",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Is_Weekend",
+          "type": "tinyint(1)",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Date_Key) USING BTREE",
+          "table": "Dim_Date",
+          "columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "dim_date_full_date_unique",
+          "def": "UNIQUE KEY dim_date_full_date_unique (Full_Date) USING BTREE",
+          "table": "Dim_Date",
+          "columns": [
+            "Full_Date"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_date_full_date_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY dim_date_full_date_unique (Full_Date)",
+          "table": "Dim_Date",
+          "columns": [
+            "Full_Date"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Date_Key)",
+          "table": "Dim_Date",
+          "columns": [
+            "Date_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Date` (\n  `Date_Key` int NOT NULL,\n  `Full_Date` date NOT NULL,\n  `Month_Name` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Calendar_Year` int NOT NULL,\n  `Financial_Year` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Financial_Quarter` char(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Financial_Month_Number` int NOT NULL,\n  `Is_Weekend` tinyint(1) NOT NULL,\n  PRIMARY KEY (`Date_Key`),\n  UNIQUE KEY `dim_date_full_date_unique` (`Full_Date`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Delivery_Header",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Delivery_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "School_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Organisation_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Training_Provider_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "External_System_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Delivery_Status",
+          "type": "varchar(50)",
+          "nullable": false
+        },
+        {
+          "name": "Date_Delivery_Start",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Delivery_End",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Digitisation_Booking",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Fleet_Cycles_Used",
+          "type": "int",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Consent_Cutoff_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Pref_Alt_Delivery_Location",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Alt_Delivery_Location",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Instructor_General_Notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Teacher_Notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "School_Contacts",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Venue",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Provider_Additional_Questions",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Comms_Start_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Completed",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Pref_Link_Managed_Consent",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Include_Tp_Terms_In_Consent",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Consent_Src_Characteristics",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Max_Consents",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Waiting_List_Enabled",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_delivery_header_organisation_key_foreign",
+          "def": "KEY dim_delivery_header_organisation_key_foreign (Organisation_Key) USING BTREE",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "Organisation_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_school_key_foreign",
+          "def": "KEY dim_delivery_header_school_key_foreign (School_Key) USING BTREE",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_source_system_key_foreign",
+          "def": "KEY dim_delivery_header_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_training_provider_key_foreign",
+          "def": "KEY dim_delivery_header_training_provider_key_foreign (Training_Provider_Key) USING BTREE",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "Training_Provider_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Delivery_Key) USING BTREE",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "Delivery_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_delivery_header_organisation_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Organisation_Key) REFERENCES Dim_Organisation (Organisation_Key)",
+          "table": "Dim_Delivery_Header",
+          "referenced_table": "Dim_Organisation",
+          "columns": [
+            "Organisation_Key"
+          ],
+          "referenced_columns": [
+            "Organisation_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_school_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)",
+          "table": "Dim_Delivery_Header",
+          "referenced_table": "Dim_School",
+          "columns": [
+            "School_Key"
+          ],
+          "referenced_columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Delivery_Header",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "dim_delivery_header_training_provider_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Training_Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)",
+          "table": "Dim_Delivery_Header",
+          "referenced_table": "Dim_Training_Provider",
+          "columns": [
+            "Training_Provider_Key"
+          ],
+          "referenced_columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Delivery_Key)",
+          "table": "Dim_Delivery_Header",
+          "columns": [
+            "Delivery_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Delivery_Header` (\n  `Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Delivery_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Training_Provider_Key` bigint unsigned DEFAULT NULL,\n  `External_System_Key` bigint unsigned DEFAULT NULL,\n  `Delivery_Status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Date_Delivery_Start` date DEFAULT NULL,\n  `Date_Delivery_End` date DEFAULT NULL,\n  `Digitisation_Booking` tinyint NOT NULL DEFAULT '0',\n  `Fleet_Cycles_Used` int DEFAULT '0',\n  `Consent_Cutoff_Date` date DEFAULT NULL,\n  `Pref_Alt_Delivery_Location` tinyint NOT NULL DEFAULT '0',\n  `Alt_Delivery_Location` text COLLATE utf8mb4_unicode_ci,\n  `Notes` text COLLATE utf8mb4_unicode_ci,\n  `Instructor_General_Notes` text COLLATE utf8mb4_unicode_ci,\n  `Teacher_Notes` text COLLATE utf8mb4_unicode_ci,\n  `School_Contacts` json DEFAULT NULL,\n  `Venue` json DEFAULT NULL,\n  `Provider_Additional_Questions` json DEFAULT NULL,\n  `Comms_Start_Date` date DEFAULT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint DEFAULT NULL,\n  `Include_Tp_Terms_In_Consent` tinyint NOT NULL DEFAULT '0',\n  `Consent_Src_Characteristics` tinyint NOT NULL DEFAULT '0',\n  `Max_Consents` int DEFAULT NULL,\n  `Waiting_List_Enabled` tinyint NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Key`),\n  KEY `dim_delivery_header_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_delivery_header_school_key_foreign` (`School_Key`),\n  KEY `dim_delivery_header_organisation_key_foreign` (`Organisation_Key`),\n  KEY `dim_delivery_header_training_provider_key_foreign` (`Training_Provider_Key`),\n  CONSTRAINT `dim_delivery_header_organisation_key_foreign` FOREIGN KEY (`Organisation_Key`) REFERENCES `Dim_Organisation` (`Organisation_Key`),\n  CONSTRAINT `dim_delivery_header_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),\n  CONSTRAINT `dim_delivery_header_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`),\n  CONSTRAINT `dim_delivery_header_training_provider_key_foreign` FOREIGN KEY (`Training_Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_External_Systems",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "External_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_External_System_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Username",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Name",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Pref_Link_Managed_Consent",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Use_Instructor_App",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Link_Managed_Comms",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_external_systems_source_system_key_foreign",
+          "def": "KEY dim_external_systems_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_External_Systems",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (External_System_Key) USING BTREE",
+          "table": "Dim_External_Systems",
+          "columns": [
+            "External_System_Key"
+          ]
+        },
+        {
+          "name": "dim_external_systems_source_external_system_id_unique",
+          "def": "UNIQUE KEY dim_external_systems_source_external_system_id_unique (Source_External_System_Id) USING BTREE",
+          "table": "Dim_External_Systems",
+          "columns": [
+            "Source_External_System_Id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_external_systems_source_external_system_id_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY dim_external_systems_source_external_system_id_unique (Source_External_System_Id)",
+          "table": "Dim_External_Systems",
+          "columns": [
+            "Source_External_System_Id"
+          ]
+        },
+        {
+          "name": "dim_external_systems_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_External_Systems",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (External_System_Key)",
+          "table": "Dim_External_Systems",
+          "columns": [
+            "External_System_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_External_Systems` (\n  `External_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_External_System_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Username` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint NOT NULL DEFAULT '0',\n  `Pref_Use_Instructor_App` tinyint NOT NULL DEFAULT '0',\n  `Pref_Link_Managed_Comms` tinyint NOT NULL DEFAULT '0',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`External_System_Key`),\n  UNIQUE KEY `dim_external_systems_source_external_system_id_unique` (`Source_External_System_Id`),\n  KEY `dim_external_systems_source_system_key_foreign` (`Source_System_Key`),\n  CONSTRAINT `dim_external_systems_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Grant",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Grant_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Recipient_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Number",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Label",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Grant_Source",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Grant_Period_Start_Year",
+          "type": "smallint",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_grant_grant_recipient_key_foreign",
+          "def": "KEY dim_grant_grant_recipient_key_foreign (Grant_Recipient_Key) USING BTREE",
+          "table": "Dim_Grant",
+          "columns": [
+            "Grant_Recipient_Key"
+          ]
+        },
+        {
+          "name": "dim_grant_source_system_key_foreign",
+          "def": "KEY dim_grant_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Grant",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_grant_source",
+          "def": "KEY idx_grant_source (Source_Grant_Id, Source_System_Key) USING BTREE",
+          "table": "Dim_Grant",
+          "columns": [
+            "Source_Grant_Id",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Grant_Key) USING BTREE",
+          "table": "Dim_Grant",
+          "columns": [
+            "Grant_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_grant_grant_recipient_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Grant_Recipient_Key) REFERENCES Dim_Grant_Recipient (Recipient_Key)",
+          "table": "Dim_Grant",
+          "referenced_table": "Dim_Grant_Recipient",
+          "columns": [
+            "Grant_Recipient_Key"
+          ],
+          "referenced_columns": [
+            "Recipient_Key"
+          ]
+        },
+        {
+          "name": "dim_grant_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Grant",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Grant_Key)",
+          "table": "Dim_Grant",
+          "columns": [
+            "Grant_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Grant` (\n  `Grant_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Grant_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Grant_Recipient_Key` bigint unsigned NOT NULL,\n  `Grant_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Grant_Label` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Grant_Source` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Grant_Period_Start_Year` smallint NOT NULL,\n  PRIMARY KEY (`Grant_Key`),\n  KEY `dim_grant_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_grant_grant_recipient_key_foreign` (`Grant_Recipient_Key`),\n  KEY `idx_grant_source` (`Source_Grant_Id`,`Source_System_Key`),\n  CONSTRAINT `dim_grant_grant_recipient_key_foreign` FOREIGN KEY (`Grant_Recipient_Key`) REFERENCES `Dim_Grant_Recipient` (`Recipient_Key`),\n  CONSTRAINT `dim_grant_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Grant_Recipient",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Recipient_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Recipient_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Recipient_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Recipient_Number",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "LA_Id",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Is_Active",
+          "type": "char(1)",
+          "nullable": false
+        },
+        {
+          "name": "Valid_From_Date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Valid_To_Date",
+          "type": "date",
+          "nullable": false,
+          "default": "9999-12-31"
+        },
+        {
+          "name": "Is_Current",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Address_Line_1",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Address_Line_2",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "City",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Postcode",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Website",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Inception_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Renewal_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Deregistered_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Is_SGO",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_grant_recipient_source_system_key_foreign",
+          "def": "KEY dim_grant_recipient_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Grant_Recipient",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_gr_source",
+          "def": "KEY idx_gr_source (Source_Recipient_Id, Is_Current) USING BTREE",
+          "table": "Dim_Grant_Recipient",
+          "columns": [
+            "Source_Recipient_Id",
+            "Is_Current"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Recipient_Key) USING BTREE",
+          "table": "Dim_Grant_Recipient",
+          "columns": [
+            "Recipient_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_grant_recipient_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Grant_Recipient",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Recipient_Key)",
+          "table": "Dim_Grant_Recipient",
+          "columns": [
+            "Recipient_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Grant_Recipient` (\n  `Recipient_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Recipient_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Recipient_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Recipient_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `LA_Id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Is_Active` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Valid_From_Date` date NOT NULL,\n  `Valid_To_Date` date NOT NULL DEFAULT '9999-12-31',\n  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',\n  `Address_Line_1` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Address_Line_2` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Website` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Inception_Date` date DEFAULT NULL,\n  `Renewal_Date` date DEFAULT NULL,\n  `Deregistered_Date` date DEFAULT NULL,\n  `Is_SGO` tinyint(1) NOT NULL DEFAULT '0',\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Recipient_Key`),\n  KEY `dim_grant_recipient_source_system_key_foreign` (`Source_System_Key`),\n  KEY `idx_gr_source` (`Source_Recipient_Id`,`Is_Current`),\n  CONSTRAINT `dim_grant_recipient_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Instructor",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Instructor_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Instructor_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Instructor_Number",
+          "type": "int unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Instructor_Type",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "First_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Last_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Email",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Telephone",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Landline",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Age_Range_Id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Ethnicity_Id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Gender_Id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Title_Id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Address_01",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Address_02",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "City",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Postcode",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Status_Raw",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Is_Pending",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Flag_Nsi_Migrated",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Receive_News",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Delivering_Bikeability",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Delivering_Other",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Bursary_Eligibility",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Has_Received_Bursary",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Date_Registered",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Renewal",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Deregistered",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Deregistration_Reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "First_Aid_Training_Complete_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Safeguarding_Training_Complete_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Send_Training_Complete_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Send_Training_Overridden",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Send_Training_Certificate_Download_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Account_Notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_instructor_instructor_number_index",
+          "def": "KEY dim_instructor_instructor_number_index (Instructor_Number) USING BTREE",
+          "table": "Dim_Instructor",
+          "columns": [
+            "Instructor_Number"
+          ]
+        },
+        {
+          "name": "dim_instructor_last_name_index",
+          "def": "KEY dim_instructor_last_name_index (Last_Name) USING BTREE",
+          "table": "Dim_Instructor",
+          "columns": [
+            "Last_Name"
+          ]
+        },
+        {
+          "name": "dim_instructor_source_instructor_id_source_system_key_index",
+          "def": "KEY dim_instructor_source_instructor_id_source_system_key_index (Source_Instructor_Id, Source_System_Key) USING BTREE",
+          "table": "Dim_Instructor",
+          "columns": [
+            "Source_Instructor_Id",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Instructor_Key) USING BTREE",
+          "table": "Dim_Instructor",
+          "columns": [
+            "Instructor_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Instructor_Key)",
+          "table": "Dim_Instructor",
+          "columns": [
+            "Instructor_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Instructor` (\n  `Instructor_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Instructor_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Instructor_Number` int unsigned NOT NULL,\n  `Instructor_Type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `First_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Last_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Landline` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Age_Range_Id` bigint unsigned NOT NULL DEFAULT '1',\n  `Ethnicity_Id` bigint unsigned NOT NULL DEFAULT '1',\n  `Gender_Id` bigint unsigned NOT NULL DEFAULT '1',\n  `Title_Id` bigint unsigned NOT NULL DEFAULT '1',\n  `Address_01` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Address_02` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Is_Pending` tinyint(1) NOT NULL DEFAULT '0',\n  `Flag_Nsi_Migrated` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Receive_News` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Delivering_Bikeability` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Delivering_Other` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Bursary_Eligibility` tinyint(1) NOT NULL DEFAULT '0',\n  `Has_Received_Bursary` tinyint(1) NOT NULL DEFAULT '0',\n  `Date_Registered` date DEFAULT NULL,\n  `Date_Renewal` date DEFAULT NULL,\n  `Date_Deregistered` date DEFAULT NULL,\n  `Deregistration_Reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `First_Aid_Training_Complete_Date` date DEFAULT NULL,\n  `Safeguarding_Training_Complete_Date` date DEFAULT NULL,\n  `Send_Training_Complete_Date` date DEFAULT NULL,\n  `Send_Training_Overridden` tinyint(1) NOT NULL DEFAULT '0',\n  `Send_Training_Certificate_Download_Date` date DEFAULT NULL,\n  `Account_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Instructor_Key`),\n  KEY `dim_instructor_source_instructor_id_source_system_key_index` (`Source_Instructor_Id`,`Source_System_Key`),\n  KEY `dim_instructor_instructor_number_index` (`Instructor_Number`),\n  KEY `dim_instructor_last_name_index` (`Last_Name`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Organisation",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Organisation_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Organisation_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Provider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Organisation_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_organisation_provider_key_foreign",
+          "def": "KEY dim_organisation_provider_key_foreign (Provider_Key) USING BTREE",
+          "table": "Dim_Organisation",
+          "columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "dim_organisation_source_system_key_foreign",
+          "def": "KEY dim_organisation_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Organisation",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_org_source",
+          "def": "KEY idx_org_source (Source_Organisation_Id, Source_System_Key) USING BTREE",
+          "table": "Dim_Organisation",
+          "columns": [
+            "Source_Organisation_Id",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Organisation_Key) USING BTREE",
+          "table": "Dim_Organisation",
+          "columns": [
+            "Organisation_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_organisation_provider_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)",
+          "table": "Dim_Organisation",
+          "referenced_table": "Dim_Training_Provider",
+          "columns": [
+            "Provider_Key"
+          ],
+          "referenced_columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "dim_organisation_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Organisation",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Organisation_Key)",
+          "table": "Dim_Organisation",
+          "columns": [
+            "Organisation_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Organisation` (\n  `Organisation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Organisation_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Provider_Key` bigint unsigned NOT NULL,\n  `Organisation_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  PRIMARY KEY (`Organisation_Key`),\n  KEY `dim_organisation_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_organisation_provider_key_foreign` (`Provider_Key`),\n  KEY `idx_org_source` (`Source_Organisation_Id`,`Source_System_Key`),\n  CONSTRAINT `dim_organisation_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),\n  CONSTRAINT `dim_organisation_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Rider",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Rider_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Rider_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "School_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Ethnicity",
+          "type": "varchar(50)",
+          "nullable": true
+        },
+        {
+          "name": "Gender",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "Pupil_Premium",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Has_Send",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_rider_school_key_foreign",
+          "def": "KEY dim_rider_school_key_foreign (School_Key) USING BTREE",
+          "table": "Dim_Rider",
+          "columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "dim_rider_source_rider_id_index",
+          "def": "KEY dim_rider_source_rider_id_index (Source_Rider_Id) USING BTREE",
+          "table": "Dim_Rider",
+          "columns": [
+            "Source_Rider_Id"
+          ]
+        },
+        {
+          "name": "dim_rider_source_system_key_foreign",
+          "def": "KEY dim_rider_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Rider",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Rider_Key) USING BTREE",
+          "table": "Dim_Rider",
+          "columns": [
+            "Rider_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_rider_school_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)",
+          "table": "Dim_Rider",
+          "referenced_table": "Dim_School",
+          "columns": [
+            "School_Key"
+          ],
+          "referenced_columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "dim_rider_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Rider",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Rider_Key)",
+          "table": "Dim_Rider",
+          "columns": [
+            "Rider_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Rider` (\n  `Rider_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Rider_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Ethnicity` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Gender` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Pupil_Premium` tinyint NOT NULL DEFAULT '0',\n  `Has_Send` tinyint NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Rider_Key`),\n  KEY `dim_rider_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_rider_school_key_foreign` (`School_Key`),\n  KEY `dim_rider_source_rider_id_index` (`Source_Rider_Id`),\n  CONSTRAINT `dim_rider_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),\n  CONSTRAINT `dim_rider_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_School",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "School_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_School_Id",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "School_Urn",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "School_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "LA_Code",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "LA_Name",
+          "type": "varchar(255)",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_school_source_system_key_foreign",
+          "def": "KEY dim_school_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_School",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (School_Key) USING BTREE",
+          "table": "Dim_School",
+          "columns": [
+            "School_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_school_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_School",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (School_Key)",
+          "table": "Dim_School",
+          "columns": [
+            "School_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_School` (\n  `School_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_School_Id` int DEFAULT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `School_Urn` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `School_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `LA_Code` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `LA_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  PRIMARY KEY (`School_Key`),\n  KEY `dim_school_source_system_key_foreign` (`Source_System_Key`),\n  CONSTRAINT `dim_school_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Send_Code",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Send_Code_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Send_Code",
+          "type": "varchar(20)",
+          "nullable": false
+        },
+        {
+          "name": "Description",
+          "type": "varchar(255)",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Send_Code_Key) USING BTREE",
+          "table": "Dim_Send_Code",
+          "columns": [
+            "Send_Code_Key"
+          ]
+        },
+        {
+          "name": "dim_send_code_send_code_unique",
+          "def": "UNIQUE KEY dim_send_code_send_code_unique (Send_Code) USING BTREE",
+          "table": "Dim_Send_Code",
+          "columns": [
+            "Send_Code"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_send_code_send_code_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY dim_send_code_send_code_unique (Send_Code)",
+          "table": "Dim_Send_Code",
+          "columns": [
+            "Send_Code"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Send_Code_Key)",
+          "table": "Dim_Send_Code",
+          "columns": [
+            "Send_Code_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Send_Code` (\n  `Send_Code_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Send_Code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  PRIMARY KEY (`Send_Code_Key`),\n  UNIQUE KEY `dim_send_code_send_code_unique` (`Send_Code`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Source_System",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "System_Name",
+          "type": "varchar(50)",
+          "nullable": false
+        },
+        {
+          "name": "System_Type",
+          "type": "varchar(50)",
+          "nullable": false
+        },
+        {
+          "name": "Last_Sync_Date",
+          "type": "datetime",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Source_System_Key) USING BTREE",
+          "table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Source_System_Key)",
+          "table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Source_System` (\n  `Source_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `System_Name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `System_Type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Last_Sync_Date` datetime DEFAULT NULL,\n  PRIMARY KEY (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dim_Training_Provider",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Provider_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Provider_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Provider_Name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Provider_Number",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Is_Active",
+          "type": "char(1)",
+          "nullable": false
+        },
+        {
+          "name": "Valid_From_Date",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Valid_To_Date",
+          "type": "date",
+          "nullable": false,
+          "default": "9999-12-31"
+        },
+        {
+          "name": "Is_Current",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "Address_Line_1",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Address_Line_2",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "City",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Postcode",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Website",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Telephone",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Public_Email",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Public_Telephone",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Provider_Type",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "dim_training_provider_source_system_key_foreign",
+          "def": "KEY dim_training_provider_source_system_key_foreign (Source_System_Key) USING BTREE",
+          "table": "Dim_Training_Provider",
+          "columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "idx_tp_source",
+          "def": "KEY idx_tp_source (Source_Provider_Id, Is_Current) USING BTREE",
+          "table": "Dim_Training_Provider",
+          "columns": [
+            "Source_Provider_Id",
+            "Is_Current"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Provider_Key) USING BTREE",
+          "table": "Dim_Training_Provider",
+          "columns": [
+            "Provider_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dim_training_provider_source_system_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)",
+          "table": "Dim_Training_Provider",
+          "referenced_table": "Dim_Source_System",
+          "columns": [
+            "Source_System_Key"
+          ],
+          "referenced_columns": [
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Provider_Key)",
+          "table": "Dim_Training_Provider",
+          "columns": [
+            "Provider_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dim_Training_Provider` (\n  `Provider_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Provider_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Provider_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Provider_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Is_Active` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Valid_From_Date` date NOT NULL,\n  `Valid_To_Date` date NOT NULL DEFAULT '9999-12-31',\n  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',\n  `Address_Line_1` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Address_Line_2` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Website` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Public_Email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Public_Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Provider_Type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Provider_Key`),\n  KEY `dim_training_provider_source_system_key_foreign` (`Source_System_Key`),\n  KEY `idx_tp_source` (`Source_Provider_Id`,`Is_Current`),\n  CONSTRAINT `dim_training_provider_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Dwh_Api_Consumers",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "client_name",
+          "type": "varchar(255)",
+          "nullable": false,
+          "comment": "e.g., Primary Source System, PowerBI Gateway"
+        },
+        {
+          "name": "client_id",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "api_secret_hash",
+          "type": "varchar(255)",
+          "nullable": false,
+          "comment": "Bcrypt/SHA256 hashed secret token string"
+        },
+        {
+          "name": "allowed_ips",
+          "type": "json",
+          "nullable": true,
+          "comment": "Array of explicit server IPs allowed to call with this key"
+        },
+        {
+          "name": "is_active",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1"
+        },
+        {
+          "name": "last_used_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (id) USING BTREE",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "dwh_api_consumers_client_id_unique",
+          "def": "UNIQUE KEY dwh_api_consumers_client_id_unique (client_id) USING BTREE",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "client_id"
+          ]
+        },
+        {
+          "name": "dwh_api_consumers_client_name_unique",
+          "def": "UNIQUE KEY dwh_api_consumers_client_name_unique (client_name) USING BTREE",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "client_name"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "dwh_api_consumers_client_id_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY dwh_api_consumers_client_id_unique (client_id)",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "client_id"
+          ]
+        },
+        {
+          "name": "dwh_api_consumers_client_name_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY dwh_api_consumers_client_name_unique (client_name)",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "client_name"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "Dwh_Api_Consumers",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Dwh_Api_Consumers` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `client_name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'e.g., Primary Source System, PowerBI Gateway',\n  `client_id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `api_secret_hash` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'Bcrypt/SHA256 hashed secret token string',\n  `allowed_ips` json DEFAULT NULL COMMENT 'Array of explicit server IPs allowed to call with this key',\n  `is_active` tinyint(1) NOT NULL DEFAULT '1',\n  `last_used_at` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `dwh_api_consumers_client_name_unique` (`client_name`),\n  UNIQUE KEY `dwh_api_consumers_client_id_unique` (`client_id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Course_Delivery",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Delivery_Fact_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Date_Key",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "School_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Organisation_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Provider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Riders_Enrolled_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Riders_Completed_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Booked_Provisional",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Booked_Confirmed",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Attended_Confirmed",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Female",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Male",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Gender_Other",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Pupil_Premium",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_SEND",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_White_British",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_White_Irish",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Gypsy_Romany",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_White_Other",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Mixed_White_Black_Carib",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Mixed_White_Black_African",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Mixed_White_Asian",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Mixed_Other",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Asian_Indian",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Asian_Pakistani",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Asian_Bangladeshi",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Asian_Chinese",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Asian_Other",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Black_African",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Black_Caribbean",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Black_Other",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Other_Arab",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Other_Any",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_Not_Stated",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_course_delivery_course_key_foreign",
+          "def": "KEY fact_course_delivery_course_key_foreign (Course_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Course_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_date_key_foreign",
+          "def": "KEY fact_course_delivery_date_key_foreign (Date_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_delivery_key_foreign",
+          "def": "KEY fact_course_delivery_delivery_key_foreign (Delivery_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_grant_key_foreign",
+          "def": "KEY fact_course_delivery_grant_key_foreign (Grant_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Grant_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_provider_key_foreign",
+          "def": "KEY fact_course_delivery_provider_key_foreign (Provider_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_school_key_foreign",
+          "def": "KEY fact_course_delivery_school_key_foreign (School_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Delivery_Fact_Key) USING BTREE",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Delivery_Fact_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_course_delivery_course_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_Course",
+          "columns": [
+            "Course_Key"
+          ],
+          "referenced_columns": [
+            "Course_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_date_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_Date",
+          "columns": [
+            "Date_Key"
+          ],
+          "referenced_columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_delivery_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_Delivery_Header",
+          "columns": [
+            "Delivery_Key"
+          ],
+          "referenced_columns": [
+            "Delivery_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_grant_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Grant_Key) REFERENCES Dim_Grant (Grant_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_Grant",
+          "columns": [
+            "Grant_Key"
+          ],
+          "referenced_columns": [
+            "Grant_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_provider_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_Training_Provider",
+          "columns": [
+            "Provider_Key"
+          ],
+          "referenced_columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "fact_course_delivery_school_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)",
+          "table": "Fact_Course_Delivery",
+          "referenced_table": "Dim_School",
+          "columns": [
+            "School_Key"
+          ],
+          "referenced_columns": [
+            "School_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Delivery_Fact_Key)",
+          "table": "Fact_Course_Delivery",
+          "columns": [
+            "Delivery_Fact_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Course_Delivery` (\n  `Delivery_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Date_Key` int DEFAULT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Provider_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',\n  `Riders_Completed_Count` int NOT NULL DEFAULT '0',\n  `Count_Booked_Provisional` int NOT NULL DEFAULT '0',\n  `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Female` int NOT NULL DEFAULT '0',\n  `Count_Male` int NOT NULL DEFAULT '0',\n  `Count_Gender_Other` int NOT NULL DEFAULT '0',\n  `Count_Pupil_Premium` int NOT NULL DEFAULT '0',\n  `Count_SEND` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Asian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Indian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Pakistani` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Bangladeshi` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Chinese` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Caribbean` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Fact_Key`),\n  KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),\n  KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),\n  KEY `fact_course_delivery_school_key_foreign` (`School_Key`),\n  KEY `fact_course_delivery_course_key_foreign` (`Course_Key`),\n  KEY `fact_course_delivery_provider_key_foreign` (`Provider_Key`),\n  KEY `fact_course_delivery_grant_key_foreign` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),\n  CONSTRAINT `fact_course_delivery_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`),\n  CONSTRAINT `fact_course_delivery_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `fact_course_delivery_grant_key_foreign` FOREIGN KEY (`Grant_Key`) REFERENCES `Dim_Grant` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),\n  CONSTRAINT `fact_course_delivery_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Follow_Up_Survey",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Follow_Up_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Survey_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Rider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Label_Raw",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Invitation_Month",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "q1a_freq_school",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q1b_freq_leisure",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q1c_freq_exercise",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q2a_conf_use_cycle",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q2b_conf_cycle_roads",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q3a_enc_use_cycle",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q3b_enc_cycle_roads",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q4_safety_roads",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q5_child_desire",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q6_encouragement_factors",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "q7_conf_change",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "q8_physical_activity",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_follow_up_survey_source_survey_id_source_system_key_index",
+          "def": "KEY fact_follow_up_survey_source_survey_id_source_system_key_index (Source_Survey_Id, Source_System_Key) USING BTREE",
+          "table": "Fact_Follow_Up_Survey",
+          "columns": [
+            "Source_Survey_Id",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Follow_Up_Key) USING BTREE",
+          "table": "Fact_Follow_Up_Survey",
+          "columns": [
+            "Follow_Up_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Follow_Up_Key)",
+          "table": "Fact_Follow_Up_Survey",
+          "columns": [
+            "Follow_Up_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Follow_Up_Survey` (\n  `Follow_Up_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Survey_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Rider_Key` bigint unsigned NOT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Course_Label_Raw` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Invitation_Month` int DEFAULT NULL,\n  `q1a_freq_school` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q1b_freq_leisure` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q1c_freq_exercise` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q2a_conf_use_cycle` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q2b_conf_cycle_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q3a_enc_use_cycle` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q3b_enc_cycle_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q4_safety_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q5_child_desire` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q6_encouragement_factors` json DEFAULT NULL,\n  `q7_conf_change` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `q8_physical_activity` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Follow_Up_Key`),\n  KEY `fact_follow_up_survey_source_survey_id_source_system_key_index` (`Source_Survey_Id`,`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Amendment_Logs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Amendment_Log_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Amendment_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Type_Label",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Module_Key",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Value_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Amount",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_amendment_logs_amendment_key_index",
+          "def": "KEY fact_grant_amendment_logs_amendment_key_index (Amendment_Key) USING BTREE",
+          "table": "Fact_Grant_Amendment_Logs",
+          "columns": [
+            "Amendment_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Amendment_Log_Key) USING BTREE",
+          "table": "Fact_Grant_Amendment_Logs",
+          "columns": [
+            "Amendment_Log_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Amendment_Log_Key)",
+          "table": "Fact_Grant_Amendment_Logs",
+          "columns": [
+            "Amendment_Log_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Amendment_Logs` (\n  `Amendment_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Amendment_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Type_Label` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Value_Count` int NOT NULL DEFAULT '0',\n  `Amount` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Amendment_Log_Key`),\n  KEY `fact_grant_amendment_logs_amendment_key_index` (`Amendment_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Amendments",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Amendment_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Source_Amendment_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Amendment_Number",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Status_Raw",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_amend_base",
+          "def": "KEY idx_amend_base (Grant_Key, Source_Amendment_Id) USING BTREE",
+          "table": "Fact_Grant_Amendments",
+          "columns": [
+            "Grant_Key",
+            "Source_Amendment_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Amendment_Key) USING BTREE",
+          "table": "Fact_Grant_Amendments",
+          "columns": [
+            "Amendment_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Amendment_Key)",
+          "table": "Fact_Grant_Amendments",
+          "columns": [
+            "Amendment_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Amendments` (\n  `Amendment_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Source_Amendment_Id` bigint unsigned NOT NULL,\n  `Amendment_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Date_Approved` date DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Amendment_Key`),\n  KEY `idx_amend_base` (`Grant_Key`,`Source_Amendment_Id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Claim_Inclusions",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Claim_Inclusion_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Claim_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Inclusion_Id_String",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Inclusion_Category",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Inclusion_Delivery",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Inclusion_Amount",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_claim_inclusions_claim_key_index",
+          "def": "KEY fact_grant_claim_inclusions_claim_key_index (Claim_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Inclusions",
+          "columns": [
+            "Claim_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Claim_Inclusion_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Inclusions",
+          "columns": [
+            "Claim_Inclusion_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Claim_Inclusion_Key)",
+          "table": "Fact_Grant_Claim_Inclusions",
+          "columns": [
+            "Claim_Inclusion_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Claim_Inclusions` (\n  `Claim_Inclusion_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Claim_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Inclusion_Id_String` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Inclusion_Category` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Inclusion_Delivery` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Inclusion_Amount` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Claim_Inclusion_Key`),\n  KEY `fact_grant_claim_inclusions_claim_key_index` (`Claim_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Claim_Logs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Claim_Log_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Claim_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Module_Key",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Item_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_claim_logs_claim_key_index",
+          "def": "KEY fact_grant_claim_logs_claim_key_index (Claim_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Logs",
+          "columns": [
+            "Claim_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Claim_Log_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Logs",
+          "columns": [
+            "Claim_Log_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Claim_Log_Key)",
+          "table": "Fact_Grant_Claim_Logs",
+          "columns": [
+            "Claim_Log_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Claim_Logs` (\n  `Claim_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Claim_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Item_Count` int NOT NULL DEFAULT '0',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Claim_Log_Key`),\n  KEY `fact_grant_claim_logs_claim_key_index` (`Claim_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Claim_Send_Records",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Claim_Send_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Claim_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Send_Id_String",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Send_Riders_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Send_Amount",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_claim_send_records_claim_key_index",
+          "def": "KEY fact_grant_claim_send_records_claim_key_index (Claim_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Send_Records",
+          "columns": [
+            "Claim_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Claim_Send_Key) USING BTREE",
+          "table": "Fact_Grant_Claim_Send_Records",
+          "columns": [
+            "Claim_Send_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Claim_Send_Key)",
+          "table": "Fact_Grant_Claim_Send_Records",
+          "columns": [
+            "Claim_Send_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Claim_Send_Records` (\n  `Claim_Send_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Claim_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Send_Id_String` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Send_Riders_Count` int NOT NULL DEFAULT '0',\n  `Send_Amount` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Claim_Send_Key`),\n  KEY `fact_grant_claim_send_records_claim_key_index` (`Claim_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Claims",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Claim_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Source_Claim_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Claim_Number",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Status_Raw",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Authority_Given",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Claim_Paid",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Delivery_On_Track_Prediction",
+          "type": "varchar(10)",
+          "nullable": true
+        },
+        {
+          "name": "Send_Claimable_Amount",
+          "type": "decimal(15,2)",
+          "nullable": true
+        },
+        {
+          "name": "Inclusion_Claimable_Amount",
+          "type": "decimal(15,2)",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_claims_base",
+          "def": "KEY idx_claims_base (Grant_Key, Source_Claim_Id) USING BTREE",
+          "table": "Fact_Grant_Claims",
+          "columns": [
+            "Grant_Key",
+            "Source_Claim_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Claim_Key) USING BTREE",
+          "table": "Fact_Grant_Claims",
+          "columns": [
+            "Claim_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Claim_Key)",
+          "table": "Fact_Grant_Claims",
+          "columns": [
+            "Claim_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Claims` (\n  `Claim_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Source_Claim_Id` bigint unsigned NOT NULL,\n  `Claim_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Pref_Authority_Given` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Claim_Paid` tinyint(1) NOT NULL DEFAULT '0',\n  `Date_Approved` date DEFAULT NULL,\n  `Delivery_On_Track_Prediction` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Send_Claimable_Amount` decimal(15,2) DEFAULT NULL,\n  `Inclusion_Claimable_Amount` decimal(15,2) DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Claim_Key`),\n  KEY `idx_claims_base` (`Grant_Key`,`Source_Claim_Id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Financials",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Grant_Financial_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_Format_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Max_Allocation",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Total_Levels",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Total_Plus",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Places_Level_1",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Level_1",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Level_1_2",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Level_1_2",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Level_2",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Level_2",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Level_3",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Level_3",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Balance",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Balance",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Bus",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Bus",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Fix",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Fix",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Learn",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Learn",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_On_Show",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_On_Show",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Parents",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Parents",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Promotion",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Promotion",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Recycled",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Recycled",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Ride",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Ride",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Transition",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Transition",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Family",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Family",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Plus_Adult",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Plus_Adult",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Grant_Send",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Send",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Grant_Inclusion",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "Places_Inclusion",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_financials_grant_key_source_system_key_index",
+          "def": "KEY fact_grant_financials_grant_key_source_system_key_index (Grant_Key, Source_System_Key) USING BTREE",
+          "table": "Fact_Grant_Financials",
+          "columns": [
+            "Grant_Key",
+            "Source_System_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Grant_Financial_Key) USING BTREE",
+          "table": "Fact_Grant_Financials",
+          "columns": [
+            "Grant_Financial_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Grant_Financial_Key)",
+          "table": "Fact_Grant_Financials",
+          "columns": [
+            "Grant_Financial_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Financials` (\n  `Grant_Financial_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Format_Id` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Max_Allocation` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Total_Levels` int NOT NULL DEFAULT '0',\n  `Total_Plus` int NOT NULL DEFAULT '0',\n  `Places_Level_1` int NOT NULL DEFAULT '0',\n  `Grant_Level_1` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Level_1_2` int NOT NULL DEFAULT '0',\n  `Grant_Level_1_2` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Level_2` int NOT NULL DEFAULT '0',\n  `Grant_Level_2` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Level_3` int NOT NULL DEFAULT '0',\n  `Grant_Level_3` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Balance` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Balance` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Bus` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Bus` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Fix` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Fix` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Learn` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Learn` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_On_Show` int NOT NULL DEFAULT '0',\n  `Grant_Plus_On_Show` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Parents` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Parents` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Promotion` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Promotion` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Recycled` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Recycled` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Ride` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Ride` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Transition` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Transition` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Family` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Family` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Plus_Adult` int NOT NULL DEFAULT '0',\n  `Grant_Plus_Adult` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Grant_Send` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Send` int NOT NULL DEFAULT '0',\n  `Grant_Inclusion` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `Places_Inclusion` int NOT NULL DEFAULT '0',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Grant_Financial_Key`),\n  KEY `fact_grant_financials_grant_key_source_system_key_index` (`Grant_Key`,`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Reallocation_Logs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Reallocation_Log_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Reallocation_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Module_Key",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "Value_Count",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Amount",
+          "type": "decimal(15,2)",
+          "nullable": false,
+          "default": "0.00"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_reallocation_logs_reallocation_key_index",
+          "def": "KEY fact_grant_reallocation_logs_reallocation_key_index (Reallocation_Key) USING BTREE",
+          "table": "Fact_Grant_Reallocation_Logs",
+          "columns": [
+            "Reallocation_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Reallocation_Log_Key) USING BTREE",
+          "table": "Fact_Grant_Reallocation_Logs",
+          "columns": [
+            "Reallocation_Log_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Reallocation_Log_Key)",
+          "table": "Fact_Grant_Reallocation_Logs",
+          "columns": [
+            "Reallocation_Log_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Reallocation_Logs` (\n  `Reallocation_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Reallocation_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Value_Count` int NOT NULL DEFAULT '0',\n  `Amount` decimal(15,2) NOT NULL DEFAULT '0.00',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Reallocation_Log_Key`),\n  KEY `fact_grant_reallocation_logs_reallocation_key_index` (`Reallocation_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Reallocations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Reallocation_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Source_Reallocation_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Reallocation_Number",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Reallocation_Type",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Status_Raw",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Reallocation_Notes",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Reallocation_Increase_Reasons",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_realloc_base",
+          "def": "KEY idx_realloc_base (Grant_Key, Source_Reallocation_Id) USING BTREE",
+          "table": "Fact_Grant_Reallocations",
+          "columns": [
+            "Grant_Key",
+            "Source_Reallocation_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Reallocation_Key) USING BTREE",
+          "table": "Fact_Grant_Reallocations",
+          "columns": [
+            "Reallocation_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Reallocation_Key)",
+          "table": "Fact_Grant_Reallocations",
+          "columns": [
+            "Reallocation_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Reallocations` (\n  `Reallocation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Source_Reallocation_Id` bigint unsigned NOT NULL,\n  `Reallocation_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Reallocation_Type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Reallocation_Notes` text COLLATE utf8mb4_unicode_ci,\n  `Reallocation_Increase_Reasons` text COLLATE utf8mb4_unicode_ci,\n  `Date_Approved` date DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Reallocation_Key`),\n  KEY `idx_realloc_base` (`Grant_Key`,`Source_Reallocation_Id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_HandsUp_Survey",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Survey_Fact_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Date_Key",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Exp_Enjoyed",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Exp_Did_Not_Enjoy",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Exp_Not_Sure",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Exp_Absent",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Base_Yes",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Base_No",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Base_Not_Sure",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Safe_More",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Safe_Less",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Safe_No_Diff",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Safe_Not_Sure",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Conf_More",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Conf_Less",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Conf_No_Diff",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Conf_Not_Sure",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_handsup_survey_course_key_foreign",
+          "def": "KEY fact_handsup_survey_course_key_foreign (Course_Key) USING BTREE",
+          "table": "Fact_HandsUp_Survey",
+          "columns": [
+            "Course_Key"
+          ]
+        },
+        {
+          "name": "fact_handsup_survey_date_key_foreign",
+          "def": "KEY fact_handsup_survey_date_key_foreign (Date_Key) USING BTREE",
+          "table": "Fact_HandsUp_Survey",
+          "columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Survey_Fact_Key) USING BTREE",
+          "table": "Fact_HandsUp_Survey",
+          "columns": [
+            "Survey_Fact_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_handsup_survey_course_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)",
+          "table": "Fact_HandsUp_Survey",
+          "referenced_table": "Dim_Course",
+          "columns": [
+            "Course_Key"
+          ],
+          "referenced_columns": [
+            "Course_Key"
+          ]
+        },
+        {
+          "name": "fact_handsup_survey_date_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)",
+          "table": "Fact_HandsUp_Survey",
+          "referenced_table": "Dim_Date",
+          "columns": [
+            "Date_Key"
+          ],
+          "referenced_columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Survey_Fact_Key)",
+          "table": "Fact_HandsUp_Survey",
+          "columns": [
+            "Survey_Fact_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_HandsUp_Survey` (\n  `Survey_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Date_Key` int DEFAULT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Exp_Enjoyed` int NOT NULL DEFAULT '0',\n  `Exp_Did_Not_Enjoy` int NOT NULL DEFAULT '0',\n  `Exp_Not_Sure` int NOT NULL DEFAULT '0',\n  `Exp_Absent` int NOT NULL DEFAULT '0',\n  `Base_Yes` int NOT NULL DEFAULT '0',\n  `Base_No` int NOT NULL DEFAULT '0',\n  `Base_Not_Sure` int NOT NULL DEFAULT '0',\n  `Safe_More` int NOT NULL DEFAULT '0',\n  `Safe_Less` int NOT NULL DEFAULT '0',\n  `Safe_No_Diff` int NOT NULL DEFAULT '0',\n  `Safe_Not_Sure` int NOT NULL DEFAULT '0',\n  `Conf_More` int NOT NULL DEFAULT '0',\n  `Conf_Less` int NOT NULL DEFAULT '0',\n  `Conf_No_Diff` int NOT NULL DEFAULT '0',\n  `Conf_Not_Sure` int NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Survey_Fact_Key`),\n  KEY `fact_handsup_survey_date_key_foreign` (`Date_Key`),\n  KEY `fact_handsup_survey_course_key_foreign` (`Course_Key`),\n  CONSTRAINT `fact_handsup_survey_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),\n  CONSTRAINT `fact_handsup_survey_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Instructor_Course",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Instructor_Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Instructor_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Active_From",
+          "type": "datetime",
+          "nullable": false
+        },
+        {
+          "name": "Active_To",
+          "type": "datetime",
+          "nullable": true,
+          "comment": "Null means currently active"
+        },
+        {
+          "name": "Is_Current",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "1"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_instructor_course_course_key_is_current_index",
+          "def": "KEY fact_instructor_course_course_key_is_current_index (Course_Key, Is_Current) USING BTREE",
+          "table": "Fact_Instructor_Course",
+          "columns": [
+            "Course_Key",
+            "Is_Current"
+          ]
+        },
+        {
+          "name": "fact_instructor_course_instructor_key_is_current_index",
+          "def": "KEY fact_instructor_course_instructor_key_is_current_index (Instructor_Key, Is_Current) USING BTREE",
+          "table": "Fact_Instructor_Course",
+          "columns": [
+            "Instructor_Key",
+            "Is_Current"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Instructor_Course_Key) USING BTREE",
+          "table": "Fact_Instructor_Course",
+          "columns": [
+            "Instructor_Course_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Instructor_Course_Key)",
+          "table": "Fact_Instructor_Course",
+          "columns": [
+            "Instructor_Course_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Instructor_Course` (\n  `Instructor_Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Instructor_Key` bigint unsigned NOT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Active_From` datetime NOT NULL,\n  `Active_To` datetime DEFAULT NULL COMMENT 'Null means currently active',\n  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',\n  PRIMARY KEY (`Instructor_Course_Key`),\n  KEY `fact_instructor_course_instructor_key_is_current_index` (`Instructor_Key`,`Is_Current`),\n  KEY `fact_instructor_course_course_key_is_current_index` (`Course_Key`,`Is_Current`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Instructor_Delivery",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Instructor_Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Instructor_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Instructor_Notified",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Deleted_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_delivery_instructor",
+          "def": "KEY idx_delivery_instructor (Delivery_Key, Instructor_Key) USING BTREE",
+          "table": "Fact_Instructor_Delivery",
+          "columns": [
+            "Delivery_Key",
+            "Instructor_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Instructor_Delivery_Key) USING BTREE",
+          "table": "Fact_Instructor_Delivery",
+          "columns": [
+            "Instructor_Delivery_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Instructor_Delivery_Key)",
+          "table": "Fact_Instructor_Delivery",
+          "columns": [
+            "Instructor_Delivery_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Instructor_Delivery` (\n  `Instructor_Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_System_Key` int NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Instructor_Key` bigint unsigned NOT NULL,\n  `Instructor_Notified` tinyint(1) NOT NULL DEFAULT '0',\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `Source_Deleted_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Instructor_Delivery_Key`),\n  KEY `idx_delivery_instructor` (`Delivery_Key`,`Instructor_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Parent_Survey",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Parent_Survey_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Date_Key",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "Rider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Course_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Delivery_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Grant_Key",
+          "type": "bigint unsigned",
+          "nullable": true
+        },
+        {
+          "name": "Like_To_Participate",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Like_To_Answer_Survey",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Pref_Join_Bikeability",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Rider_Emotion",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Pref_More_Training",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Pref_Interest_In_Training",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Confidence_Bike_General",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Confidence_Road",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Confidence_Independent",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Frequency_School",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Frequency_Leisure",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Frequency_Exercise",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "Feedback_Is_Fun",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Is_Hard",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Is_Healthy",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Still_New",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Family_Friends",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Dont_See_Others_Like_Me",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_On_Own",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_Not_Enjoy",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_None_Apply",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Feedback_None_Apply_Input",
+          "type": "varchar(500)",
+          "nullable": true
+        },
+        {
+          "name": "Encouragement_Use_Bike",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encouragement_Use_Bike_On_Road",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_More_Direct_Routes",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Local_Route_Awareness",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Storage",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Road_Surfaces",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Confidence",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Cycle_Maintenance",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Local_Initiatives",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Purchase_Ability",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Doesnt_Want_To_Cycle_More",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_None",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Encourage_Other_Reason",
+          "type": "varchar(500)",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Life_Skill",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Self_Esteem",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Fitness",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Active",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Mindfulness",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Improve_Self_Regulate",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Improve_Concentration",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Improve_Academic_Performance",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Independence",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Improve_Road_Awareness",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Improve_Environment_Awareness",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Help_Socialise",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Make_Children_Happy",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Keep_Children_Occupied",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Encourage_Children_Outside",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Children_Less_Dependent",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Reduce_Other_Transport_Expense",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likert_Enable_Cycle_As_Family",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Likely_To_Recommend",
+          "type": "int",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Source_Survey_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_parent_survey_date_key_foreign",
+          "def": "KEY fact_parent_survey_date_key_foreign (Date_Key) USING BTREE",
+          "table": "Fact_Parent_Survey",
+          "columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Parent_Survey_Key) USING BTREE",
+          "table": "Fact_Parent_Survey",
+          "columns": [
+            "Parent_Survey_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_parent_survey_date_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)",
+          "table": "Fact_Parent_Survey",
+          "referenced_table": "Dim_Date",
+          "columns": [
+            "Date_Key"
+          ],
+          "referenced_columns": [
+            "Date_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Parent_Survey_Key)",
+          "table": "Fact_Parent_Survey",
+          "columns": [
+            "Parent_Survey_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Parent_Survey` (\n  `Parent_Survey_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Date_Key` int NOT NULL,\n  `Rider_Key` bigint unsigned NOT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `Like_To_Participate` tinyint(1) NOT NULL DEFAULT '0',\n  `Like_To_Answer_Survey` tinyint(1) NOT NULL DEFAULT '0',\n  `Pref_Join_Bikeability` tinyint(1) NOT NULL DEFAULT '0',\n  `Rider_Emotion` int DEFAULT NULL,\n  `Pref_More_Training` int DEFAULT NULL,\n  `Pref_Interest_In_Training` int DEFAULT NULL,\n  `Confidence_Bike_General` int DEFAULT NULL,\n  `Confidence_Road` int DEFAULT NULL,\n  `Confidence_Independent` int DEFAULT NULL,\n  `Frequency_School` int DEFAULT NULL,\n  `Frequency_Leisure` int DEFAULT NULL,\n  `Frequency_Exercise` int DEFAULT NULL,\n  `Feedback_Is_Fun` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Is_Hard` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Is_Healthy` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Still_New` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Family_Friends` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Dont_See_Others_Like_Me` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_On_Own` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_Not_Enjoy` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_None_Apply` tinyint(1) NOT NULL DEFAULT '0',\n  `Feedback_None_Apply_Input` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Encouragement_Use_Bike` tinyint(1) DEFAULT '0',\n  `Encouragement_Use_Bike_On_Road` tinyint(1) DEFAULT '0',\n  `Encourage_More_Direct_Routes` tinyint DEFAULT '0',\n  `Encourage_Local_Route_Awareness` tinyint DEFAULT '0',\n  `Encourage_Storage` tinyint DEFAULT '0',\n  `Encourage_Road_Surfaces` tinyint DEFAULT '0',\n  `Encourage_Confidence` tinyint DEFAULT '0',\n  `Encourage_Cycle_Maintenance` tinyint DEFAULT '0',\n  `Encourage_Local_Initiatives` tinyint DEFAULT '0',\n  `Encourage_Purchase_Ability` tinyint DEFAULT '0',\n  `Encourage_Doesnt_Want_To_Cycle_More` tinyint DEFAULT '0',\n  `Encourage_None` tinyint DEFAULT '0',\n  `Encourage_Other_Reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Likert_Life_Skill` tinyint DEFAULT NULL,\n  `Likert_Self_Esteem` tinyint DEFAULT NULL,\n  `Likert_Fitness` tinyint DEFAULT NULL,\n  `Likert_Active` tinyint DEFAULT NULL,\n  `Likert_Mindfulness` tinyint DEFAULT NULL,\n  `Likert_Improve_Self_Regulate` tinyint DEFAULT NULL,\n  `Likert_Improve_Concentration` tinyint DEFAULT NULL,\n  `Likert_Improve_Academic_Performance` tinyint DEFAULT NULL,\n  `Likert_Independence` tinyint DEFAULT NULL,\n  `Likert_Improve_Road_Awareness` tinyint DEFAULT NULL,\n  `Likert_Improve_Environment_Awareness` tinyint DEFAULT NULL,\n  `Likert_Help_Socialise` tinyint DEFAULT NULL,\n  `Likert_Make_Children_Happy` tinyint DEFAULT NULL,\n  `Likert_Keep_Children_Occupied` tinyint DEFAULT NULL,\n  `Likert_Encourage_Children_Outside` tinyint DEFAULT NULL,\n  `Likert_Children_Less_Dependent` tinyint DEFAULT NULL,\n  `Likert_Reduce_Other_Transport_Expense` tinyint DEFAULT NULL,\n  `Likert_Enable_Cycle_As_Family` tinyint DEFAULT NULL,\n  `Likely_To_Recommend` int DEFAULT '0',\n  `Source_Survey_Id` bigint unsigned NOT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Parent_Survey_Key`),\n  KEY `fact_parent_survey_date_key_foreign` (`Date_Key`),\n  CONSTRAINT `fact_parent_survey_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Rider_Course",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Source_Rider_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_Course_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "varchar(50)",
+          "nullable": false
+        },
+        {
+          "name": "Status",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Attended",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "1"
+        },
+        {
+          "name": "Withdrawn",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Withdrawal_Reason",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Has_Completed_Course",
+          "type": "tinyint(1)",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Has_Survey_Completed",
+          "type": "tinyint(1)",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Course_Complete_Date",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Updated_At",
+          "type": "timestamp",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "extra_def": "DEFAULT_GENERATED on update CURRENT_TIMESTAMP"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_dwh_source_updated",
+          "def": "KEY idx_dwh_source_updated (Source_Updated_At) USING BTREE",
+          "table": "Fact_Rider_Course",
+          "columns": [
+            "Source_Updated_At"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Source_Rider_Id, Source_Course_Id) USING BTREE",
+          "table": "Fact_Rider_Course",
+          "columns": [
+            "Source_Rider_Id",
+            "Source_Course_Id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Source_Rider_Id, Source_Course_Id)",
+          "table": "Fact_Rider_Course",
+          "columns": [
+            "Source_Rider_Id",
+            "Source_Course_Id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Rider_Course` (\n  `Source_Rider_Id` bigint unsigned NOT NULL,\n  `Source_Course_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int NOT NULL DEFAULT '0',\n  `Attended` tinyint DEFAULT '1',\n  `Withdrawn` tinyint(1) DEFAULT '0',\n  `Withdrawal_Reason` text COLLATE utf8mb4_unicode_ci,\n  `Has_Completed_Course` tinyint(1) DEFAULT '0',\n  `Has_Survey_Completed` tinyint(1) NOT NULL DEFAULT '0',\n  `Course_Complete_Date` date DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `Updated_At` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`Source_Rider_Id`,`Source_Course_Id`),\n  KEY `idx_dwh_source_updated` (`Source_Updated_At`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "failed_jobs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "uuid",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "connection",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "queue",
+          "type": "text",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "longtext",
+          "nullable": false
+        },
+        {
+          "name": "exception",
+          "type": "longtext",
+          "nullable": false
+        },
+        {
+          "name": "failed_at",
+          "type": "timestamp",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "extra_def": "DEFAULT_GENERATED"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (id) USING BTREE",
+          "table": "failed_jobs",
+          "columns": [
+            "id"
+          ]
+        },
+        {
+          "name": "failed_jobs_uuid_unique",
+          "def": "UNIQUE KEY failed_jobs_uuid_unique (uuid) USING BTREE",
+          "table": "failed_jobs",
+          "columns": [
+            "uuid"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "failed_jobs_uuid_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY failed_jobs_uuid_unique (uuid)",
+          "table": "failed_jobs",
+          "columns": [
+            "uuid"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "failed_jobs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `failed_jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `connection` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `queue` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `exception` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "job_batches",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "id",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "total_jobs",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "pending_jobs",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "failed_jobs",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "failed_job_ids",
+          "type": "longtext",
+          "nullable": false
+        },
+        {
+          "name": "options",
+          "type": "mediumtext",
+          "nullable": true
+        },
+        {
+          "name": "cancelled_at",
+          "type": "int",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "int",
+          "nullable": false
+        },
+        {
+          "name": "finished_at",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (id) USING BTREE",
+          "table": "job_batches",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "job_batches",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `job_batches` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `total_jobs` int NOT NULL,\n  `pending_jobs` int NOT NULL,\n  `failed_jobs` int NOT NULL,\n  `failed_job_ids` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `options` mediumtext COLLATE utf8mb4_unicode_ci,\n  `cancelled_at` int DEFAULT NULL,\n  `created_at` int NOT NULL,\n  `finished_at` int DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "jobs",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "id",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "queue",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "payload",
+          "type": "longtext",
+          "nullable": false
+        },
+        {
+          "name": "attempts",
+          "type": "tinyint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "reserved_at",
+          "type": "int unsigned",
+          "nullable": true
+        },
+        {
+          "name": "available_at",
+          "type": "int unsigned",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "int unsigned",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "jobs_queue_index",
+          "def": "KEY jobs_queue_index (queue) USING BTREE",
+          "table": "jobs",
+          "columns": [
+            "queue"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (id) USING BTREE",
+          "table": "jobs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "jobs",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `queue` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `attempts` tinyint unsigned NOT NULL,\n  `reserved_at` int unsigned DEFAULT NULL,\n  `available_at` int unsigned NOT NULL,\n  `created_at` int unsigned NOT NULL,\n  PRIMARY KEY (`id`),\n  KEY `jobs_queue_index` (`queue`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Map_Rider_Send",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Rider_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Send_Code_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "map_rider_send_send_code_key_foreign",
+          "def": "KEY map_rider_send_send_code_key_foreign (Send_Code_Key) USING BTREE",
+          "table": "Map_Rider_Send",
+          "columns": [
+            "Send_Code_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Rider_Key, Send_Code_Key) USING BTREE",
+          "table": "Map_Rider_Send",
+          "columns": [
+            "Rider_Key",
+            "Send_Code_Key"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "map_rider_send_rider_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Rider_Key) REFERENCES Dim_Rider (Rider_Key)",
+          "table": "Map_Rider_Send",
+          "referenced_table": "Dim_Rider",
+          "columns": [
+            "Rider_Key"
+          ],
+          "referenced_columns": [
+            "Rider_Key"
+          ]
+        },
+        {
+          "name": "map_rider_send_send_code_key_foreign",
+          "type": "FOREIGN KEY",
+          "def": "FOREIGN KEY (Send_Code_Key) REFERENCES Dim_Send_Code (Send_Code_Key)",
+          "table": "Map_Rider_Send",
+          "referenced_table": "Dim_Send_Code",
+          "columns": [
+            "Send_Code_Key"
+          ],
+          "referenced_columns": [
+            "Send_Code_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Rider_Key, Send_Code_Key)",
+          "table": "Map_Rider_Send",
+          "columns": [
+            "Rider_Key",
+            "Send_Code_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Map_Rider_Send` (\n  `Rider_Key` bigint unsigned NOT NULL,\n  `Send_Code_Key` bigint unsigned NOT NULL,\n  PRIMARY KEY (`Rider_Key`,`Send_Code_Key`),\n  KEY `map_rider_send_send_code_key_foreign` (`Send_Code_Key`),\n  CONSTRAINT `map_rider_send_rider_key_foreign` FOREIGN KEY (`Rider_Key`) REFERENCES `Dim_Rider` (`Rider_Key`) ON DELETE CASCADE,\n  CONSTRAINT `map_rider_send_send_code_key_foreign` FOREIGN KEY (`Send_Code_Key`) REFERENCES `Dim_Send_Code` (`Send_Code_Key`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "migrations",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "id",
+          "type": "int unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "migration",
+          "type": "varchar(255)",
+          "nullable": false
+        },
+        {
+          "name": "batch",
+          "type": "int",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (id) USING BTREE",
+          "table": "migrations",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (id)",
+          "table": "migrations",
+          "columns": [
+            "id"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `migrations` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `batch` int NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Sync_Log",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Table_Name",
+          "type": "varchar(50)",
+          "nullable": false
+        },
+        {
+          "name": "Last_Synced_At",
+          "type": "datetime",
+          "nullable": true
+        },
+        {
+          "name": "Records_Processed",
+          "type": "int",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Table_Name) USING BTREE",
+          "table": "Sync_Log",
+          "columns": [
+            "Table_Name"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Table_Name)",
+          "table": "Sync_Log",
+          "columns": [
+            "Table_Name"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Sync_Log` (\n  `Table_Name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Last_Synced_At` datetime DEFAULT NULL,\n  `Records_Processed` int DEFAULT NULL,\n  PRIMARY KEY (`Table_Name`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    }
+  ],
+  "relations": [
+    {
+      "table": "Dim_Consent",
+      "columns": [
+        "Delivery_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Delivery_Header",
+      "parent_columns": [
+        "Delivery_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)"
+    },
+    {
+      "table": "Dim_Consent",
+      "columns": [
+        "Rider_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Rider",
+      "parent_columns": [
+        "Rider_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Rider_Key) REFERENCES Dim_Rider (Rider_Key)"
+    },
+    {
+      "table": "Dim_Consent",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Course",
+      "columns": [
+        "Delivery_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Delivery_Header",
+      "parent_columns": [
+        "Delivery_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)"
+    },
+    {
+      "table": "Dim_Course",
+      "columns": [
+        "Parent_Course_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Course",
+      "parent_columns": [
+        "Course_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Parent_Course_Key) REFERENCES Dim_Course (Course_Key)"
+    },
+    {
+      "table": "Dim_Course",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Delivery_Header",
+      "columns": [
+        "Organisation_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Organisation",
+      "parent_columns": [
+        "Organisation_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Organisation_Key) REFERENCES Dim_Organisation (Organisation_Key)"
+    },
+    {
+      "table": "Dim_Delivery_Header",
+      "columns": [
+        "School_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_School",
+      "parent_columns": [
+        "School_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)"
+    },
+    {
+      "table": "Dim_Delivery_Header",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Delivery_Header",
+      "columns": [
+        "Training_Provider_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Training_Provider",
+      "parent_columns": [
+        "Provider_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Training_Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)"
+    },
+    {
+      "table": "Dim_External_Systems",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Grant",
+      "columns": [
+        "Grant_Recipient_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Grant_Recipient",
+      "parent_columns": [
+        "Recipient_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Grant_Recipient_Key) REFERENCES Dim_Grant_Recipient (Recipient_Key)"
+    },
+    {
+      "table": "Dim_Grant",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Grant_Recipient",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Organisation",
+      "columns": [
+        "Provider_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Training_Provider",
+      "parent_columns": [
+        "Provider_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)"
+    },
+    {
+      "table": "Dim_Organisation",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Rider",
+      "columns": [
+        "School_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_School",
+      "parent_columns": [
+        "School_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)"
+    },
+    {
+      "table": "Dim_Rider",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_School",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Dim_Training_Provider",
+      "columns": [
+        "Source_System_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Source_System",
+      "parent_columns": [
+        "Source_System_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "Course_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Course",
+      "parent_columns": [
+        "Course_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "Date_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Date",
+      "parent_columns": [
+        "Date_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "Delivery_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Delivery_Header",
+      "parent_columns": [
+        "Delivery_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "Grant_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Grant",
+      "parent_columns": [
+        "Grant_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Grant_Key) REFERENCES Dim_Grant (Grant_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "Provider_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Training_Provider",
+      "parent_columns": [
+        "Provider_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)"
+    },
+    {
+      "table": "Fact_Course_Delivery",
+      "columns": [
+        "School_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_School",
+      "parent_columns": [
+        "School_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)"
+    },
+    {
+      "table": "Fact_HandsUp_Survey",
+      "columns": [
+        "Course_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Course",
+      "parent_columns": [
+        "Course_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)"
+    },
+    {
+      "table": "Fact_HandsUp_Survey",
+      "columns": [
+        "Date_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Date",
+      "parent_columns": [
+        "Date_Key"
+      ],
+      "parent_cardinality": "zero_or_one",
+      "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)"
+    },
+    {
+      "table": "Fact_Parent_Survey",
+      "columns": [
+        "Date_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Date",
+      "parent_columns": [
+        "Date_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)"
+    },
+    {
+      "table": "Map_Rider_Send",
+      "columns": [
+        "Rider_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Rider",
+      "parent_columns": [
+        "Rider_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Rider_Key) REFERENCES Dim_Rider (Rider_Key)"
+    },
+    {
+      "table": "Map_Rider_Send",
+      "columns": [
+        "Send_Code_Key"
+      ],
+      "cardinality": "zero_or_more",
+      "parent_table": "Dim_Send_Code",
+      "parent_columns": [
+        "Send_Code_Key"
+      ],
+      "parent_cardinality": "exactly_one",
+      "def": "FOREIGN KEY (Send_Code_Key) REFERENCES Dim_Send_Code (Send_Code_Key)"
+    }
+  ],
+  "driver": {
+    "name": "mysql",
+    "database_version": "9.4.0",
+    "meta": {
+      "dict": {
+        "Functions": "Stored procedures and functions"
+      }
+    }
+  }
+}

@@ -1,0 +1,2862 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Data Warehouse Data Dictionary</title>
+        <meta name="robots" content="noindex">
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="Automated Schema Blueprints and ERD Maps">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="favicon-8114d1fc.png">
+        <link rel="stylesheet" href="css/variables-8adf115d.css">
+        <link rel="stylesheet" href="css/general-0392ca55.css">
+        <link rel="stylesheet" href="css/chrome-fc474251.css">
+        <link rel="stylesheet" href="css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc-665ebbf9.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                    </div>
+
+                    <h1 class="menu-title">Data Warehouse Data Dictionary</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="link-dwh"><a class="header" href="#link-dwh">link-dwh</a></h1>
+<h2 id="tables"><a class="header" href="#tables">Tables</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Columns</th><th>Comment</th><th>Type</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="cache.html">cache</a></td><td>3</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="cache_locks.html">cache_locks</a></td><td>3</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_consent">Dim_Consent</a></td><td>28</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_course">Dim_Course</a></td><td>10</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_date">Dim_Date</a></td><td>8</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_delivery_header">Dim_Delivery_Header</a></td><td>29</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_external_systems">Dim_External_Systems</a></td><td>10</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_grant">Dim_Grant</a></td><td>8</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_grant_recipient">Dim_Grant_Recipient</a></td><td>21</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_instructor">Dim_Instructor</a></td><td>40</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_organisation">Dim_Organisation</a></td><td>5</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_rider">Dim_Rider</a></td><td>8</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_school">Dim_School</a></td><td>7</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_send_code">Dim_Send_Code</a></td><td>3</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_source_system">Dim_Source_System</a></td><td>4</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#dim_training_provider">Dim_Training_Provider</a></td><td>20</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="Dwh_Api_Consumers.html">Dwh_Api_Consumers</a></td><td>9</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_course_delivery">Fact_Course_Delivery</a></td><td>37</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_follow_up_survey">Fact_Follow_Up_Survey</a></td><td>23</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_amendment_logs">Fact_Grant_Amendment_Logs</a></td><td>9</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_amendments">Fact_Grant_Amendments</a></td><td>9</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_claim_inclusions">Fact_Grant_Claim_Inclusions</a></td><td>9</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_claim_logs">Fact_Grant_Claim_Logs</a></td><td>7</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_claim_send_records">Fact_Grant_Claim_Send_Records</a></td><td>8</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_claims">Fact_Grant_Claims</a></td><td>14</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_financials">Fact_Grant_Financials</a></td><td>45</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_reallocation_logs">Fact_Grant_Reallocation_Logs</a></td><td>8</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_grant_reallocations">Fact_Grant_Reallocations</a></td><td>12</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_handsup_survey">Fact_HandsUp_Survey</a></td><td>19</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_instructor_course">Fact_Instructor_Course</a></td><td>7</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_instructor_delivery">Fact_Instructor_Delivery</a></td><td>10</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_parent_survey">Fact_Parent_Survey</a></td><td>63</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="#fact_rider_course">Fact_Rider_Course</a></td><td>13</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="failed_jobs.html">failed_jobs</a></td><td>7</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="job_batches.html">job_batches</a></td><td>10</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="jobs.html">jobs</a></td><td>7</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="Map_Rider_Send.html">Map_Rider_Send</a></td><td>2</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="migrations.html">migrations</a></td><td>3</td><td></td><td>BASE TABLE</td></tr>
+<tr><td><a href="Sync_Log.html">Sync_Log</a></td><td>3</td><td></td><td>BASE TABLE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations"><a class="header" href="#relations">Relations</a></h2>
+<p><img src="schema.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_course_delivery"><a class="header" href="#fact_course_delivery">Fact_Course_Delivery</a></h1>
+<h2 id="description"><a class="header" href="#description">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Course_Delivery` (
+  `Delivery_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Date_Key` int DEFAULT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `School_Key` bigint unsigned DEFAULT NULL,
+  `Organisation_Key` bigint unsigned DEFAULT NULL,
+  `Course_Key` bigint unsigned NOT NULL,
+  `Provider_Key` bigint unsigned NOT NULL,
+  `Grant_Key` bigint unsigned DEFAULT NULL,
+  `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',
+  `Riders_Completed_Count` int NOT NULL DEFAULT '0',
+  `Count_Booked_Provisional` int NOT NULL DEFAULT '0',
+  `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',
+  `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',
+  `Count_Female` int NOT NULL DEFAULT '0',
+  `Count_Male` int NOT NULL DEFAULT '0',
+  `Count_Gender_Other` int NOT NULL DEFAULT '0',
+  `Count_Pupil_Premium` int NOT NULL DEFAULT '0',
+  `Count_SEND` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Mixed_White_Black_African` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Mixed_White_Asian` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Mixed_Other` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Asian_Indian` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Asian_Pakistani` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Asian_Bangladeshi` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Asian_Chinese` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Asian_Other` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Black_African` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Black_Caribbean` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Black_Other` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Delivery_Fact_Key`),
+  KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),
+  KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),
+  KEY `fact_course_delivery_school_key_foreign` (`School_Key`),
+  KEY `fact_course_delivery_course_key_foreign` (`Course_Key`),
+  KEY `fact_course_delivery_provider_key_foreign` (`Provider_Key`),
+  KEY `fact_course_delivery_grant_key_foreign` (`Grant_Key`),
+  CONSTRAINT `fact_course_delivery_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),
+  CONSTRAINT `fact_course_delivery_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`),
+  CONSTRAINT `fact_course_delivery_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),
+  CONSTRAINT `fact_course_delivery_grant_key_foreign` FOREIGN KEY (`Grant_Key`) REFERENCES `Dim_Grant` (`Grant_Key`),
+  CONSTRAINT `fact_course_delivery_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),
+  CONSTRAINT `fact_course_delivery_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns"><a class="header" href="#columns">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Delivery_Fact_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Date_Key</td><td>int</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_date">Dim_Date</a></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a></td><td></td></tr>
+<tr><td>School_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_school">Dim_School</a></td><td></td></tr>
+<tr><td>Organisation_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_course">Dim_Course</a></td><td></td></tr>
+<tr><td>Provider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_training_provider">Dim_Training_Provider</a></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_grant">Dim_Grant</a></td><td></td></tr>
+<tr><td>Riders_Enrolled_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Riders_Completed_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Booked_Provisional</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Booked_Confirmed</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Attended_Confirmed</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Female</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Male</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Gender_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Pupil_Premium</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_SEND</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_White_British</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_White_Irish</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Gypsy_Romany</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_White_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Mixed_White_Black_Carib</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Mixed_White_Black_African</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Mixed_White_Asian</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Mixed_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Asian_Indian</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Asian_Pakistani</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Asian_Bangladeshi</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Asian_Chinese</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Asian_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Black_African</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Black_Caribbean</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Black_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Other_Arab</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Other_Any</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints"><a class="header" href="#constraints">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_course_delivery_course_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)</td></tr>
+<tr><td>fact_course_delivery_date_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)</td></tr>
+<tr><td>fact_course_delivery_delivery_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)</td></tr>
+<tr><td>fact_course_delivery_grant_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Grant_Key) REFERENCES Dim_Grant (Grant_Key)</td></tr>
+<tr><td>fact_course_delivery_provider_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)</td></tr>
+<tr><td>fact_course_delivery_school_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Delivery_Fact_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes"><a class="header" href="#indexes">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_course_delivery_course_key_foreign</td><td>KEY fact_course_delivery_course_key_foreign (Course_Key) USING BTREE</td></tr>
+<tr><td>fact_course_delivery_date_key_foreign</td><td>KEY fact_course_delivery_date_key_foreign (Date_Key) USING BTREE</td></tr>
+<tr><td>fact_course_delivery_delivery_key_foreign</td><td>KEY fact_course_delivery_delivery_key_foreign (Delivery_Key) USING BTREE</td></tr>
+<tr><td>fact_course_delivery_grant_key_foreign</td><td>KEY fact_course_delivery_grant_key_foreign (Grant_Key) USING BTREE</td></tr>
+<tr><td>fact_course_delivery_provider_key_foreign</td><td>KEY fact_course_delivery_provider_key_foreign (Provider_Key) USING BTREE</td></tr>
+<tr><td>fact_course_delivery_school_key_foreign</td><td>KEY fact_course_delivery_school_key_foreign (School_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Delivery_Fact_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-1"><a class="header" href="#relations-1">Relations</a></h2>
+<p><img src="Fact_Course_Delivery.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_follow_up_survey"><a class="header" href="#fact_follow_up_survey">Fact_Follow_Up_Survey</a></h1>
+<h2 id="description-1"><a class="header" href="#description-1">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Follow_Up_Survey` (
+  `Follow_Up_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Survey_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Rider_Key` bigint unsigned NOT NULL,
+  `Course_Key` bigint unsigned NOT NULL,
+  `Course_Label_Raw` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Invitation_Month` int DEFAULT NULL,
+  `q1a_freq_school` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q1b_freq_leisure` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q1c_freq_exercise` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q2a_conf_use_cycle` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q2b_conf_cycle_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q3a_enc_use_cycle` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q3b_enc_cycle_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q4_safety_roads` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q5_child_desire` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q6_encouragement_factors` json DEFAULT NULL,
+  `q7_conf_change` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `q8_physical_activity` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Follow_Up_Key`),
+  KEY `fact_follow_up_survey_source_survey_id_source_system_key_index` (`Source_Survey_Id`,`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-1"><a class="header" href="#columns-1">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Follow_Up_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_Survey_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Rider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Label_Raw</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Invitation_Month</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q1a_freq_school</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q1b_freq_leisure</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q1c_freq_exercise</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q2a_conf_use_cycle</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q2b_conf_cycle_roads</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q3a_enc_use_cycle</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q3b_enc_cycle_roads</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q4_safety_roads</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q5_child_desire</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q6_encouragement_factors</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q7_conf_change</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>q8_physical_activity</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-1"><a class="header" href="#constraints-1">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Follow_Up_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-1"><a class="header" href="#indexes-1">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_follow_up_survey_source_survey_id_source_system_key_index</td><td>KEY fact_follow_up_survey_source_survey_id_source_system_key_index (Source_Survey_Id, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Follow_Up_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-2"><a class="header" href="#relations-2">Relations</a></h2>
+<p><img src="Fact_Follow_Up_Survey.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_amendment_logs"><a class="header" href="#fact_grant_amendment_logs">Fact_Grant_Amendment_Logs</a></h1>
+<h2 id="description-2"><a class="header" href="#description-2">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Amendment_Logs` (
+  `Amendment_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Amendment_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Type_Label` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Value_Count` int NOT NULL DEFAULT '0',
+  `Amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Amendment_Log_Key`),
+  KEY `fact_grant_amendment_logs_amendment_key_index` (`Amendment_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-2"><a class="header" href="#columns-2">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Amendment_Log_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Amendment_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Type_Label</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Module_Key</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Value_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Amount</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-2"><a class="header" href="#constraints-2">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Amendment_Log_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-2"><a class="header" href="#indexes-2">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_amendment_logs_amendment_key_index</td><td>KEY fact_grant_amendment_logs_amendment_key_index (Amendment_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Amendment_Log_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-3"><a class="header" href="#relations-3">Relations</a></h2>
+<p><img src="Fact_Grant_Amendment_Logs.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_amendments"><a class="header" href="#fact_grant_amendments">Fact_Grant_Amendments</a></h1>
+<h2 id="description-3"><a class="header" href="#description-3">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Amendments` (
+  `Amendment_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Grant_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Source_Amendment_Id` bigint unsigned NOT NULL,
+  `Amendment_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Status_Raw` tinyint NOT NULL DEFAULT '0',
+  `Date_Approved` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Amendment_Key`),
+  KEY `idx_amend_base` (`Grant_Key`,`Source_Amendment_Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-3"><a class="header" href="#columns-3">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Amendment_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Amendment_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Amendment_Number</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status_Raw</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Approved</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-3"><a class="header" href="#constraints-3">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Amendment_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-3"><a class="header" href="#indexes-3">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>idx_amend_base</td><td>KEY idx_amend_base (Grant_Key, Source_Amendment_Id) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Amendment_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-4"><a class="header" href="#relations-4">Relations</a></h2>
+<p><img src="Fact_Grant_Amendments.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_claim_inclusions"><a class="header" href="#fact_grant_claim_inclusions">Fact_Grant_Claim_Inclusions</a></h1>
+<h2 id="description-4"><a class="header" href="#description-4">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Claim_Inclusions` (
+  `Claim_Inclusion_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Claim_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Inclusion_Id_String` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Inclusion_Category` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Inclusion_Delivery` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Inclusion_Amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Claim_Inclusion_Key`),
+  KEY `fact_grant_claim_inclusions_claim_key_index` (`Claim_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-4"><a class="header" href="#columns-4">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Claim_Inclusion_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Claim_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inclusion_Id_String</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inclusion_Category</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inclusion_Delivery</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inclusion_Amount</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-4"><a class="header" href="#constraints-4">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Claim_Inclusion_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-4"><a class="header" href="#indexes-4">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_claim_inclusions_claim_key_index</td><td>KEY fact_grant_claim_inclusions_claim_key_index (Claim_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Claim_Inclusion_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-5"><a class="header" href="#relations-5">Relations</a></h2>
+<p><img src="Fact_Grant_Claim_Inclusions.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_claim_logs"><a class="header" href="#fact_grant_claim_logs">Fact_Grant_Claim_Logs</a></h1>
+<h2 id="description-5"><a class="header" href="#description-5">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Claim_Logs` (
+  `Claim_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Claim_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Item_Count` int NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Claim_Log_Key`),
+  KEY `fact_grant_claim_logs_claim_key_index` (`Claim_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-5"><a class="header" href="#columns-5">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Claim_Log_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Claim_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Module_Key</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Item_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-5"><a class="header" href="#constraints-5">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Claim_Log_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-5"><a class="header" href="#indexes-5">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_claim_logs_claim_key_index</td><td>KEY fact_grant_claim_logs_claim_key_index (Claim_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Claim_Log_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-6"><a class="header" href="#relations-6">Relations</a></h2>
+<p><img src="Fact_Grant_Claim_Logs.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_claim_send_records"><a class="header" href="#fact_grant_claim_send_records">Fact_Grant_Claim_Send_Records</a></h1>
+<h2 id="description-6"><a class="header" href="#description-6">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Claim_Send_Records` (
+  `Claim_Send_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Claim_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Send_Id_String` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Send_Riders_Count` int NOT NULL DEFAULT '0',
+  `Send_Amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Claim_Send_Key`),
+  KEY `fact_grant_claim_send_records_claim_key_index` (`Claim_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-6"><a class="header" href="#columns-6">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Claim_Send_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Claim_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Id_String</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Riders_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Amount</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-6"><a class="header" href="#constraints-6">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Claim_Send_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-6"><a class="header" href="#indexes-6">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_claim_send_records_claim_key_index</td><td>KEY fact_grant_claim_send_records_claim_key_index (Claim_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Claim_Send_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-7"><a class="header" href="#relations-7">Relations</a></h2>
+<p><img src="Fact_Grant_Claim_Send_Records.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_claims"><a class="header" href="#fact_grant_claims">Fact_Grant_Claims</a></h1>
+<h2 id="description-7"><a class="header" href="#description-7">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Claims` (
+  `Claim_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Grant_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Source_Claim_Id` bigint unsigned NOT NULL,
+  `Claim_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Status_Raw` tinyint NOT NULL DEFAULT '0',
+  `Pref_Authority_Given` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Claim_Paid` tinyint(1) NOT NULL DEFAULT '0',
+  `Date_Approved` date DEFAULT NULL,
+  `Delivery_On_Track_Prediction` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Send_Claimable_Amount` decimal(15,2) DEFAULT NULL,
+  `Inclusion_Claimable_Amount` decimal(15,2) DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Claim_Key`),
+  KEY `idx_claims_base` (`Grant_Key`,`Source_Claim_Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-7"><a class="header" href="#columns-7">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Claim_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Claim_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Claim_Number</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status_Raw</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Authority_Given</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Claim_Paid</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Approved</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Delivery_On_Track_Prediction</td><td>varchar(10)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Claimable_Amount</td><td>decimal(15,2)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inclusion_Claimable_Amount</td><td>decimal(15,2)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-7"><a class="header" href="#constraints-7">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Claim_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-7"><a class="header" href="#indexes-7">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>idx_claims_base</td><td>KEY idx_claims_base (Grant_Key, Source_Claim_Id) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Claim_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-8"><a class="header" href="#relations-8">Relations</a></h2>
+<p><img src="Fact_Grant_Claims.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_financials"><a class="header" href="#fact_grant_financials">Fact_Grant_Financials</a></h1>
+<h2 id="description-8"><a class="header" href="#description-8">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Financials` (
+  `Grant_Financial_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Format_Id` bigint unsigned NOT NULL,
+  `Grant_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Max_Allocation` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Total_Levels` int NOT NULL DEFAULT '0',
+  `Total_Plus` int NOT NULL DEFAULT '0',
+  `Places_Level_1` int NOT NULL DEFAULT '0',
+  `Grant_Level_1` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Level_1_2` int NOT NULL DEFAULT '0',
+  `Grant_Level_1_2` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Level_2` int NOT NULL DEFAULT '0',
+  `Grant_Level_2` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Level_3` int NOT NULL DEFAULT '0',
+  `Grant_Level_3` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Balance` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Balance` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Bus` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Bus` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Fix` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Fix` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Learn` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Learn` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_On_Show` int NOT NULL DEFAULT '0',
+  `Grant_Plus_On_Show` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Parents` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Parents` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Promotion` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Promotion` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Recycled` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Recycled` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Ride` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Ride` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Transition` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Transition` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Family` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Family` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Plus_Adult` int NOT NULL DEFAULT '0',
+  `Grant_Plus_Adult` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Grant_Send` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Send` int NOT NULL DEFAULT '0',
+  `Grant_Inclusion` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `Places_Inclusion` int NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Grant_Financial_Key`),
+  KEY `fact_grant_financials_grant_key_source_system_key_index` (`Grant_Key`,`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-8"><a class="header" href="#columns-8">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Grant_Financial_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_Format_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Max_Allocation</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Total_Levels</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Total_Plus</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Level_1</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Level_1</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Level_1_2</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Level_1_2</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Level_2</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Level_2</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Level_3</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Level_3</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Balance</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Balance</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Bus</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Bus</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Fix</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Fix</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Learn</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Learn</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_On_Show</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_On_Show</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Parents</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Parents</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Promotion</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Promotion</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Recycled</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Recycled</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Ride</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Ride</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Transition</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Transition</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Family</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Family</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Plus_Adult</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Plus_Adult</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Send</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Send</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Inclusion</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Places_Inclusion</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-8"><a class="header" href="#constraints-8">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Grant_Financial_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-8"><a class="header" href="#indexes-8">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_financials_grant_key_source_system_key_index</td><td>KEY fact_grant_financials_grant_key_source_system_key_index (Grant_Key, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Grant_Financial_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-9"><a class="header" href="#relations-9">Relations</a></h2>
+<p><img src="Fact_Grant_Financials.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_reallocation_logs"><a class="header" href="#fact_grant_reallocation_logs">Fact_Grant_Reallocation_Logs</a></h1>
+<h2 id="description-9"><a class="header" href="#description-9">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Reallocation_Logs` (
+  `Reallocation_Log_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Reallocation_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Module_Key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Value_Count` int NOT NULL DEFAULT '0',
+  `Amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Reallocation_Log_Key`),
+  KEY `fact_grant_reallocation_logs_reallocation_key_index` (`Reallocation_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-9"><a class="header" href="#columns-9">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Reallocation_Log_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Reallocation_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Module_Key</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Value_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Amount</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-9"><a class="header" href="#constraints-9">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Reallocation_Log_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-9"><a class="header" href="#indexes-9">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_grant_reallocation_logs_reallocation_key_index</td><td>KEY fact_grant_reallocation_logs_reallocation_key_index (Reallocation_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Reallocation_Log_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-10"><a class="header" href="#relations-10">Relations</a></h2>
+<p><img src="Fact_Grant_Reallocation_Logs.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_grant_reallocations"><a class="header" href="#fact_grant_reallocations">Fact_Grant_Reallocations</a></h1>
+<h2 id="description-10"><a class="header" href="#description-10">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Reallocations` (
+  `Reallocation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Grant_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Source_Reallocation_Id` bigint unsigned NOT NULL,
+  `Reallocation_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Reallocation_Type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Status_Raw` tinyint NOT NULL DEFAULT '0',
+  `Reallocation_Notes` text COLLATE utf8mb4_unicode_ci,
+  `Reallocation_Increase_Reasons` text COLLATE utf8mb4_unicode_ci,
+  `Date_Approved` date DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Reallocation_Key`),
+  KEY `idx_realloc_base` (`Grant_Key`,`Source_Reallocation_Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-10"><a class="header" href="#columns-10">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Reallocation_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Reallocation_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Reallocation_Number</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Reallocation_Type</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status_Raw</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Reallocation_Notes</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Reallocation_Increase_Reasons</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Approved</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-10"><a class="header" href="#constraints-10">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Reallocation_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-10"><a class="header" href="#indexes-10">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>idx_realloc_base</td><td>KEY idx_realloc_base (Grant_Key, Source_Reallocation_Id) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Reallocation_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-11"><a class="header" href="#relations-11">Relations</a></h2>
+<p><img src="Fact_Grant_Reallocations.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_handsup_survey"><a class="header" href="#fact_handsup_survey">Fact_HandsUp_Survey</a></h1>
+<h2 id="description-11"><a class="header" href="#description-11">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_HandsUp_Survey` (
+  `Survey_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Date_Key` int DEFAULT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Course_Key` bigint unsigned NOT NULL,
+  `Exp_Enjoyed` int NOT NULL DEFAULT '0',
+  `Exp_Did_Not_Enjoy` int NOT NULL DEFAULT '0',
+  `Exp_Not_Sure` int NOT NULL DEFAULT '0',
+  `Exp_Absent` int NOT NULL DEFAULT '0',
+  `Base_Yes` int NOT NULL DEFAULT '0',
+  `Base_No` int NOT NULL DEFAULT '0',
+  `Base_Not_Sure` int NOT NULL DEFAULT '0',
+  `Safe_More` int NOT NULL DEFAULT '0',
+  `Safe_Less` int NOT NULL DEFAULT '0',
+  `Safe_No_Diff` int NOT NULL DEFAULT '0',
+  `Safe_Not_Sure` int NOT NULL DEFAULT '0',
+  `Conf_More` int NOT NULL DEFAULT '0',
+  `Conf_Less` int NOT NULL DEFAULT '0',
+  `Conf_No_Diff` int NOT NULL DEFAULT '0',
+  `Conf_Not_Sure` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Survey_Fact_Key`),
+  KEY `fact_handsup_survey_date_key_foreign` (`Date_Key`),
+  KEY `fact_handsup_survey_course_key_foreign` (`Course_Key`),
+  CONSTRAINT `fact_handsup_survey_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),
+  CONSTRAINT `fact_handsup_survey_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-11"><a class="header" href="#columns-11">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Survey_Fact_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Date_Key</td><td>int</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_date">Dim_Date</a></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_course">Dim_Course</a></td><td></td></tr>
+<tr><td>Exp_Enjoyed</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Exp_Did_Not_Enjoy</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Exp_Not_Sure</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Exp_Absent</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Base_Yes</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Base_No</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Base_Not_Sure</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Safe_More</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Safe_Less</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Safe_No_Diff</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Safe_Not_Sure</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Conf_More</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Conf_Less</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Conf_No_Diff</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Conf_Not_Sure</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-11"><a class="header" href="#constraints-11">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_handsup_survey_course_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Course_Key) REFERENCES Dim_Course (Course_Key)</td></tr>
+<tr><td>fact_handsup_survey_date_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Survey_Fact_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-11"><a class="header" href="#indexes-11">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_handsup_survey_course_key_foreign</td><td>KEY fact_handsup_survey_course_key_foreign (Course_Key) USING BTREE</td></tr>
+<tr><td>fact_handsup_survey_date_key_foreign</td><td>KEY fact_handsup_survey_date_key_foreign (Date_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Survey_Fact_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-12"><a class="header" href="#relations-12">Relations</a></h2>
+<p><img src="Fact_HandsUp_Survey.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_instructor_course"><a class="header" href="#fact_instructor_course">Fact_Instructor_Course</a></h1>
+<h2 id="description-12"><a class="header" href="#description-12">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Instructor_Course` (
+  `Instructor_Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Instructor_Key` bigint unsigned NOT NULL,
+  `Course_Key` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Active_From` datetime NOT NULL,
+  `Active_To` datetime DEFAULT NULL COMMENT 'Null means currently active',
+  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`Instructor_Course_Key`),
+  KEY `fact_instructor_course_instructor_key_is_current_index` (`Instructor_Key`,`Is_Current`),
+  KEY `fact_instructor_course_course_key_is_current_index` (`Course_Key`,`Is_Current`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-12"><a class="header" href="#columns-12">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Instructor_Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Active_From</td><td>datetime</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Active_To</td><td>datetime</td><td></td><td>true</td><td></td><td></td><td></td><td>Null means currently active</td></tr>
+<tr><td>Is_Current</td><td>tinyint(1)</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-12"><a class="header" href="#constraints-12">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Instructor_Course_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-12"><a class="header" href="#indexes-12">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_instructor_course_course_key_is_current_index</td><td>KEY fact_instructor_course_course_key_is_current_index (Course_Key, Is_Current) USING BTREE</td></tr>
+<tr><td>fact_instructor_course_instructor_key_is_current_index</td><td>KEY fact_instructor_course_instructor_key_is_current_index (Instructor_Key, Is_Current) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Instructor_Course_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-13"><a class="header" href="#relations-13">Relations</a></h2>
+<p><img src="Fact_Instructor_Course.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_instructor_delivery"><a class="header" href="#fact_instructor_delivery">Fact_Instructor_Delivery</a></h1>
+<h2 id="description-13"><a class="header" href="#description-13">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Instructor_Delivery` (
+  `Instructor_Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_System_Key` int NOT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Instructor_Key` bigint unsigned NOT NULL,
+  `Instructor_Notified` tinyint(1) NOT NULL DEFAULT '0',
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  `Source_Deleted_At` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Instructor_Delivery_Key`),
+  KEY `idx_delivery_instructor` (`Delivery_Key`,`Instructor_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-13"><a class="header" href="#columns-13">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Instructor_Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Notified</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Deleted_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-13"><a class="header" href="#constraints-13">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Instructor_Delivery_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-13"><a class="header" href="#indexes-13">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>idx_delivery_instructor</td><td>KEY idx_delivery_instructor (Delivery_Key, Instructor_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Instructor_Delivery_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-14"><a class="header" href="#relations-14">Relations</a></h2>
+<p><img src="Fact_Instructor_Delivery.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_parent_survey"><a class="header" href="#fact_parent_survey">Fact_Parent_Survey</a></h1>
+<h2 id="description-14"><a class="header" href="#description-14">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Parent_Survey` (
+  `Parent_Survey_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Date_Key` int NOT NULL,
+  `Rider_Key` bigint unsigned NOT NULL,
+  `Course_Key` bigint unsigned NOT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Grant_Key` bigint unsigned DEFAULT NULL,
+  `Like_To_Participate` tinyint(1) NOT NULL DEFAULT '0',
+  `Like_To_Answer_Survey` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Join_Bikeability` tinyint(1) NOT NULL DEFAULT '0',
+  `Rider_Emotion` int DEFAULT NULL,
+  `Pref_More_Training` int DEFAULT NULL,
+  `Pref_Interest_In_Training` int DEFAULT NULL,
+  `Confidence_Bike_General` int DEFAULT NULL,
+  `Confidence_Road` int DEFAULT NULL,
+  `Confidence_Independent` int DEFAULT NULL,
+  `Frequency_School` int DEFAULT NULL,
+  `Frequency_Leisure` int DEFAULT NULL,
+  `Frequency_Exercise` int DEFAULT NULL,
+  `Feedback_Is_Fun` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Is_Hard` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Is_Healthy` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Still_New` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Family_Friends` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Dont_See_Others_Like_Me` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_On_Own` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_Not_Enjoy` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_None_Apply` tinyint(1) NOT NULL DEFAULT '0',
+  `Feedback_None_Apply_Input` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Encouragement_Use_Bike` tinyint(1) DEFAULT '0',
+  `Encouragement_Use_Bike_On_Road` tinyint(1) DEFAULT '0',
+  `Encourage_More_Direct_Routes` tinyint DEFAULT '0',
+  `Encourage_Local_Route_Awareness` tinyint DEFAULT '0',
+  `Encourage_Storage` tinyint DEFAULT '0',
+  `Encourage_Road_Surfaces` tinyint DEFAULT '0',
+  `Encourage_Confidence` tinyint DEFAULT '0',
+  `Encourage_Cycle_Maintenance` tinyint DEFAULT '0',
+  `Encourage_Local_Initiatives` tinyint DEFAULT '0',
+  `Encourage_Purchase_Ability` tinyint DEFAULT '0',
+  `Encourage_Doesnt_Want_To_Cycle_More` tinyint DEFAULT '0',
+  `Encourage_None` tinyint DEFAULT '0',
+  `Encourage_Other_Reason` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Likert_Life_Skill` tinyint DEFAULT NULL,
+  `Likert_Self_Esteem` tinyint DEFAULT NULL,
+  `Likert_Fitness` tinyint DEFAULT NULL,
+  `Likert_Active` tinyint DEFAULT NULL,
+  `Likert_Mindfulness` tinyint DEFAULT NULL,
+  `Likert_Improve_Self_Regulate` tinyint DEFAULT NULL,
+  `Likert_Improve_Concentration` tinyint DEFAULT NULL,
+  `Likert_Improve_Academic_Performance` tinyint DEFAULT NULL,
+  `Likert_Independence` tinyint DEFAULT NULL,
+  `Likert_Improve_Road_Awareness` tinyint DEFAULT NULL,
+  `Likert_Improve_Environment_Awareness` tinyint DEFAULT NULL,
+  `Likert_Help_Socialise` tinyint DEFAULT NULL,
+  `Likert_Make_Children_Happy` tinyint DEFAULT NULL,
+  `Likert_Keep_Children_Occupied` tinyint DEFAULT NULL,
+  `Likert_Encourage_Children_Outside` tinyint DEFAULT NULL,
+  `Likert_Children_Less_Dependent` tinyint DEFAULT NULL,
+  `Likert_Reduce_Other_Transport_Expense` tinyint DEFAULT NULL,
+  `Likert_Enable_Cycle_As_Family` tinyint DEFAULT NULL,
+  `Likely_To_Recommend` int DEFAULT '0',
+  `Source_Survey_Id` bigint unsigned NOT NULL,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Parent_Survey_Key`),
+  KEY `fact_parent_survey_date_key_foreign` (`Date_Key`),
+  CONSTRAINT `fact_parent_survey_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-14"><a class="header" href="#columns-14">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Parent_Survey_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Date_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_date">Dim_Date</a></td><td></td></tr>
+<tr><td>Rider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Like_To_Participate</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Like_To_Answer_Survey</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Join_Bikeability</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Rider_Emotion</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_More_Training</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Interest_In_Training</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Confidence_Bike_General</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Confidence_Road</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Confidence_Independent</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Frequency_School</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Frequency_Leisure</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Frequency_Exercise</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Is_Fun</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Is_Hard</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Is_Healthy</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Still_New</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Family_Friends</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Dont_See_Others_Like_Me</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_On_Own</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_Not_Enjoy</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_None_Apply</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Feedback_None_Apply_Input</td><td>varchar(500)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encouragement_Use_Bike</td><td>tinyint(1)</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encouragement_Use_Bike_On_Road</td><td>tinyint(1)</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_More_Direct_Routes</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Local_Route_Awareness</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Storage</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Road_Surfaces</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Confidence</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Cycle_Maintenance</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Local_Initiatives</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Purchase_Ability</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Doesnt_Want_To_Cycle_More</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_None</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Encourage_Other_Reason</td><td>varchar(500)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Life_Skill</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Self_Esteem</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Fitness</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Active</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Mindfulness</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Improve_Self_Regulate</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Improve_Concentration</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Improve_Academic_Performance</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Independence</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Improve_Road_Awareness</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Improve_Environment_Awareness</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Help_Socialise</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Make_Children_Happy</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Keep_Children_Occupied</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Encourage_Children_Outside</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Children_Less_Dependent</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Reduce_Other_Transport_Expense</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likert_Enable_Cycle_As_Family</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Likely_To_Recommend</td><td>int</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Survey_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-14"><a class="header" href="#constraints-14">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_parent_survey_date_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Date_Key) REFERENCES Dim_Date (Date_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Parent_Survey_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-14"><a class="header" href="#indexes-14">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>fact_parent_survey_date_key_foreign</td><td>KEY fact_parent_survey_date_key_foreign (Date_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Parent_Survey_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-15"><a class="header" href="#relations-15">Relations</a></h2>
+<p><img src="Fact_Parent_Survey.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="fact_rider_course"><a class="header" href="#fact_rider_course">Fact_Rider_Course</a></h1>
+<h2 id="description-15"><a class="header" href="#description-15">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Fact_Rider_Course` (
+  `Source_Rider_Id` bigint unsigned NOT NULL,
+  `Source_Course_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Status` int NOT NULL DEFAULT '0',
+  `Attended` tinyint DEFAULT '1',
+  `Withdrawn` tinyint(1) DEFAULT '0',
+  `Withdrawal_Reason` text COLLATE utf8mb4_unicode_ci,
+  `Has_Completed_Course` tinyint(1) DEFAULT '0',
+  `Has_Survey_Completed` tinyint(1) NOT NULL DEFAULT '0',
+  `Course_Complete_Date` date DEFAULT NULL,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  `Updated_At` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`Source_Rider_Id`,`Source_Course_Id`),
+  KEY `idx_dwh_source_updated` (`Source_Updated_At`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-15"><a class="header" href="#columns-15">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Source_Rider_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Course_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>varchar(50)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Attended</td><td>tinyint</td><td>1</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Withdrawn</td><td>tinyint(1)</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Withdrawal_Reason</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Completed_Course</td><td>tinyint(1)</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Survey_Completed</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Course_Complete_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Updated_At</td><td>timestamp</td><td>CURRENT_TIMESTAMP</td><td>false</td><td>DEFAULT_GENERATED on update CURRENT_TIMESTAMP</td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-15"><a class="header" href="#constraints-15">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Source_Rider_Id, Source_Course_Id)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-15"><a class="header" href="#indexes-15">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>idx_dwh_source_updated</td><td>KEY idx_dwh_source_updated (Source_Updated_At) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Source_Rider_Id, Source_Course_Id) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-16"><a class="header" href="#relations-16">Relations</a></h2>
+<p><img src="Fact_Rider_Course.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_consent"><a class="header" href="#dim_consent">Dim_Consent</a></h1>
+<h2 id="description-16"><a class="header" href="#description-16">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Consent` (
+  `Consent_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Consent_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Rider_Key` bigint unsigned NOT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Consent_Status` tinyint DEFAULT NULL,
+  `Pref_Join_Bikeclub` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Further_Research` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Receive_News` tinyint(1) NOT NULL DEFAULT '0',
+  `Has_Bike` tinyint DEFAULT NULL,
+  `Ability_Cannot_Cycle` tinyint NOT NULL DEFAULT '0' COMMENT '1: My child cannot yet cycle',
+  `Ability_Can_Look_Over_Shoulder` tinyint NOT NULL DEFAULT '0' COMMENT '2: Can look over shoulder',
+  `Ability_Can_One_Hand_Signal` tinyint NOT NULL DEFAULT '0' COMMENT '3: Can signal with one hand',
+  `Ability_Has_Level_2` tinyint NOT NULL DEFAULT '0' COMMENT '4: Already completed Level 2',
+  `Cycle_Ability_Raw` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Is_Pupil_Premium` tinyint DEFAULT NULL,
+  `Is_SEND` tinyint DEFAULT NULL,
+  `SEND_Details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Has_Medical_Condition` tinyint DEFAULT NULL,
+  `Medical_Details` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Attended` tinyint NOT NULL DEFAULT '1',
+  `Year_Group` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Gender` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Ethnicity` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Pre_Freq_To_School` int DEFAULT NULL,
+  `Pre_Freq_Leisure` int DEFAULT NULL,
+  `Pre_Freq_Exercise` int DEFAULT NULL,
+  `Pre_Freq_Other` int DEFAULT NULL,
+  PRIMARY KEY (`Consent_Key`),
+  KEY `dim_consent_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_consent_rider_key_foreign` (`Rider_Key`),
+  KEY `dim_consent_delivery_key_foreign` (`Delivery_Key`),
+  KEY `idx_consent_source` (`Source_Consent_Id`),
+  CONSTRAINT `dim_consent_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),
+  CONSTRAINT `dim_consent_rider_key_foreign` FOREIGN KEY (`Rider_Key`) REFERENCES `Dim_Rider` (`Rider_Key`),
+  CONSTRAINT `dim_consent_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-16"><a class="header" href="#columns-16">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Consent_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_Consent_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Rider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_rider">Dim_Rider</a></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a></td><td></td></tr>
+<tr><td>Consent_Status</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Join_Bikeclub</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Further_Research</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Receive_News</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Bike</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Ability_Cannot_Cycle</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td>1: My child cannot yet cycle</td></tr>
+<tr><td>Ability_Can_Look_Over_Shoulder</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td>2: Can look over shoulder</td></tr>
+<tr><td>Ability_Can_One_Hand_Signal</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td>3: Can signal with one hand</td></tr>
+<tr><td>Ability_Has_Level_2</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td>4: Already completed Level 2</td></tr>
+<tr><td>Cycle_Ability_Raw</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Pupil_Premium</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_SEND</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>SEND_Details</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Medical_Condition</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Medical_Details</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Attended</td><td>tinyint</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Year_Group</td><td>varchar(10)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Gender</td><td>varchar(50)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Ethnicity</td><td>varchar(100)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pre_Freq_To_School</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pre_Freq_Leisure</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pre_Freq_Exercise</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pre_Freq_Other</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-16"><a class="header" href="#constraints-16">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_consent_delivery_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)</td></tr>
+<tr><td>dim_consent_rider_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Rider_Key) REFERENCES Dim_Rider (Rider_Key)</td></tr>
+<tr><td>dim_consent_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Consent_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-16"><a class="header" href="#indexes-16">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_consent_delivery_key_foreign</td><td>KEY dim_consent_delivery_key_foreign (Delivery_Key) USING BTREE</td></tr>
+<tr><td>dim_consent_rider_key_foreign</td><td>KEY dim_consent_rider_key_foreign (Rider_Key) USING BTREE</td></tr>
+<tr><td>dim_consent_source_system_key_foreign</td><td>KEY dim_consent_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_consent_source</td><td>KEY idx_consent_source (Source_Consent_Id) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Consent_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-17"><a class="header" href="#relations-17">Relations</a></h2>
+<p><img src="Dim_Consent.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_course"><a class="header" href="#dim_course">Dim_Course</a></h1>
+<h2 id="description-17"><a class="header" href="#description-17">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Course` (
+  `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Course_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Delivery_Key` bigint unsigned NOT NULL,
+  `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Status` int DEFAULT NULL,
+  `Start_Date` date DEFAULT NULL,
+  `Date_Complete` date DEFAULT NULL,
+  `Year_Group` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Parent_Course_Key` bigint unsigned DEFAULT NULL,
+  PRIMARY KEY (`Course_Key`),
+  KEY `dim_course_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_course_delivery_key_foreign` (`Delivery_Key`),
+  KEY `dim_course_parent_course_key_foreign` (`Parent_Course_Key`),
+  KEY `idx_course_source` (`Source_Course_Id`,`Source_System_Key`),
+  CONSTRAINT `dim_course_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),
+  CONSTRAINT `dim_course_parent_course_key_foreign` FOREIGN KEY (`Parent_Course_Key`) REFERENCES `Dim_Course` (`Course_Key`) ON DELETE SET NULL,
+  CONSTRAINT `dim_course_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-17"><a class="header" href="#columns-17">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_course">Dim_Course</a> <a href="#fact_course_delivery">Fact_Course_Delivery</a> <a href="#fact_handsup_survey">Fact_HandsUp_Survey</a></td><td></td><td></td></tr>
+<tr><td>Source_Course_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a></td><td></td></tr>
+<tr><td>Course_Level</td><td>varchar(45)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Start_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Complete</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Year_Group</td><td>varchar(45)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Parent_Course_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_course">Dim_Course</a></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-17"><a class="header" href="#constraints-17">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_course_delivery_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Delivery_Key) REFERENCES Dim_Delivery_Header (Delivery_Key)</td></tr>
+<tr><td>dim_course_parent_course_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Parent_Course_Key) REFERENCES Dim_Course (Course_Key)</td></tr>
+<tr><td>dim_course_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Course_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-17"><a class="header" href="#indexes-17">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_course_delivery_key_foreign</td><td>KEY dim_course_delivery_key_foreign (Delivery_Key) USING BTREE</td></tr>
+<tr><td>dim_course_parent_course_key_foreign</td><td>KEY dim_course_parent_course_key_foreign (Parent_Course_Key) USING BTREE</td></tr>
+<tr><td>dim_course_source_system_key_foreign</td><td>KEY dim_course_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_course_source</td><td>KEY idx_course_source (Source_Course_Id, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Course_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-18"><a class="header" href="#relations-18">Relations</a></h2>
+<p><img src="Dim_Course.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_date"><a class="header" href="#dim_date">Dim_Date</a></h1>
+<h2 id="description-18"><a class="header" href="#description-18">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Date` (
+  `Date_Key` int NOT NULL,
+  `Full_Date` date NOT NULL,
+  `Month_Name` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Calendar_Year` int NOT NULL,
+  `Financial_Year` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Financial_Quarter` char(2) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Financial_Month_Number` int NOT NULL,
+  `Is_Weekend` tinyint(1) NOT NULL,
+  PRIMARY KEY (`Date_Key`),
+  UNIQUE KEY `dim_date_full_date_unique` (`Full_Date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-18"><a class="header" href="#columns-18">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Date_Key</td><td>int</td><td></td><td>false</td><td><a href="#fact_course_delivery">Fact_Course_Delivery</a> <a href="#fact_handsup_survey">Fact_HandsUp_Survey</a> <a href="#fact_parent_survey">Fact_Parent_Survey</a></td><td></td><td></td></tr>
+<tr><td>Full_Date</td><td>date</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Month_Name</td><td>varchar(10)</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Calendar_Year</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Financial_Year</td><td>varchar(10)</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Financial_Quarter</td><td>char(2)</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Financial_Month_Number</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+<tr><td>Is_Weekend</td><td>tinyint(1)</td><td></td><td>false</td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-18"><a class="header" href="#constraints-18">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_date_full_date_unique</td><td>UNIQUE</td><td>UNIQUE KEY dim_date_full_date_unique (Full_Date)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Date_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-18"><a class="header" href="#indexes-18">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Date_Key) USING BTREE</td></tr>
+<tr><td>dim_date_full_date_unique</td><td>UNIQUE KEY dim_date_full_date_unique (Full_Date) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-19"><a class="header" href="#relations-19">Relations</a></h2>
+<p><img src="Dim_Date.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_delivery_header"><a class="header" href="#dim_delivery_header">Dim_Delivery_Header</a></h1>
+<h2 id="description-19"><a class="header" href="#description-19">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Delivery_Header` (
+  `Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Delivery_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Grant_Key` bigint unsigned DEFAULT NULL,
+  `School_Key` bigint unsigned DEFAULT NULL,
+  `Organisation_Key` bigint unsigned DEFAULT NULL,
+  `Training_Provider_Key` bigint unsigned DEFAULT NULL,
+  `External_System_Key` bigint unsigned DEFAULT NULL,
+  `Delivery_Status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Date_Delivery_Start` date DEFAULT NULL,
+  `Date_Delivery_End` date DEFAULT NULL,
+  `Digitisation_Booking` tinyint NOT NULL DEFAULT '0',
+  `Fleet_Cycles_Used` int DEFAULT '0',
+  `Consent_Cutoff_Date` date DEFAULT NULL,
+  `Pref_Alt_Delivery_Location` tinyint NOT NULL DEFAULT '0',
+  `Alt_Delivery_Location` text COLLATE utf8mb4_unicode_ci,
+  `Notes` text COLLATE utf8mb4_unicode_ci,
+  `Instructor_General_Notes` text COLLATE utf8mb4_unicode_ci,
+  `Teacher_Notes` text COLLATE utf8mb4_unicode_ci,
+  `School_Contacts` json DEFAULT NULL,
+  `Venue` json DEFAULT NULL,
+  `Provider_Additional_Questions` json DEFAULT NULL,
+  `Comms_Start_Date` date DEFAULT NULL,
+  `Date_Completed` date DEFAULT NULL,
+  `Pref_Link_Managed_Consent` tinyint DEFAULT NULL,
+  `Include_Tp_Terms_In_Consent` tinyint NOT NULL DEFAULT '0',
+  `Consent_Src_Characteristics` tinyint NOT NULL DEFAULT '0',
+  `Max_Consents` int DEFAULT NULL,
+  `Waiting_List_Enabled` tinyint NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Delivery_Key`),
+  KEY `dim_delivery_header_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_delivery_header_school_key_foreign` (`School_Key`),
+  KEY `dim_delivery_header_organisation_key_foreign` (`Organisation_Key`),
+  KEY `dim_delivery_header_training_provider_key_foreign` (`Training_Provider_Key`),
+  CONSTRAINT `dim_delivery_header_organisation_key_foreign` FOREIGN KEY (`Organisation_Key`) REFERENCES `Dim_Organisation` (`Organisation_Key`),
+  CONSTRAINT `dim_delivery_header_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),
+  CONSTRAINT `dim_delivery_header_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`),
+  CONSTRAINT `dim_delivery_header_training_provider_key_foreign` FOREIGN KEY (`Training_Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-19"><a class="header" href="#columns-19">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_consent">Dim_Consent</a> <a href="#dim_course">Dim_Course</a> <a href="#fact_course_delivery">Fact_Course_Delivery</a></td><td></td><td></td></tr>
+<tr><td>Source_Delivery_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>School_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_school">Dim_School</a></td><td></td></tr>
+<tr><td>Organisation_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_organisation">Dim_Organisation</a></td><td></td></tr>
+<tr><td>Training_Provider_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_training_provider">Dim_Training_Provider</a></td><td></td></tr>
+<tr><td>External_System_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Delivery_Status</td><td>varchar(50)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Delivery_Start</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Delivery_End</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Digitisation_Booking</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Fleet_Cycles_Used</td><td>int</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Consent_Cutoff_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Alt_Delivery_Location</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Alt_Delivery_Location</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Notes</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_General_Notes</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Teacher_Notes</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>School_Contacts</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Venue</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Provider_Additional_Questions</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Comms_Start_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Completed</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Link_Managed_Consent</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Include_Tp_Terms_In_Consent</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Consent_Src_Characteristics</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Max_Consents</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Waiting_List_Enabled</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-19"><a class="header" href="#constraints-19">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_delivery_header_organisation_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Organisation_Key) REFERENCES Dim_Organisation (Organisation_Key)</td></tr>
+<tr><td>dim_delivery_header_school_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)</td></tr>
+<tr><td>dim_delivery_header_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>dim_delivery_header_training_provider_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Training_Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Delivery_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-19"><a class="header" href="#indexes-19">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_delivery_header_organisation_key_foreign</td><td>KEY dim_delivery_header_organisation_key_foreign (Organisation_Key) USING BTREE</td></tr>
+<tr><td>dim_delivery_header_school_key_foreign</td><td>KEY dim_delivery_header_school_key_foreign (School_Key) USING BTREE</td></tr>
+<tr><td>dim_delivery_header_source_system_key_foreign</td><td>KEY dim_delivery_header_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>dim_delivery_header_training_provider_key_foreign</td><td>KEY dim_delivery_header_training_provider_key_foreign (Training_Provider_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Delivery_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-20"><a class="header" href="#relations-20">Relations</a></h2>
+<p><img src="Dim_Delivery_Header.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_external_systems"><a class="header" href="#dim_external_systems">Dim_External_Systems</a></h1>
+<h2 id="description-20"><a class="header" href="#description-20">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_External_Systems` (
+  `External_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_External_System_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Username` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Pref_Link_Managed_Consent` tinyint NOT NULL DEFAULT '0',
+  `Pref_Use_Instructor_App` tinyint NOT NULL DEFAULT '0',
+  `Pref_Link_Managed_Comms` tinyint NOT NULL DEFAULT '0',
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`External_System_Key`),
+  UNIQUE KEY `dim_external_systems_source_external_system_id_unique` (`Source_External_System_Id`),
+  KEY `dim_external_systems_source_system_key_foreign` (`Source_System_Key`),
+  CONSTRAINT `dim_external_systems_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-20"><a class="header" href="#columns-20">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>External_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_External_System_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Username</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Name</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Link_Managed_Consent</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Use_Instructor_App</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Link_Managed_Comms</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-20"><a class="header" href="#constraints-20">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_external_systems_source_external_system_id_unique</td><td>UNIQUE</td><td>UNIQUE KEY dim_external_systems_source_external_system_id_unique (Source_External_System_Id)</td></tr>
+<tr><td>dim_external_systems_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (External_System_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-20"><a class="header" href="#indexes-20">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_external_systems_source_system_key_foreign</td><td>KEY dim_external_systems_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (External_System_Key) USING BTREE</td></tr>
+<tr><td>dim_external_systems_source_external_system_id_unique</td><td>UNIQUE KEY dim_external_systems_source_external_system_id_unique (Source_External_System_Id) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-21"><a class="header" href="#relations-21">Relations</a></h2>
+<p><img src="Dim_External_Systems.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_grant"><a class="header" href="#dim_grant">Dim_Grant</a></h1>
+<h2 id="description-21"><a class="header" href="#description-21">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Grant` (
+  `Grant_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Grant_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Grant_Recipient_Key` bigint unsigned NOT NULL,
+  `Grant_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Grant_Label` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Grant_Source` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Grant_Period_Start_Year` smallint NOT NULL,
+  PRIMARY KEY (`Grant_Key`),
+  KEY `dim_grant_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_grant_grant_recipient_key_foreign` (`Grant_Recipient_Key`),
+  KEY `idx_grant_source` (`Source_Grant_Id`,`Source_System_Key`),
+  CONSTRAINT `dim_grant_grant_recipient_key_foreign` FOREIGN KEY (`Grant_Recipient_Key`) REFERENCES `Dim_Grant_Recipient` (`Recipient_Key`),
+  CONSTRAINT `dim_grant_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-21"><a class="header" href="#columns-21">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#fact_course_delivery">Fact_Course_Delivery</a></td><td></td><td></td></tr>
+<tr><td>Source_Grant_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Grant_Recipient_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_grant_recipient">Dim_Grant_Recipient</a></td><td></td></tr>
+<tr><td>Grant_Number</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Label</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Source</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Grant_Period_Start_Year</td><td>smallint</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-21"><a class="header" href="#constraints-21">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_grant_grant_recipient_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Grant_Recipient_Key) REFERENCES Dim_Grant_Recipient (Recipient_Key)</td></tr>
+<tr><td>dim_grant_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Grant_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-21"><a class="header" href="#indexes-21">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_grant_grant_recipient_key_foreign</td><td>KEY dim_grant_grant_recipient_key_foreign (Grant_Recipient_Key) USING BTREE</td></tr>
+<tr><td>dim_grant_source_system_key_foreign</td><td>KEY dim_grant_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_grant_source</td><td>KEY idx_grant_source (Source_Grant_Id, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Grant_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-22"><a class="header" href="#relations-22">Relations</a></h2>
+<p><img src="Dim_Grant.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_grant_recipient"><a class="header" href="#dim_grant_recipient">Dim_Grant_Recipient</a></h1>
+<h2 id="description-22"><a class="header" href="#description-22">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Grant_Recipient` (
+  `Recipient_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Recipient_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Recipient_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Recipient_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `LA_Id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Is_Active` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Valid_From_Date` date NOT NULL,
+  `Valid_To_Date` date NOT NULL DEFAULT '9999-12-31',
+  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',
+  `Address_Line_1` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Address_Line_2` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Website` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Inception_Date` date DEFAULT NULL,
+  `Renewal_Date` date DEFAULT NULL,
+  `Deregistered_Date` date DEFAULT NULL,
+  `Is_SGO` tinyint(1) NOT NULL DEFAULT '0',
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Recipient_Key`),
+  KEY `dim_grant_recipient_source_system_key_foreign` (`Source_System_Key`),
+  KEY `idx_gr_source` (`Source_Recipient_Id`,`Is_Current`),
+  CONSTRAINT `dim_grant_recipient_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-22"><a class="header" href="#columns-22">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Recipient_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_grant">Dim_Grant</a></td><td></td><td></td></tr>
+<tr><td>Source_Recipient_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Recipient_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Recipient_Number</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>LA_Id</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Active</td><td>char(1)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Valid_From_Date</td><td>date</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Valid_To_Date</td><td>date</td><td>9999-12-31</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Current</td><td>tinyint(1)</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_Line_1</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_Line_2</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>City</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Postcode</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Website</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Inception_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Renewal_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Deregistered_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_SGO</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-22"><a class="header" href="#constraints-22">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_grant_recipient_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Recipient_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-22"><a class="header" href="#indexes-22">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_grant_recipient_source_system_key_foreign</td><td>KEY dim_grant_recipient_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_gr_source</td><td>KEY idx_gr_source (Source_Recipient_Id, Is_Current) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Recipient_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-23"><a class="header" href="#relations-23">Relations</a></h2>
+<p><img src="Dim_Grant_Recipient.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_instructor"><a class="header" href="#dim_instructor">Dim_Instructor</a></h1>
+<h2 id="description-23"><a class="header" href="#description-23">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Instructor` (
+  `Instructor_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Instructor_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` int NOT NULL,
+  `Instructor_Number` int unsigned NOT NULL,
+  `Instructor_Type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `First_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Last_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Landline` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Age_Range_Id` bigint unsigned NOT NULL DEFAULT '1',
+  `Ethnicity_Id` bigint unsigned NOT NULL DEFAULT '1',
+  `Gender_Id` bigint unsigned NOT NULL DEFAULT '1',
+  `Title_Id` bigint unsigned NOT NULL DEFAULT '1',
+  `Address_01` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Address_02` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Status_Raw` tinyint NOT NULL DEFAULT '0',
+  `Is_Pending` tinyint(1) NOT NULL DEFAULT '0',
+  `Flag_Nsi_Migrated` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Receive_News` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Delivering_Bikeability` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Delivering_Other` tinyint(1) NOT NULL DEFAULT '0',
+  `Pref_Bursary_Eligibility` tinyint(1) NOT NULL DEFAULT '0',
+  `Has_Received_Bursary` tinyint(1) NOT NULL DEFAULT '0',
+  `Date_Registered` date DEFAULT NULL,
+  `Date_Renewal` date DEFAULT NULL,
+  `Date_Deregistered` date DEFAULT NULL,
+  `Deregistration_Reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `First_Aid_Training_Complete_Date` date DEFAULT NULL,
+  `Safeguarding_Training_Complete_Date` date DEFAULT NULL,
+  `Send_Training_Complete_Date` date DEFAULT NULL,
+  `Send_Training_Overridden` tinyint(1) NOT NULL DEFAULT '0',
+  `Send_Training_Certificate_Download_Date` date DEFAULT NULL,
+  `Account_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Instructor_Key`),
+  KEY `dim_instructor_source_instructor_id_source_system_key_index` (`Source_Instructor_Id`,`Source_System_Key`),
+  KEY `dim_instructor_instructor_number_index` (`Instructor_Number`),
+  KEY `dim_instructor_last_name_index` (`Last_Name`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-23"><a class="header" href="#columns-23">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Instructor_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Source_Instructor_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Number</td><td>int unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Type</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>First_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Last_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Email</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Telephone</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Landline</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Age_Range_Id</td><td>bigint unsigned</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Ethnicity_Id</td><td>bigint unsigned</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Gender_Id</td><td>bigint unsigned</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Title_Id</td><td>bigint unsigned</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_01</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_02</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>City</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Postcode</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status_Raw</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Pending</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Flag_Nsi_Migrated</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Receive_News</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Delivering_Bikeability</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Delivering_Other</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pref_Bursary_Eligibility</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Received_Bursary</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Registered</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Renewal</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Deregistered</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Deregistration_Reason</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>First_Aid_Training_Complete_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Safeguarding_Training_Complete_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Training_Complete_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Training_Overridden</td><td>tinyint(1)</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Send_Training_Certificate_Download_Date</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Account_Notes</td><td>text</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-23"><a class="header" href="#constraints-23">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Instructor_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-23"><a class="header" href="#indexes-23">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_instructor_instructor_number_index</td><td>KEY dim_instructor_instructor_number_index (Instructor_Number) USING BTREE</td></tr>
+<tr><td>dim_instructor_last_name_index</td><td>KEY dim_instructor_last_name_index (Last_Name) USING BTREE</td></tr>
+<tr><td>dim_instructor_source_instructor_id_source_system_key_index</td><td>KEY dim_instructor_source_instructor_id_source_system_key_index (Source_Instructor_Id, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Instructor_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-24"><a class="header" href="#relations-24">Relations</a></h2>
+<p><img src="Dim_Instructor.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_organisation"><a class="header" href="#dim_organisation">Dim_Organisation</a></h1>
+<h2 id="description-24"><a class="header" href="#description-24">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Organisation` (
+  `Organisation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Organisation_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Provider_Key` bigint unsigned NOT NULL,
+  `Organisation_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  PRIMARY KEY (`Organisation_Key`),
+  KEY `dim_organisation_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_organisation_provider_key_foreign` (`Provider_Key`),
+  KEY `idx_org_source` (`Source_Organisation_Id`,`Source_System_Key`),
+  CONSTRAINT `dim_organisation_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),
+  CONSTRAINT `dim_organisation_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-24"><a class="header" href="#columns-24">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Organisation_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a></td><td></td><td></td></tr>
+<tr><td>Source_Organisation_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Provider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_training_provider">Dim_Training_Provider</a></td><td></td></tr>
+<tr><td>Organisation_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-24"><a class="header" href="#constraints-24">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_organisation_provider_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)</td></tr>
+<tr><td>dim_organisation_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Organisation_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-24"><a class="header" href="#indexes-24">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_organisation_provider_key_foreign</td><td>KEY dim_organisation_provider_key_foreign (Provider_Key) USING BTREE</td></tr>
+<tr><td>dim_organisation_source_system_key_foreign</td><td>KEY dim_organisation_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_org_source</td><td>KEY idx_org_source (Source_Organisation_Id, Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Organisation_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-25"><a class="header" href="#relations-25">Relations</a></h2>
+<p><img src="Dim_Organisation.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_rider"><a class="header" href="#dim_rider">Dim_Rider</a></h1>
+<h2 id="description-25"><a class="header" href="#description-25">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Rider` (
+  `Rider_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Rider_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `School_Key` bigint unsigned DEFAULT NULL,
+  `Ethnicity` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Gender` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Pupil_Premium` tinyint NOT NULL DEFAULT '0',
+  `Has_Send` tinyint NOT NULL DEFAULT '0',
+  PRIMARY KEY (`Rider_Key`),
+  KEY `dim_rider_source_system_key_foreign` (`Source_System_Key`),
+  KEY `dim_rider_school_key_foreign` (`School_Key`),
+  KEY `dim_rider_source_rider_id_index` (`Source_Rider_Id`),
+  CONSTRAINT `dim_rider_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),
+  CONSTRAINT `dim_rider_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-25"><a class="header" href="#columns-25">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Rider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_consent">Dim_Consent</a> <a href="Map_Rider_Send.html">Map_Rider_Send</a></td><td></td><td></td></tr>
+<tr><td>Source_Rider_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>School_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="#dim_school">Dim_School</a></td><td></td></tr>
+<tr><td>Ethnicity</td><td>varchar(50)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Gender</td><td>varchar(20)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Pupil_Premium</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Has_Send</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-25"><a class="header" href="#constraints-25">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_rider_school_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (School_Key) REFERENCES Dim_School (School_Key)</td></tr>
+<tr><td>dim_rider_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Rider_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-25"><a class="header" href="#indexes-25">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_rider_school_key_foreign</td><td>KEY dim_rider_school_key_foreign (School_Key) USING BTREE</td></tr>
+<tr><td>dim_rider_source_rider_id_index</td><td>KEY dim_rider_source_rider_id_index (Source_Rider_Id) USING BTREE</td></tr>
+<tr><td>dim_rider_source_system_key_foreign</td><td>KEY dim_rider_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Rider_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-26"><a class="header" href="#relations-26">Relations</a></h2>
+<p><img src="Dim_Rider.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_school"><a class="header" href="#dim_school">Dim_School</a></h1>
+<h2 id="description-26"><a class="header" href="#description-26">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_School` (
+  `School_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_School_Id` int DEFAULT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `School_Urn` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `School_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `LA_Code` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `LA_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`School_Key`),
+  KEY `dim_school_source_system_key_foreign` (`Source_System_Key`),
+  CONSTRAINT `dim_school_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-26"><a class="header" href="#columns-26">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>School_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a> <a href="#dim_rider">Dim_Rider</a> <a href="#fact_course_delivery">Fact_Course_Delivery</a></td><td></td><td></td></tr>
+<tr><td>Source_School_Id</td><td>int</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>School_Urn</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>School_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>LA_Code</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>LA_Name</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-26"><a class="header" href="#constraints-26">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_school_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (School_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-26"><a class="header" href="#indexes-26">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_school_source_system_key_foreign</td><td>KEY dim_school_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (School_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-27"><a class="header" href="#relations-27">Relations</a></h2>
+<p><img src="Dim_School.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_send_code"><a class="header" href="#dim_send_code">Dim_Send_Code</a></h1>
+<h2 id="description-27"><a class="header" href="#description-27">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Send_Code` (
+  `Send_Code_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Send_Code` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Description` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  PRIMARY KEY (`Send_Code_Key`),
+  UNIQUE KEY `dim_send_code_send_code_unique` (`Send_Code`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-27"><a class="header" href="#columns-27">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Send_Code_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="Map_Rider_Send.html">Map_Rider_Send</a></td><td></td><td></td></tr>
+<tr><td>Send_Code</td><td>varchar(20)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Description</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-27"><a class="header" href="#constraints-27">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_send_code_send_code_unique</td><td>UNIQUE</td><td>UNIQUE KEY dim_send_code_send_code_unique (Send_Code)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Send_Code_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-27"><a class="header" href="#indexes-27">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Send_Code_Key) USING BTREE</td></tr>
+<tr><td>dim_send_code_send_code_unique</td><td>UNIQUE KEY dim_send_code_send_code_unique (Send_Code) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-28"><a class="header" href="#relations-28">Relations</a></h2>
+<p><img src="Dim_Send_Code.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_source_system"><a class="header" href="#dim_source_system">Dim_Source_System</a></h1>
+<h2 id="description-28"><a class="header" href="#description-28">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Source_System` (
+  `Source_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `System_Name` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `System_Type` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Last_Sync_Date` datetime DEFAULT NULL,
+  PRIMARY KEY (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-28"><a class="header" href="#columns-28">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_consent">Dim_Consent</a> <a href="#dim_course">Dim_Course</a> <a href="#dim_delivery_header">Dim_Delivery_Header</a> <a href="#dim_external_systems">Dim_External_Systems</a> <a href="#dim_grant">Dim_Grant</a> <a href="#dim_grant_recipient">Dim_Grant_Recipient</a> <a href="#dim_organisation">Dim_Organisation</a> <a href="#dim_rider">Dim_Rider</a> <a href="#dim_school">Dim_School</a> <a href="#dim_training_provider">Dim_Training_Provider</a></td><td></td><td></td></tr>
+<tr><td>System_Name</td><td>varchar(50)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>System_Type</td><td>varchar(50)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Last_Sync_Date</td><td>datetime</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-28"><a class="header" href="#constraints-28">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Source_System_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-28"><a class="header" href="#indexes-28">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Source_System_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-29"><a class="header" href="#relations-29">Relations</a></h2>
+<p><img src="Dim_Source_System.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="dim_training_provider"><a class="header" href="#dim_training_provider">Dim_Training_Provider</a></h1>
+<h2 id="description-29"><a class="header" href="#description-29">Description</a></h2>
+<details>
+<summary><strong>Table Definition</strong></summary>
+<pre><code class="language-sql">CREATE TABLE `Dim_Training_Provider` (
+  `Provider_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Source_Provider_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Provider_Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Provider_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Is_Active` char(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Valid_From_Date` date NOT NULL,
+  `Valid_To_Date` date NOT NULL DEFAULT '9999-12-31',
+  `Is_Current` tinyint(1) NOT NULL DEFAULT '1',
+  `Address_Line_1` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Address_Line_2` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `City` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Postcode` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Website` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Public_Email` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Public_Telephone` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Provider_Type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
+  PRIMARY KEY (`Provider_Key`),
+  KEY `dim_training_provider_source_system_key_foreign` (`Source_System_Key`),
+  KEY `idx_tp_source` (`Source_Provider_Id`,`Is_Current`),
+  CONSTRAINT `dim_training_provider_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)
+) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+</code></pre>
+</details>
+<h2 id="columns-29"><a class="header" href="#columns-29">Columns</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
+</thead>
+<tbody>
+<tr><td>Provider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="#dim_delivery_header">Dim_Delivery_Header</a> <a href="#dim_organisation">Dim_Organisation</a> <a href="#fact_course_delivery">Fact_Course_Delivery</a></td><td></td><td></td></tr>
+<tr><td>Source_Provider_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="#dim_source_system">Dim_Source_System</a></td><td></td></tr>
+<tr><td>Provider_Name</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Provider_Number</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Active</td><td>char(1)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Valid_From_Date</td><td>date</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Valid_To_Date</td><td>date</td><td>9999-12-31</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Is_Current</td><td>tinyint(1)</td><td>1</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_Line_1</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Address_Line_2</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>City</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Postcode</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Website</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Telephone</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Public_Email</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Public_Telephone</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Provider_Type</td><td>varchar(255)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="constraints-29"><a class="header" href="#constraints-29">Constraints</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Type</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_training_provider_source_system_key_foreign</td><td>FOREIGN KEY</td><td>FOREIGN KEY (Source_System_Key) REFERENCES Dim_Source_System (Source_System_Key)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Provider_Key)</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="indexes-29"><a class="header" href="#indexes-29">Indexes</a></h2>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Name</th><th>Definition</th></tr>
+</thead>
+<tbody>
+<tr><td>dim_training_provider_source_system_key_foreign</td><td>KEY dim_training_provider_source_system_key_foreign (Source_System_Key) USING BTREE</td></tr>
+<tr><td>idx_tp_source</td><td>KEY idx_tp_source (Source_Provider_Id, Is_Current) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Provider_Key) USING BTREE</td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="relations-30"><a class="header" href="#relations-30">Relations</a></h2>
+<p><img src="Dim_Training_Provider.svg" alt="er"></p>
+<hr>
+<blockquote>
+<p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
+</blockquote>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+
+        <script src="clipboard-1626706a.min.js"></script>
+        <script src="highlight-abc7f01d.js"></script>
+        <script src="book-c22b7243.js"></script>
+
+        <!-- Custom JS scripts -->
+
+        <script>
+        window.addEventListener('load', function() {
+            window.setTimeout(window.print, 100);
+        });
+        </script>
+
+
+    </div>
+    </body>
+</html>
