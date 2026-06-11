@@ -580,10 +580,10 @@ class DataWarehouseSyncService
                             'Comms_Start_Date' => $delivery->comms_start_date,
                             'Date_Completed' => $delivery->date_completed,
                             'Pref_Link_Managed_Consent' => $delivery->pref_link_managed_consent,
-                            'Include_Tp_Terms_In_Consent' => $delivery->include_tp_terms_in_consent,
-                            'Consent_Src_Characteristics' => $delivery->consent_src_characteristics,
+                            'Include_Tp_Terms_In_Consent' => $delivery->include_tp_terms_in_consent??0,
+                            'Consent_Src_Characteristics' => $delivery->consent_src_characteristics??0,
                             'Max_Consents' => $delivery->max_consents,
-                            'Waiting_List_Enabled' => $delivery->waiting_list_enabled
+                            'Waiting_List_Enabled' => $delivery->waiting_list_enabled??0
                         ]
                     );
 
