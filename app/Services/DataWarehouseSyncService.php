@@ -507,7 +507,7 @@ class DataWarehouseSyncService
 
         $this->source->table('deliveries')
             ->select('id', 'grant_id', 'school_urn', 'training_provider_id',
-                'status', 'date_delivery_start', 'date_delivery_end', 'digitisation_booking', 'pref_alt_delivery_location',
+                'status', 'date_delivery_start', 'date_delivery_end', 'digitisation_booking', 'pref_alt_delivery_location','alt_delivery_location',
                 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date', 'updated_at')
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
