@@ -510,7 +510,7 @@ class DataWarehouseSyncService
                 'status', 'date_delivery_start', 'date_delivery_end', 'digitisation_booking', 'pref_alt_delivery_location','alt_delivery_location',
                 'notes','instructor_general_notes','teacher_notes','school_contacts','venue','provider_additional_questions',
                 'comms_start_date','date_completed','pref_link_managed_consent','include_tp_terms_in_consent','consent_src_characteristics',
-                'max_consents','waiting_list_enabled', 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date', 'updated_at')
+                'max_consents','waiting_list_enabled', 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date')
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
