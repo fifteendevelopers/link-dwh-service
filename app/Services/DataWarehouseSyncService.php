@@ -510,7 +510,7 @@ class DataWarehouseSyncService
                 'status', 'date_delivery_start', 'date_delivery_end', 'digitisation_booking', 'pref_alt_delivery_location','alt_delivery_location',
                 'notes','instructor_general_notes','teacher_notes','school_contacts','venue','provider_additional_questions',
                 'comms_start_date','date_completed','pref_link_managed_consent','include_tp_terms_in_consent','consent_src_characteristics',
-                'max_consents','waiting_list_enabled', 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date','updated_at')
+                'max_consents','waiting_list_enabled', 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date','updated_at','external_system_id')
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
@@ -964,14 +964,41 @@ class DataWarehouseSyncService
     /**
      * Synchronise the "Facts"
      */
-    private function mapEthnicityToColumn($code)
+    private function mapEthnicityToColumn($input)
     {
-        $code = strtoupper($code);
+        // Clean and normalize the input string format
+        $key = strtolower(trim($input));
 
+        // Map text names & summary groups to standard 4-character codes
+        $code = match ($key) {
+            // Standard codes (Passthrough)
+            'wbri', 'whitebritish' ,'white_british'  => 'WBRI',
+            'wiri', 'white_irish'                    => 'WIRI',
+            'wirt', 'white_traveller'                => 'WIRT',
+            'woth', 'white'                          => 'WOTH',
+            'wrom', 'white_gypsy'                    => 'WROM',
+            'mwbc', 'mixed_white_caribbean', 'mixed_white_black_carib' => 'MWBC',
+            'mwba', 'mixed_white_african'            => 'MWBA',
+            'mwas', 'mixed_white_asian'              => 'MWAS',
+            'moth', 'mixed'                          => 'MOTH',
+            'aind', 'asian_indian', 'indian'         => 'AIND',
+            'apkn', 'asian_pakistani'                => 'APKN',
+            'aban', 'asian_bangladeshi'              => 'ABAN',
+            'chne', 'asian_chinese'                  => 'CHNE',
+            'aoth', 'asian'                          => 'AOTH',
+            'bcrb', 'black_caribbean'                => 'BCRB',
+            'bafr', 'black_african'                  => 'BAFR',
+            'both', 'black'                          => 'BOTH',
+            'ooth', 'other', 'other_arab'            => 'OOTH',
+            'na', 'n', 'refused', 'prefer_not_to_say' => 'NA',
+            default                                  => 'NA'
+        };
+
+        // Map the 4-character code to the DWH column name
         return match ($code) {
             'WBRI' => 'Count_Ethnicity_White_British',
             'WIRI' => 'Count_Ethnicity_White_Irish',
-            'WIRT' => 'Count_Ethnicity_Irish_Traveller',
+            'WIRT' => 'Count_Ethnicity_White_Traveller',
             'WOTH' => 'Count_Ethnicity_White_Other',
             'WROM' => 'Count_Ethnicity_Gypsy_Romany',
             'MWBC' => 'Count_Ethnicity_Mixed_White_Black_Carib',
@@ -981,30 +1008,69 @@ class DataWarehouseSyncService
             'AIND' => 'Count_Ethnicity_Asian_Indian',
             'APKN' => 'Count_Ethnicity_Asian_Pakistani',
             'ABAN' => 'Count_Ethnicity_Asian_Bangladeshi',
+            'CHNE' => 'Count_Ethnicity_Asian_Chinese',
             'AOTH' => 'Count_Ethnicity_Asian_Other',
             'BCRB' => 'Count_Ethnicity_Black_Caribbean',
             'BAFR' => 'Count_Ethnicity_Black_African',
             'BOTH' => 'Count_Ethnicity_Black_Other',
-            'CHNE' => 'Count_Ethnicity_Asian_Chinese',
             'OOTH' => 'Count_Ethnicity_Other_Any',
-            'NA', 'N' => 'Count_Ethnicity_Refused',
-            default => 'Count_Ethnicity_Refused',
+            'NA'   => 'Count_Ethnicity_Not_Stated',
+            default => 'Count_Ethnicity_Not_Stated',
         };
-
     }
 
     private function initializeExtendedMetricArray()
     {
         return [
-            'Count_Female' => 0, 'Count_Male' => 0,
-            'Count_Ethnicity_White_British' => 0, 'Count_Ethnicity_White_Irish' => 0, 'Count_Ethnicity_White_Other' => 0,
-            'Count_Ethnicity_Mixed_White_Black_Carib' => 0, 'Count_Ethnicity_Mixed_White_Black_African' => 0,
-            'Count_Ethnicity_Mixed_White_Asian' => 0, 'Count_Ethnicity_Mixed_Other' => 0,
-            'Count_Ethnicity_Asian_Indian' => 0, 'Count_Ethnicity_Asian_Pakistani' => 0,
-            'Count_Ethnicity_Asian_Bangladeshi' => 0, 'Count_Ethnicity_Asian_Chinese' => 0, 'Count_Ethnicity_Asian_Other' => 0,
-            'Count_Ethnicity_Black_African' => 0, 'Count_Ethnicity_Black_Caribbean' => 0, 'Count_Ethnicity_Black_Other' => 0,
-            'Count_Ethnicity_Other_Arab' => 0, 'Count_Ethnicity_Other_Any' => 0, 'Count_Ethnicity_Not_Stated' => 0,
-            'Count_Pupil_Premium' => 0, 'Count_SEND' => 0
+            //Genders
+            'Count_Female' => 0,
+            'Count_Male' => 0,
+            'Count_Gender_Other' => 0,
+
+            //Repeat Type
+            'Count_Booked_Repeat_Type_Na' => 0,
+            'Count_Booked_Repeat_Type_Unique' => 0,
+            'Count_Booked_Repeat_Type_Repeat' => 0,
+
+            //Ethnicities
+            'Count_Ethnicity_White_British' => 0,
+            'Count_Ethnicity_White_Irish' => 0,
+            'Count_Ethnicity_White_Other' => 0,
+            'Count_Ethnicity_Mixed_White_Black_Carib' => 0,
+            'Count_Ethnicity_Mixed_White_Black_African' => 0,
+            'Count_Ethnicity_white_traveller' => 0,
+            'Count_Ethnicity_Mixed_White_Asian' => 0,
+            'Count_Ethnicity_Mixed_Other' => 0,
+            'Count_Ethnicity_Asian_Indian' => 0,
+            'Count_Ethnicity_Asian_Pakistani' => 0,
+            'Count_Ethnicity_Asian_Bangladeshi' => 0,
+            'Count_Ethnicity_Asian_Chinese' => 0,
+            'Count_Ethnicity_Asian_Other' => 0,
+            'Count_Ethnicity_Black_African' => 0,
+            'Count_Ethnicity_Black_Caribbean' => 0,
+            'Count_Ethnicity_Black_Other' => 0,
+            'Count_Ethnicity_Other_Arab' => 0,
+            'Count_Ethnicity_Other_Any' => 0,
+            'Count_Ethnicity_Not_Stated' => 0,
+
+            //SEND and Pupil Premium
+            'Count_Pupil_Premium' => 0,
+            'Count_SEND' => 0,
+            'Count_SEND_Not_Stated' => 0,
+            'Count_Pupil_Premium_Not_Stated'  => 0,
+
+            //Bikes
+            'Count_Bikes_Swapped' => 0,
+            'Count_Bikes_Recycled' => 0,
+
+            //Age Range
+            'Count_Age_Range_18_24' => 0,
+            'Count_Age_Range_25_34' => 0,
+            'Count_Age_Range_35_44' => 0,
+            'Count_Age_Range_45_54' => 0,
+            'Count_Age_Range_55_64' => 0,
+            'Count_Age_Range_Over_65' => 0,
+            'Count_Age_Range_Not_Stated' => 0,
         ];
     }
 
@@ -1018,20 +1084,22 @@ class DataWarehouseSyncService
         $useLegacyCourseCharacteristicss = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('courses', 'characteristics');
 
-        // Get Courses updated sunce last sync
+        // Get the historical synchronization high-watermark
         $watermark = $this->dwh->table('Sync_Log')
             ->where('Table_Name', 'Fact_Course_Delivery')
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
 
-        $query = $this->source->table('courses')
-            ->join('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
+        // Drive from deliveries as the root to capture non-digitised records!
+        $query = $this->source->table('deliveries')
+            ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
             ->select([
-                'courses.id',
-                'courses.delivery_id',
-                'courses.start_date',
-                'courses.updated_at',
+                'deliveries.id as delivery_id',
                 'deliveries.date_delivery_start',
-                'deliveries.consent_src_characteristics'
+                'deliveries.consent_src_characteristics',
+                'deliveries.updated_at as delivery_updated',
+                'courses.id as course_id',
+                'courses.start_date as course_start',
+                'courses.updated_at as course_updated'
             ]);
 
         if ($useLegacy) {
@@ -1042,12 +1110,13 @@ class DataWarehouseSyncService
             $query->addSelect('courses.characteristics');
         }
 
-        $query->where('deliveries.digitisation_booking', 1)
-            ->where(function ($q) use ($watermark) {
-                $q->where('courses.updated_at', '>', $watermark)
-                    ->orWhereNull('courses.updated_at');
-            })
-            ->orderBy('courses.updated_at', 'asc');
+        // Track adjustments on both sides of the relational bridge line
+        $query->where(function ($q) use ($watermark) {
+            $q->where('deliveries.updated_at', '>', $watermark)
+                ->orWhere('courses.updated_at', '>', $watermark)
+                ->orWhereNull('deliveries.updated_at');
+        })
+            ->orderBy('deliveries.updated_at', 'asc');
 
         $total = $query->count();
         if ($total === 0) return "Fact table is up to date.";
@@ -1057,68 +1126,128 @@ class DataWarehouseSyncService
 
         $highestTimestampSeen = $watermark;
 
-        $query->chunk(500, function ($courses) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristicss) {
-            foreach ($courses as $course) {
+        // Process in chunks to maintain low memory footprints
+        $query->chunk(500, function ($records) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristicss) {
+            foreach ($records as $record) {
 
-                // Resolve Keys
-                $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $course->id)->value('Course_Key');
-                $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $course->delivery_id)->first();
+                // Track the highest modified timestamp across both tables
+                $activeTimestamp = $record->course_updated > $record->delivery_updated ? $record->course_updated : $record->delivery_updated;
+                if ($activeTimestamp > $highestTimestampSeen) {
+                    $highestTimestampSeen = $activeTimestamp;
+                }
 
-                if (!$courseKey || !$delivery) continue;
+                // Resolve target dimension parent entry - safely skips if missing
+                $delivery = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Source_Delivery_Id', $record->delivery_id)
+                    ->first();
 
-                $enrolledCount = $this->source->table('join_riders_courses')
-                    ->where('course_id', $course->id)
-                    ->count();
+                if (!$delivery) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
 
-                $completedCount = $this->source->table('join_riders_courses')
-                    ->where('course_id', $course->id)
-                    ->where('has_completed_course', 1)
-                    ->count();
+                // ARRANGE METRICS FIRST TO CAPTURE EXTRACTED LEVEL STRINGS
+                $mockCourse = (object)[
+                    'id'               => $record->course_id,
+                    'delivery_id'      => $record->delivery_id,
+                    'delivery_details' => $record->delivery_details ?? null
+                ];
+                $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
 
-                $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($course, $useLegacy);
+                // Extract and explicitly pull the course level variable out of the fact payload array 🎯
+                $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
+                $yearGroupString = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
+                unset($deliveryDetailMetrics['Extracted_Course_Level']);
+                unset($deliveryDetailMetrics['Extracted_Year_Group']);
 
-                // Check where demographic data is sourced from
-                // Course data from the query above joins the deliveries table
-                // to get the consent_src_characteristics value
-                if ($course->consent_src_characteristics == 1) {
-                    // Get from Rider's Consent data
+                // Resolve or Provision the Dim_Course Row
+                $courseKey = null;
+                if (!is_null($record->course_id)) {
+                    $courseKey = $this->dwh->table('Dim_Course')
+                        ->where('Source_Course_Id', $record->course_id)
+                        ->value('Course_Key');
+                } elseif (!empty($courseLevelString)) {
+                    // Non-Digitised Track: Provision virtual dimension record on the fly
+                    $this->dwh->table('Dim_Course')->updateOrInsert(
+                        [
+                            'Delivery_Key' => $delivery->Delivery_Key,
+                            'Course_Level' => $courseLevelString,
+                            'Source_Course_Id' => null
+                        ],
+                        [
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Status'            => 1,
+                            'Start_Date'        => $record->course_start ?: $record->date_delivery_start,
+                            'Date_Complete'     => $record->course_start ?: $record->date_delivery_start,
+                            'Year_Group'        => $yearGroupString,
+                        ]
+                    );
+
+                    $courseKey = $this->dwh->table('Dim_Course')
+                        ->where('Delivery_Key', $delivery->Delivery_Key)
+                        ->where('Course_Level', $courseLevelString)
+                        ->whereNull('Source_Course_Id')
+                        ->value('Course_Key');
+                }
+
+                // Enforce our integrity guard; skip if no dimension row can be assigned
+                if (is_null($courseKey)) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                // Resolve Rider counts cleanly (Automatically skips for course-less records)
+                $enrolledCount = 0;
+                $completedCount = 0;
+                if (!is_null($record->course_id)) {
+                    $enrolledCount = $this->source->table('join_riders_courses')
+                        ->where('course_id', $record->course_id)
+                        ->count();
+
+                    $completedCount = $this->source->table('join_riders_courses')
+                        ->where('course_id', $record->course_id)
+                        ->where('has_completed_course', 1)
+                        ->count();
+                }
+
+                // Isolate demographic extraction routes
+                if ($record->consent_src_characteristics == 1) {
                     $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
                 } else {
-                    if ($useLegacyCourseCharacteristicss) {
-                        // Priority 2: Legacy JSON Column
-                        $metrics = $this->aggregateFromLegacyCharacteristics($course->characteristics);
+                    if ($useLegacyCourseCharacteristicss && !empty($record->characteristics)) {
+                        $metrics = $this->aggregateFromLegacyCharacteristics($record->characteristics);
+                    } elseif (!is_null($record->course_id)) {
+                        $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
                     } else {
-                        // Priority 3: Normalized Tables
-                        $metrics = $this->aggregateFromSourceTable('course_characteristics', $course->id);
+                        $metrics = $this->initializeExtendedMetricArray();
                     }
                 }
 
-                //Determine which date to use - if there is a course start date use that otherwise drop to delivery start date
-                $fact_date = $course->start_date ?: $course->date_delivery_start;
+                // Select date grouping factor fallback
+                $fact_date = $record->course_start ?: $record->date_delivery_start;
 
-                // Upsert into Fact Table
+                // Composite Upsert targeting BOTH key tracks safely (without leaking virtual dimension columns)
                 $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
-                    ['Course_Key' => $courseKey],
-                    array_merge($metrics, $deliveryDetailMetrics, [
-                        'Riders_Enrolled_Count' => $enrolledCount,
-                        'Riders_Completed_Count' => $completedCount,
-                        'Date_Key' => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
+                    [
                         'Delivery_Key' => $delivery->Delivery_Key,
-                        'School_Key' => $delivery->School_Key,
-                        'Organisation_Key' => $delivery->Organisation_Key,
-                        'Provider_Key' => $delivery->Training_Provider_Key,
-                        'Grant_Key' => $delivery->Grant_Key,
+                        'Course_Key'   => $courseKey
+                    ],
+                    array_merge($metrics, $deliveryDetailMetrics, [
+                        'Riders_Enrolled_Count'  => $enrolledCount,
+                        'Riders_Completed_Count' => $completedCount,
+                        'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
+                        'School_Key'             => $delivery->School_Key,
+                        'Organisation_Key'       => $delivery->Organisation_Key,
+                        'Provider_Key'           => $delivery->Training_Provider_Key,
+                        'Grant_Key'              => $delivery->Grant_Key,
                     ])
                 );
 
-                if ($course->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $course->updated_at;
-                }
                 if ($bar) $bar->advance();
             }
         });
 
-        // Update Watermark
+        // Commit the final high-watermark checkpoint back down to the ledger
         $this->dwh->table('Sync_Log')->updateOrInsert(['Table_Name' => 'Fact_Course_Delivery'], ['Last_Synced_At' => $highestTimestampSeen]);
 
         if ($bar) {
@@ -1149,17 +1278,80 @@ class DataWarehouseSyncService
     private function extractFromLegacyJson($course)
     {
         $details = json_decode($course->delivery_details ?? '[]', true);
-        $metrics = ['Count_Booked_Provisional' => 0, 'Count_Booked_Confirmed' => 0, 'Count_Attended_Confirmed' => 0];
+
+        // Initialize baseline metrics structure array maps matching extended boundaries
+        $metrics = array_merge($this->initializeExtendedMetricArray(), [
+            'Count_Booked_Provisional' => 0,
+            'Count_Booked_Confirmed'   => 0,
+            'Count_Attended_Confirmed' => 0,
+            'Count_Bikes_Swapped'      => 0,
+            'Count_Bikes_Recycled'     => 0,
+            'Extracted_Course_Level'   => null,
+            'Extracted_Year_Group'     => null
+        ]);
 
         foreach ($details as $entry) {
-            if (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id) {
+            // Target the correct array element context loop
+            $isTargetModule = is_null($course->id) || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id);
+
+            if ($isTargetModule) {
+                // 🚀 DERIVE LEVEL IDENTITY: Pulls 'plus_adult' straight from module context tracking
+                $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
+                $metrics['Extracted_Year_Group'] = $entry['delivery']['year_group'] ?? null;
+
                 $delivery = $entry['delivery'] ?? [];
-                $metrics['Count_Booked_Provisional'] = (int)($delivery['booked']['provisional'] ?? 0);
+                $booked   = $delivery['booked'] ?? [];
+
+                $metrics['Count_Booked_Provisional'] = (int)($booked['provisional'] ?? 0);
 
                 if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
-                    $metrics['Count_Booked_Confirmed'] = (int)($delivery['booked']['total'] ?? 0);
+                    $metrics['Count_Booked_Confirmed']   = (int)($booked['total'] ?? 0);
                     $metrics['Count_Attended_Confirmed'] = (int)($delivery['attended']['total'] ?? 0);
                 }
+
+                // Map Legacy Genders into correct Fact columns
+                $gender = $booked['gender'] ?? [];
+                foreach ($gender as $sub => $val) {
+                    if ($sub === 'female') $metrics['Count_Female'] += (int)$val;
+                    elseif ($sub === 'male') $metrics['Count_Male'] += (int)$val;
+                    elseif ($sub === 'other') $metrics['Count_Gender_Other'] += (int)$val;
+                }
+
+                // Translate and map Legacy JSON Ethnicity text keys into DWH Columns
+                $ethnicity = $booked['ethnicity'] ?? [];
+                foreach ($ethnicity as $sub => $val) {
+
+                    // Resolve "WBRI" into "Count_Ethnicity_White_British" column map name
+                    $targetColumn = $this->mapEthnicityToColumn($sub);
+
+                    if (array_key_exists($targetColumn, $metrics)) {
+                        $metrics[$targetColumn] += (int)$val;
+                    } else {
+                        $metrics['Count_Ethnicity_Not_Stated'] += (int)$val;
+                    }
+                }
+
+                // Extract Age Ranges
+                $ages = $booked['age_range'] ?? [];
+                foreach ($ages as $sub => $val) {
+                    $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
+                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int)$val;
+                }
+
+                // Extract Repeat Types
+                $repeats = $booked['repeat_type'] ?? [];
+                foreach ($repeats as $sub => $val) {
+                    $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int)$val;
+                }
+
+                // Privacy Indicators fallbacks
+                $metrics['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
+                $metrics['Count_Pupil_Premium_Not_Stated'] += (int)($booked['free_school_meals_na'] ?? 0);
+
+                // Circular economy assets variables
+                $metrics['Count_Bikes_Swapped']  = (int)($delivery['bikes_swapped'] ?? 0);
+                $metrics['Count_Bikes_Recycled'] = (int)($delivery['bikes_recycled'] ?? 0);
                 break;
             }
         }
@@ -1168,20 +1360,81 @@ class DataWarehouseSyncService
 
     private function extractFromNormalizedTables($course)
     {
-        // Query the new delivery_modules table
-        $module = $this->source->table('delivery_modules')
-            ->where('entity_id', $course->id)
-            ->first();
+        $metrics = [
+            'Count_Ethnicity_Not_Stated' => 0,
+            'Count_Booked_Provisional' => 0,
+            'Count_Booked_Confirmed'   => 0,
+            'Count_Attended_Confirmed' => 0,
+            'Count_Bikes_Swapped'      => 0,
+            'Count_Bikes_Recycled'     => 0
+        ];
 
-        if (!$module) {
-            return ['Count_Booked_Provisional' => 0, 'Count_Booked_Confirmed' => 0, 'Count_Attended_Confirmed' => 0];
+        // 1. Query the delivery_modules bridge using the unique criteria combo
+        $moduleQuery = $this->source->table('delivery_modules');
+
+        if (!is_null($course->id)) {
+            // Digitised track matching by numeric Course ID
+            $moduleQuery->where('entity_id', $course->id);
+        } else {
+            // Non-digitised track matching by parent delivery ID and text label string context
+            $moduleQuery->where('delivery_id', $course->delivery_id);
         }
 
-        return [
-            'Count_Booked_Provisional' => $module->booked_provisional,
-            'Count_Booked_Confirmed' => ($module->confirmed) ? $module->booked_total : 0,
-            'Count_Attended_Confirmed' => ($module->confirmed) ? $module->attended_total : 0,
-        ];
+        $module = $moduleQuery->first();
+
+        if (!$module) {
+            return $metrics;
+        }
+
+        // Set base confirmation metrics out of module properties
+        $metrics['Count_Booked_Provisional'] = (int)$module->booked_provisional;
+        $metrics['Count_Booked_Confirmed']   = ($module->confirmed) ? (int)$module->booked_total : 0;
+        $metrics['Count_Attended_Confirmed'] = ($module->confirmed) ? (int)$module->attended_total : 0;
+
+        // 2. Query metrics rows by joining back to delivery_modules.id
+        $metricRows = $this->source->table('delivery_metrics')
+            ->where('module_id', $module->id)
+            ->get();
+
+        foreach ($metricRows as $row) {
+            $cat = strtolower($row->category);
+            $sub = strtolower($row->sub_category);
+            $val = (int)$row->value;
+
+            // Extract and map Ethnicities directly using the 4-character code mapper helper
+            if ($cat === 'booked_ethnicity') {
+                $col = $this->mapEthnicityToColumn($sub); // e.g. maps 'white_british' row sub directly
+                if (array_key_exists($col, $metrics)) {
+                    $metrics[$col] = $val;
+                } else {
+                    $metrics['Count_Ethnicity_Not_Stated'] += $val;
+                }
+            }
+
+            // Extract circular economy bike metrics
+            if ($sub === 'bikes_swapped')  $metrics['Count_Bikes_Swapped'] += $val;
+            if ($sub === 'bikes_recycled') $metrics['Count_Bikes_Recycled'] += $val;
+
+            // Extract embedded Age Range metric counts dynamically
+            if ($cat === 'booked_age_range') {
+                $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
+                $metrics[$col] = $val;
+            }
+
+            // Extract embedded Repeat Type metric counts dynamically
+            if ($cat === 'booked_repeat_type') {
+                $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+                $metrics[$col] = $val;
+            }
+
+            // Extract privacy disclosure indicators
+            if ($cat === 'booked_demographics') {
+                if ($sub === 'send_na' || $sub === 'booked_send_na') $metrics['Count_SEND_Not_Stated'] = $val;
+                if ($sub === 'free_school_meals_na') $metrics['Count_Pupil_Premium_Not_Stated'] = $val;
+            }
+        }
+
+        return $metrics;
     }
 
 
@@ -1235,22 +1488,47 @@ class DataWarehouseSyncService
             elseif ($sub === 'male') $m['Count_Male'] += (int)$val;
         }
 
-        // Map Ethnicity
-        $ethnicity = $block['ethnicity'] ?? [];
+        // 2. Map Age Range Totals
+        $ages = $booked['age_range'] ?? [];
+        foreach ($ages as $sub => $val) {
+            if ($sub === 'na') {
+                $m['Count_Age_Range_Not_Stated'] += (int)$val;
+            } elseif ($sub === 'over_65') {
+                $m['Count_Age_Range_Over_65'] += (int)$val;
+            } else {
+                $column = 'Count_Age_Range_' . $sub;
+                if (array_key_exists($column, $m)) $m[$column] += (int)$val;
+            }
+        }
+
+        // 3. Map Repeat Type Totals
+        $repeats = $booked['repeat_type'] ?? [];
+        foreach ($repeats as $sub => $val) {
+            $column = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+            if (array_key_exists($column, $m)) $m[$column] += (int)$val;
+        }
+
+        // 4. Map Detailed Ethnicity (Safeguarding White Traveller)
+        $ethnicity = $booked['ethnicity'] ?? [];
         foreach ($ethnicity as $sub => $val) {
-            // We use the same column mapping logic as the DWH/Normalized tables
-            $column = 'Count_Ethnicity_' . str_replace(' ', '_', strtolower($sub));
-            if (isset($m[$column])) {
+            if ($sub === 'white_traveller') {
+                $m['Count_Ethnicity_White_Traveller'] += (int)$val;
+                continue;
+            }
+
+            $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
+            if (array_key_exists($column, $m)) {
                 $m[$column] += (int)$val;
             } else {
                 $m['Count_Ethnicity_Other_Any'] += (int)$val;
             }
         }
 
-        // Map Standalone Demographics
-        // Note: Use the keys from the legacy JSON structure
-        $m['Count_SEND'] += (int)($block['send'] ?? 0);
-        $m['Count_Pupil_Premium'] += (int)($block['free_school_meals'] ?? 0);
+        // 5. Core Operational Demographics & Privacy Non-Disclosure Markers
+        $m['Count_SEND']                     += (int)($booked['send'] ?? 0);
+        $m['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
+        $m['Count_Pupil_Premium']            += (int)($booked['free_school_meals'] ?? 0);
+        $m['Count_Pupil_Premium_Not_Stated'] += (int)($booked['free_school_meals_na'] ?? 0);
 
         return $m;
     }
@@ -1270,18 +1548,51 @@ class DataWarehouseSyncService
                 elseif ($sub === 'male') $m['Count_Male'] += $val;
             }
 
+            if ($cat === 'age_range') {
+                if ($sub === 'na') {
+                    $m['Count_Age_Range_Not_Stated'] += $val;
+                } elseif ($sub === 'over_65') {
+                    $m['Count_Age_Range_Over_65'] += $val;
+                } else {
+                    $column = 'Count_Age_Range_' . $sub;
+                    if (array_key_exists($column, $m)) $m[$column] += $val;
+                }
+            }
+
+            if ($cat === 'repeat_type') {
+                $column = 'Count_Booked_Repeat_Type_' . ucfirst($sub);
+                if (array_key_exists($column, $m)) $m[$column] += $val;
+            }
+
             if ($cat === 'ethnicity') {
-                // We expect the source 'sub_category' to match our grouping names (e.g., 'white_british')
-                $column = 'Count_Ethnicity_' . str_replace(' ', '_', $sub);
-                if (isset($m[$column])) {
+                if ($sub === 'white_traveller') {
+                    $m['Count_Ethnicity_White_Traveller'] += $val;
+                    continue;
+                }
+
+                $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
+                if (array_key_exists($column, $m)) {
                     $m[$column] += $val;
                 } else {
                     $m['Count_Ethnicity_Other_Any'] += $val;
                 }
             }
 
-            if ($cat === 'pupil_premium') $m['Count_Pupil_Premium'] += $val;
-            if ($cat === 'send') $m['Count_SEND'] += $val;
+            if ($cat === 'pupil_premium') {
+                if ($sub === 'free_school_meals_na') {
+                    $m['Count_Pupil_Premium_Not_Stated'] += $val;
+                } else {
+                    $m['Count_Pupil_Premium'] += $val;
+                }
+            }
+
+            if ($cat === 'send') {
+                if ($sub === 'booked_send_na' || $sub === 'send_na') {
+                    $m['Count_SEND_Not_Stated'] += $val;
+                } else {
+                    $m['Count_SEND'] += $val;
+                }
+            }
         }
         return $m;
     }
