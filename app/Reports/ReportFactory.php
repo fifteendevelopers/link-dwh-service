@@ -4,6 +4,7 @@
 namespace App\Reports;
 
 use App\Reports\Contracts\ReportHandlerInterface;
+use App\Reports\Handlers\DeliveriesHandler;
 use App\Reports\Handlers\DeliveriesPerGrantRecipientHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
@@ -26,6 +27,7 @@ class ReportFactory
         'report-29.0'                       => PreCourseCycleFrequencyHandler::class, // Supports aliases
         'gr-fleet-cycles-used'              => GrFleetCyclesUsedHandler::class,
         'deliveries-per-grant-recipient'    => DeliveriesPerGrantRecipientHandler::class,
+        'deliveries'                        => DeliveriesHandler::class,
         'pre-course-frequency'              => PreCourseFrequencyHandler::class,
         'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,

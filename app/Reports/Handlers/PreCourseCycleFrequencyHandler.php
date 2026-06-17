@@ -1,27 +1,12 @@
 <?php
-// app/Reports/Handlers/PreCourseCycleFrequencyHandler.php
 
 namespace App\Reports\Handlers;
 
-use App\Reports\Contracts\ReportHandlerInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Http;
 
-class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
+class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
 {
-    protected ?string $callbackUrl = null;
-    protected ?string $jobId = null;
-
-    /**
-     * Set properties when invoked through an async background context loop
-     */
-    public function setAsyncProperties(string $callbackUrl, ?string $jobId): void
-    {
-        $this->callbackUrl = $callbackUrl;
-        $this->jobId       = $jobId;
-    }
-
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
@@ -60,12 +45,12 @@ class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
 
         $query->orderBy('g.Grant_Number')->orderBy('dh.Source_Delivery_Id');
 
-        // If running synchronously (no callback), fall back to returning raw data array safely
+        // Synchronous track fallback
         if (empty($this->callbackUrl)) {
             return $query->get()->toArray();
         }
 
-        // 🚀 STREAMING ENGINE FLOW
+        // Asynchronous Streaming Flow Engine
         $records = $query->lazy();
         $batch = [];
         $batchSize = 5000;
@@ -88,35 +73,15 @@ class PreCourseCycleFrequencyHandler implements ReportHandlerInterface
             ];
 
             if (count($batch) >= $batchSize) {
-                $this->dispatchBatchToSourceSystem($batch, false);
+                $this->transmitBatch($batch, false);
                 $batch = [];
             }
         }
 
-        // Send remaining records and stamp EOF flag to true 🏁
-        $this->dispatchBatchToSourceSystem($batch, true);
+        // Finalize stream
+        $this->transmitBatch($batch, true);
 
         return ['status' => 'async_completed'];
-    }
-
-    private function dispatchBatchToSourceSystem(array $payload, bool $isFinal): void
-    {
-        if (empty($payload) && !$isFinal) return;
-
-//        Http::withHeaders([
-//            'X-Report-Job-ID' => $this->jobId ?? 'anonymous',
-//            'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false'
-//        ])->post($this->callbackUrl, [
-//            'data' => $payload
-//        ]);
-        Http::withoutVerifying()
-            ->withHeaders([
-                'X-Report-Job-ID' => $this->jobId ?? 0,
-                'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false'
-            ])
-            ->post($this->callbackUrl, [
-                'data' => $payload
-            ]);
     }
 
     private function translateFreq($val): string
