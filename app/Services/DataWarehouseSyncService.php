@@ -1219,7 +1219,7 @@ class DataWarehouseSyncService
                 if ($record->consent_src_characteristics == 1) {
                     $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
                 } else {
-                    if ($useLegacyCourseCharacteristics && !empty($record->characteristics)) {
+                    if ($useLegacyCourseCharacteristics) {
                         if(!empty($record->characteristics)){
                             $metrics = $this->aggregateFromLegacyCharacteristics($record->characteristics);
                         } else {
