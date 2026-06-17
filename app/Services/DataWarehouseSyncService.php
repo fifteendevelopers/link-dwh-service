@@ -563,7 +563,7 @@ class DataWarehouseSyncService
                             'Organisation_Key' => $organisationKey,
                             'Training_Provider_Key' => $providerKey,
                             'External_System_Key' => $externalSystemKey,
-                            'Delivery_Status' => $this->mapDeliveryStatus($delivery->status),
+                            'Delivery_Status' => ($delivery->digitisation_booking===1)?$this->mapDeliveryStatus($delivery->status):'N/A',
                             'Date_Delivery_Start' => $delivery->date_delivery_start,
                             'Date_Delivery_End' => $delivery->date_delivery_end,
                             'Digitisation_Booking' => $delivery->digitisation_booking,
@@ -829,7 +829,7 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
-        // 1. Get the Watermark for Consents
+        // Get the Watermark for Consents
         $watermark = $this->dwh->table('Sync_Log')
             ->where('Table_Name', 'Dim_Consent')
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
@@ -858,7 +858,7 @@ class DataWarehouseSyncService
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
-        // 3. Process in Chunks
+        // Process in Chunks
         $query->chunk(1000, function ($consents) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
 
             $consentIds = $consents->pluck('id')->toArray();
@@ -945,7 +945,7 @@ class DataWarehouseSyncService
             }
         });
 
-        // 5. Finalize Watermark
+        // Finalize Watermark
         $this->dwh->table('Sync_Log')->updateOrInsert(
             ['Table_Name' => 'Dim_Consent'],
             [
@@ -1027,6 +1027,11 @@ class DataWarehouseSyncService
             'Count_Male' => 0,
             'Count_Gender_Other' => 0,
 
+            //Family Counts
+            'Count_Adults' => 0,
+            'Count_Teens' => 0,
+            'Count_Children' => 0,
+
             //Repeat Type
             'Count_Booked_Repeat_Type_Na' => 0,
             'Count_Booked_Repeat_Type_Unique' => 0,
@@ -1081,7 +1086,7 @@ class DataWarehouseSyncService
         $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('deliveries', 'delivery_details');
 
-        $useLegacyCourseCharacteristicss = \Illuminate\Support\Facades\Schema::connection('mysql_src')
+        $useLegacyCourseCharacteristics = \Illuminate\Support\Facades\Schema::connection('mysql_src')
             ->hasColumn('courses', 'characteristics');
 
         // Get the historical synchronization high-watermark
@@ -1106,7 +1111,7 @@ class DataWarehouseSyncService
             $query->addSelect('deliveries.delivery_details');
         }
 
-        if ($useLegacyCourseCharacteristicss) {
+        if ($useLegacyCourseCharacteristics) {
             $query->addSelect('courses.characteristics');
         }
 
@@ -1127,7 +1132,7 @@ class DataWarehouseSyncService
         $highestTimestampSeen = $watermark;
 
         // Process in chunks to maintain low memory footprints
-        $query->chunk(500, function ($records) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristicss) {
+        $query->chunk(500, function ($records) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristics) {
             foreach ($records as $record) {
 
                 // Track the highest modified timestamp across both tables
@@ -1154,7 +1159,7 @@ class DataWarehouseSyncService
                 ];
                 $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
 
-                // Extract and explicitly pull the course level variable out of the fact payload array 🎯
+                // Extract and explicitly pull the course level variable out of the fact payload array
                 $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
                 $yearGroupString = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
                 unset($deliveryDetailMetrics['Extracted_Course_Level']);
@@ -1214,8 +1219,12 @@ class DataWarehouseSyncService
                 if ($record->consent_src_characteristics == 1) {
                     $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
                 } else {
-                    if ($useLegacyCourseCharacteristicss && !empty($record->characteristics)) {
-                        $metrics = $this->aggregateFromLegacyCharacteristics($record->characteristics);
+                    if ($useLegacyCourseCharacteristics && !empty($record->characteristics)) {
+                        if(!empty($record->characteristics)){
+                            $metrics = $this->aggregateFromLegacyCharacteristics($record->characteristics);
+                        } else {
+                            $metrics = $this->initializeExtendedMetricArray();
+                        }
                     } elseif (!is_null($record->course_id)) {
                         $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
                     } else {
@@ -1295,7 +1304,7 @@ class DataWarehouseSyncService
             $isTargetModule = is_null($course->id) || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id);
 
             if ($isTargetModule) {
-                // 🚀 DERIVE LEVEL IDENTITY: Pulls 'plus_adult' straight from module context tracking
+                // DERIVE LEVEL IDENTITY: Pulls the course level straight from module context tracking
                 $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
                 $metrics['Extracted_Year_Group'] = $entry['delivery']['year_group'] ?? null;
 
@@ -1307,6 +1316,14 @@ class DataWarehouseSyncService
                 if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
                     $metrics['Count_Booked_Confirmed']   = (int)($booked['total'] ?? 0);
                     $metrics['Count_Attended_Confirmed'] = (int)($delivery['attended']['total'] ?? 0);
+                }
+
+                if (($entry['module']['id'] ?? '') === 'plus_family') {
+                    $metrics['Count_Adults']   = (int)($delivery['adults'] ?? 0);
+                    $metrics['Count_Teens']    = (int)($delivery['teens'] ?? 0);
+                    $metrics['Count_Children'] = (int)($delivery['children'] ?? 0);
+
+                    break;
                 }
 
                 // Map Legacy Genders into correct Fact columns
@@ -1508,7 +1525,7 @@ class DataWarehouseSyncService
             if (array_key_exists($column, $m)) $m[$column] += (int)$val;
         }
 
-        // 4. Map Detailed Ethnicity (Safeguarding White Traveller)
+        // Map Detailed Ethnicity (Safeguarding White Traveller)
         $ethnicity = $booked['ethnicity'] ?? [];
         foreach ($ethnicity as $sub => $val) {
             if ($sub === 'white_traveller') {
@@ -1524,7 +1541,7 @@ class DataWarehouseSyncService
             }
         }
 
-        // 5. Core Operational Demographics & Privacy Non-Disclosure Markers
+        // SEND and Pupil Premium counts
         $m['Count_SEND']                     += (int)($booked['send'] ?? 0);
         $m['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
         $m['Count_Pupil_Premium']            += (int)($booked['free_school_meals'] ?? 0);
@@ -1605,10 +1622,10 @@ class DataWarehouseSyncService
         $sourceSystemKey = $this->getSourceSystemKey();
         if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Course Sync...");
 
-        // 1. Fetch our high-watermark checkpoint using your standard tracker helper
+        // Fetch our high-watermark checkpoint
         $watermark = $this->getWatermark('Fact_Rider_Course');
 
-        // 2. Query against the transactional source table looking for modified rows
+        // Query against the source table looking for modified rows
         $query = $this->source->table('join_riders_courses')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
@@ -1619,13 +1636,13 @@ class DataWarehouseSyncService
             return "Fact_Rider_Course up to date.";
         }
 
-        // 3. Optional interactive CLI Progress Bar initialization
+        // Progress Bar initialization
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
         $highestTimestamp = $watermark;
 
-        // 4. Process in chunks to maintain low memory footprints
+        // Process in chunks to maintain low memory footprints
         $query->chunk(250, function ($riderCourses) use ($sourceSystemKey, $bar, &$highestTimestamp) {
             foreach ($riderCourses as $rc) {
 
@@ -1662,7 +1679,7 @@ class DataWarehouseSyncService
             }
         });
 
-        // 5. Commit the watermark back down into your tracking state database matrix table row
+        //  Commit the watermark
         $this->updateWatermark('Fact_Rider_Course', $highestTimestamp);
 
         if ($bar) {
@@ -2108,10 +2125,10 @@ class DataWarehouseSyncService
         $sourceSystemKey = $this->getSourceSystemKey();
         if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor-Deliveries Sync...");
 
-        // 1. Resolve Watermark
+        // Resolve Watermark
         $watermark = $this->getWatermark('Fact_Instructor_Delivery');
 
-        // 2. Query Source delta (including soft deleted rows so we sync the deletion status)
+        //  Query Source delta (including soft deleted rows so we sync the deletion status)
         $query = $this->source->table('join_deliveries_instructors')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
@@ -2127,7 +2144,7 @@ class DataWarehouseSyncService
 
         $highestTimestampSeen = $watermark;
 
-        // 3. Process Chunk Loop
+        // Process Chunk Loop
         $query->chunk(500, function ($allocations) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
             foreach ($allocations as $alloc) {
 
@@ -2171,7 +2188,7 @@ class DataWarehouseSyncService
             }
         });
 
-        // 4. Record safe watermark state
+        // Record watermark state
         $this->updateWatermark('Fact_Instructor_Delivery', $highestTimestampSeen);
 
         if ($bar) {
@@ -2189,7 +2206,7 @@ class DataWarehouseSyncService
 
         if ($command) $command->info("[{$now}] Starting Instructor-Course Pivot Sync...");
 
-        // 1. Fetch all currently active allocations from the SOURCE database
+        // Fetch all currently active allocations from the SOURCE database
         // Pluck as "instructor_id-course_id" strings for instant O(1) lookups in PHP memory
         $sourcePairs = $this->source->table('join_instructors_courses') // replace with actual source table name
         ->select('instructor_id', 'course_id')
@@ -2199,7 +2216,7 @@ class DataWarehouseSyncService
             })
             ->toArray();
 
-        // 2. Fetch all rows the DWH currently considers active
+        //  Fetch all rows the DWH currently considers active
         $dwhActiveRows = $this->dwh->table('Fact_Instructor_Course')
             ->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
             ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key')
@@ -2771,10 +2788,10 @@ class DataWarehouseSyncService
     private function mapDeliveryStatus($statusId)
     {
         return match ($statusId) {
-            1 => 'Draft',
-            2 => 'Confirmed',
-            3 => 'Completed',
-            4 => 'Cancelled',
+            0 => 'Delivery Created',
+            1 => 'In Progress',
+            2 => 'Completed',
+            3 => 'Cancelled',
             default => 'Unknown'
         };
     }

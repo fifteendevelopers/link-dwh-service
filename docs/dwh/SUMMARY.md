@@ -1,0 +1,37 @@
+# Summary
+
+[Database Overview](README.md)
+
+## Fact Tables
+* [Fact_Course_Delivery](Fact_Course_Delivery.md)
+* [Fact_Follow_Up_Survey](Fact_Follow_Up_Survey.md)
+* [Fact_Grant_Amendment_Logs](Fact_Grant_Amendment_Logs.md)
+* [Fact_Grant_Amendments](Fact_Grant_Amendments.md)
+* [Fact_Grant_Claim_Inclusions](Fact_Grant_Claim_Inclusions.md)
+* [Fact_Grant_Claim_Logs](Fact_Grant_Claim_Logs.md)
+* [Fact_Grant_Claim_Send_Records](Fact_Grant_Claim_Send_Records.md)
+* [Fact_Grant_Claims](Fact_Grant_Claims.md)
+* [Fact_Grant_Financials](Fact_Grant_Financials.md)
+* [Fact_Grant_Reallocation_Logs](Fact_Grant_Reallocation_Logs.md)
+* [Fact_Grant_Reallocations](Fact_Grant_Reallocations.md)
+* [Fact_HandsUp_Survey](Fact_HandsUp_Survey.md)
+* [Fact_Instructor_Course](Fact_Instructor_Course.md)
+* [Fact_Instructor_Delivery](Fact_Instructor_Delivery.md)
+* [Fact_Parent_Survey](Fact_Parent_Survey.md)
+* [Fact_Rider_Course](Fact_Rider_Course.md)
+
+## Dimension Tables
+* [Dim_Consent](Dim_Consent.md)
+* [Dim_Course](Dim_Course.md)
+* [Dim_Date](Dim_Date.md)
+* [Dim_Delivery_Header](Dim_Delivery_Header.md)
+* [Dim_External_Systems](Dim_External_Systems.md)
+* [Dim_Grant](Dim_Grant.md)
+* [Dim_Grant_Recipient](Dim_Grant_Recipient.md)
+* [Dim_Instructor](Dim_Instructor.md)
+* [Dim_Organisation](Dim_Organisation.md)
+* [Dim_Rider](Dim_Rider.md)
+* [Dim_School](Dim_School.md)
+* [Dim_Send_Code](Dim_Send_Code.md)
+* [Dim_Source_System](Dim_Source_System.md)
+* [Dim_Training_Provider](Dim_Training_Provider.md)
