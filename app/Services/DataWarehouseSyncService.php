@@ -1026,6 +1026,7 @@ class DataWarehouseSyncService
             'Count_Female' => 0,
             'Count_Male' => 0,
             'Count_Gender_Other' => 0,
+            'Count_Gender_Not_Stated' => 0,
 
             //Family Counts
             'Count_Adults' => 0,
@@ -1296,7 +1297,8 @@ class DataWarehouseSyncService
             'Count_Bikes_Swapped'      => 0,
             'Count_Bikes_Recycled'     => 0,
             'Extracted_Course_Level'   => null,
-            'Extracted_Year_Group'     => null
+            'Extracted_Year_Group'     => null,
+            'Count_Gender_Not_Stated'   => 0,
         ]);
 
         foreach ($details as $entry) {
@@ -1332,6 +1334,7 @@ class DataWarehouseSyncService
                     if ($sub === 'female') $metrics['Count_Female'] += (int)$val;
                     elseif ($sub === 'male') $metrics['Count_Male'] += (int)$val;
                     elseif ($sub === 'other') $metrics['Count_Gender_Other'] += (int)$val;
+                    elseif ($sub === 'na') $metrics['Count_Gender_Not_Stated'] += (int)$val;
                 }
 
                 // Translate and map Legacy JSON Ethnicity text keys into DWH Columns
@@ -1378,6 +1381,10 @@ class DataWarehouseSyncService
     private function extractFromNormalizedTables($course)
     {
         $metrics = [
+            'Count_Male'                 => 0,
+            'Count_Female'               => 0,
+            'Count_Gender_Other'         => 0,
+            'Count_Gender_Not_Stated'    => 0,
             'Count_Ethnicity_Not_Stated' => 0,
             'Count_Booked_Provisional' => 0,
             'Count_Booked_Confirmed'   => 0,
@@ -1417,6 +1424,13 @@ class DataWarehouseSyncService
             $cat = strtolower($row->category);
             $sub = strtolower($row->sub_category);
             $val = (int)$row->value;
+
+            if ($cat === 'booked_gender') {
+                if ($sub === 'male')     $metrics['Count_Male'] = $val;
+                if ($sub === 'female')   $metrics['Count_Female'] = $val;
+                if ($sub === 'other')    $metrics['Count_Gender_Other'] = $val;
+                if ($sub === 'na')       $metrics['Count_Gender_Not_Stated'] = $val;
+            }
 
             // Extract and map Ethnicities directly using the 4-character code mapper helper
             if ($cat === 'booked_ethnicity') {

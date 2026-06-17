@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\StreamReportToCallbackJob;
 use App\Reports\ReportFactory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Http\JsonResponse;
 

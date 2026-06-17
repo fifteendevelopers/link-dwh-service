@@ -11,6 +11,7 @@ class ValidateDwhConsumer
 {
     public function handle(Request $request, Closure $next): Response
     {
+
         // Get credentials from secure Request Headers
         $clientId = $request->header('X-DWH-Client-ID');
         $clientSecret = $request->header('X-DWH-Client-Secret');
