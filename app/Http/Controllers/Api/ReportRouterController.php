@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/Api/ReportRouterController.php
 
 namespace App\Http\Controllers\Api;
 
@@ -15,7 +14,7 @@ class ReportRouterController extends Controller
 {
     public function execute(Request $request): JsonResponse
     {
-        // 1. Validate the primary wrapper payload structure
+        // Validate the primary wrapper payload structure
         $wrapperValidator = Validator::make($request->all(), [
             'report_key'    => 'required|string',
             'parameters'    => 'present|array',
@@ -37,11 +36,11 @@ class ReportRouterController extends Controller
         $jobId       = $request->input('job_id');
 
         try {
-            // 2. Resolve the concrete reporting handler class
+            // Resolve the concrete reporting handler class
             $handler = ReportFactory::make($reportKey);
 
-            // 3. Enforce report-specific parameter validation rules (dates, IDs, etc.)
-            $validatedParams = $handler->validate($request->input('parameters'));
+            // Enforce report-specific parameter validation rules (dates, IDs, etc.)
+            $validatedParams = $handler->validate($parameters);
 
             if (!empty($callbackUrl)) {
                 // Offload the entire handler processing execution task to the queue workers
@@ -55,7 +54,7 @@ class ReportRouterController extends Controller
                 ], 202);
             }
 
-            // 4. Run the query on the DWH connection
+            // Run the query on the DWH connection
             $reportData = $handler->execute($validatedParams);
 
             return response()->json([

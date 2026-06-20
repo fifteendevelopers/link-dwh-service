@@ -1,5 +1,4 @@
 <?php
-// app/Reports/ReportFactory.php
 
 namespace App\Reports;
 
@@ -14,8 +13,6 @@ use App\Reports\Handlers\PreCourseCycleFrequencyHandler;
 use App\Reports\Handlers\PreCourseFrequencyHandler;
 use App\Reports\Handlers\SchoolDeliveriesHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
-
-// Import other report classes here...
 
 class ReportFactory
 {

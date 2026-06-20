@@ -43,7 +43,7 @@ class CreateDwhConsumer extends Command
 
         // 4. Output plaintext values to terminal screen
         $this->newLine();
-        $this->info("🚀 API Consumer Identity Created Successfully!");
+        $this->info("API Consumer Identity Created Successfully!");
         $this->line("--------------------------------------------------------------------------------");
         $this->line("Client Name:    <comment>{$name}</comment>");
         $this->line("Client ID:      <info>{$clientId}</info>");
