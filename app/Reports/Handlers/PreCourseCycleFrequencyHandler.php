@@ -3,6 +3,7 @@
 namespace App\Reports\Handlers;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
@@ -47,7 +48,24 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
 
         // Synchronous track fallback
         if (empty($this->callbackUrl)) {
-            return $query->get()->toArray();
+            Log::info(__CLASS__ . '::' . __FUNCTION__ . '() Running SQL Query: ' . $query->toRawSql());
+
+            // Map stdClass rows to formatted associative arrays
+            return $query->get()->map(fn($row) => [
+                'Grant Number'               => $row->Grant_Number,
+                'Grant Source'               => $row->Grant_Source,
+                'Grant Recipient'            => $row->Recipient_Name,
+                'Delivery ID'                => $row->Source_Delivery_Id,
+                'Training Provider'          => $row->Provider_Name,
+                'School/Organisation'        => $row->School_Org,
+                'Rider ID'                   => $row->Source_Rider_Id,
+                'Year Group'                 => $row->Year_Group,
+                'Consent Cutoff Date'        => !empty($row->Consent_Cutoff_Date) ? date('d/m/Y', strtotime($row->Consent_Cutoff_Date)) : null,
+                'Frequency: To/From School'  => $this->translateFreq($row->Pre_Freq_To_School),
+                'Frequency: Leisure'         => $this->translateFreq($row->Pre_Freq_Leisure),
+                'Frequency: Exercise'        => $this->translateFreq($row->Pre_Freq_Exercise),
+                'Frequency: Other'           => $this->translateFreq($row->Pre_Freq_Other),
+            ])->toArray();
         }
 
         // Asynchronous Streaming Flow Engine
