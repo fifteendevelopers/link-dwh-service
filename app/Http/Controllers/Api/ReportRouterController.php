@@ -79,7 +79,7 @@ class ReportRouterController extends Controller
             // Catch database timeouts, locks or query execution breakages safely
             return response()->json([
                 'success' => false,
-                'message' => 'An anomaly occurred during DWH query processing.',
+                'message' => 'An anomaly occurred during DWH query processing.'.$e->getMessage(),
                 'error_debug' => config('app.debug') ? $e->getMessage() : 'Internal Server Error'
             ], 500);
         }
