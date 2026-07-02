@@ -2045,8 +2045,8 @@ class DataWarehouseSyncService
                     'Pref_Claim_Paid' => (bool)$cl->pref_claim_paid,
                     'Date_Approved' => $cl->date_approved,
                     'Delivery_On_Track_Prediction' => $cl->delivery_on_track_prediction,
-                    'Send_Claimable_Amount' => $cl->send_claimable_amount,
-                    'Inclusion_Claimable_Amount' => $cl->inclusion_claimable_amount,
+                    'Send_Claimable_Amount' => is_numeric($cl->send_claimable_amount) ? (float)$cl->send_claimable_amount : 0.00,
+                    'Inclusion_Claimable_Amount' => is_numeric($cl->inclusion_claimable_amount) ? (float)$cl->inclusion_claimable_amount : 0.00,
                     'created_at' => now(), 'updated_at' => now()
                 ]);
 
@@ -2077,21 +2077,20 @@ class DataWarehouseSyncService
                     foreach ($sends as $s) {
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => $s->send_id ?? $s->send_id_string ?? 'raw', // Fallback safety matrix
-                            'Send_Riders_Count' => $s->send_riders ?? 0,
-                            'Send_Amount' => $s->send_amount ?? 0.00,
+                            'Send_Id_String' => !empty($s->send_id) ? $s->send_id : (!empty($s->send_id_string) ? $s->send_id_string : 'raw'),
+                            'Send_Riders_Count' => !empty($s->send_riders) ? (int)$s->send_riders : 0,
+                            'Send_Amount' => (!empty($s->send_amount) && is_numeric($s->send_amount)) ? (float)$s->send_amount : 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
                 } else {
                     $sends = json_decode($cl->send_records, true) ?? [];
                     foreach ($sends as $node) {
-                        // Keys mapped precisely to matching source database JSON keys
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => $node['sendId'] ?? 'raw',
-                            'Send_Riders_Count' => $node['sendRiders'] ?? 0,
-                            'Send_Amount' => $node['sendAmount'] ?? 0.00,
+                            'Send_Id_String' => !empty($node['sendId']) ? $node['sendId'] : 'raw',
+                            'Send_Riders_Count' => !empty($node['sendRiders']) ? (int)$node['sendRiders'] : 0,
+                            'Send_Amount' => (!empty($node['sendAmount']) && is_numeric($node['sendAmount'])) ? (float)$node['sendAmount'] : 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
@@ -2103,23 +2102,22 @@ class DataWarehouseSyncService
                     foreach ($inclusions as $inc) {
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Inclusion_Id_String' => $inc->inclusion_id ?? $inc->inclusion_id_string ?? 'raw', // Fallback safety matrix
-                            'Inclusion_Category' => $inc->inclusion_category ?? 'N/A',
-                            'Inclusion_Delivery' => $inc->inclusion_delivery ?? null,
-                            'Inclusion_Amount' => $inc->inclusion_amount ?? 0.00,
+                            'Inclusion_Id_String' => !empty($inc->inclusion_id) ? $inc->inclusion_id : (!empty($inc->inclusion_id_string) ? $inc->inclusion_id_string : 'raw'),
+                            'Inclusion_Category' => !empty($inc->inclusion_category) ? $inc->inclusion_category : 'N/A',
+                            'Inclusion_Delivery' => !empty($inc->inclusion_delivery) ? $inc->inclusion_delivery : null,
+                            'Inclusion_Amount' => (!empty($inc->inclusion_amount) && is_numeric($inc->inclusion_amount)) ? (float)$inc->inclusion_amount : 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
                 } else {
                     $inclusions = json_decode($cl->inclusion_records, true) ?? [];
                     foreach ($inclusions as $node) {
-                        // Keys mapped precisely to matching source database JSON keys
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Inclusion_Id_String' => $node['inclusionId'] ?? 'raw',
-                            'Inclusion_Category' => $node['inclusionCategory'] ?? 'N/A',
+                            'Inclusion_Id_String' => !empty($node['inclusionId']) ? $node['inclusionId'] : 'raw',
+                            'Inclusion_Category' => !empty($node['inclusionCategory']) ? $node['inclusionCategory'] : 'N/A',
                             'Inclusion_Delivery' => isset($node['inclusionDelivery']) && $node['inclusionDelivery'] !== '' ? $node['inclusionDelivery'] : null,
-                            'Inclusion_Amount' => $node['inclusionAmount'] ?? 0.00,
+                            'Inclusion_Amount' => (!empty($node['inclusionAmount']) && is_numeric($node['inclusionAmount'])) ? (float)$node['inclusionAmount'] : 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
