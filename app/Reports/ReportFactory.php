@@ -5,6 +5,7 @@ namespace App\Reports;
 use App\Reports\Contracts\ReportHandlerInterface;
 use App\Reports\Handlers\DeliveriesHandler;
 use App\Reports\Handlers\DeliveriesPerGrantRecipientHandler;
+use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
 use App\Reports\Handlers\InstructorsDeliveriesAllocationHandler;
@@ -25,6 +26,7 @@ class ReportFactory
         'deliveries'                        => DeliveriesHandler::class,
         'deliveries-per-grant-recipient'    => DeliveriesPerGrantRecipientHandler::class,
         'gr-fleet-cycles-used'              => GrFleetCyclesUsedHandler::class,
+        'grant-claim-send-and-inclusion'    => GrantClaimSendAndInclusionHandler::class,
         'grant-funding-overview'            => Handlers\GrantFundingOverviewHandler::class,
         'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
