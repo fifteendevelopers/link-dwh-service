@@ -2035,8 +2035,6 @@ class DataWarehouseSyncService
                     $this->dwh->table('Fact_Grant_Claims')->whereIn('Claim_Key', $existingClaimKeys)->delete();
                 }
 
-                // 🎯 We store the raw JSON strings columns directly on Fact_Grant_Claims
-                // so our streaming report handler can access them instantly if needed
                 $claimKey = $this->dwh->table('Fact_Grant_Claims')->insertGetId([
                     'Grant_Key' => $grantKey,
                     'Source_System_Key' => $sourceSystemKey,
@@ -2049,8 +2047,6 @@ class DataWarehouseSyncService
                     'Delivery_On_Track_Prediction' => $cl->delivery_on_track_prediction,
                     'Send_Claimable_Amount' => $cl->send_claimable_amount,
                     'Inclusion_Claimable_Amount' => $cl->inclusion_claimable_amount,
-                    'Send_Records' => $this->sourceHasColumn('grant_claims', 'send_records') ? $cl->send_records : null,
-                    'Inclusion_Records' => $this->sourceHasColumn('grant_claims', 'inclusion_records') ? $cl->inclusion_records : null,
                     'created_at' => now(), 'updated_at' => now()
                 ]);
 
