@@ -2035,6 +2035,8 @@ class DataWarehouseSyncService
                     $this->dwh->table('Fact_Grant_Claims')->whereIn('Claim_Key', $existingClaimKeys)->delete();
                 }
 
+                // 🎯 We store the raw JSON strings columns directly on Fact_Grant_Claims
+                // so our streaming report handler can access them instantly if needed
                 $claimKey = $this->dwh->table('Fact_Grant_Claims')->insertGetId([
                     'Grant_Key' => $grantKey,
                     'Source_System_Key' => $sourceSystemKey,
@@ -2047,9 +2049,12 @@ class DataWarehouseSyncService
                     'Delivery_On_Track_Prediction' => $cl->delivery_on_track_prediction,
                     'Send_Claimable_Amount' => $cl->send_claimable_amount,
                     'Inclusion_Claimable_Amount' => $cl->inclusion_claimable_amount,
+                    'Send_Records' => $this->sourceHasColumn('grant_claims', 'send_records') ? $cl->send_records : null,
+                    'Inclusion_Records' => $this->sourceHasColumn('grant_claims', 'inclusion_records') ? $cl->inclusion_records : null,
                     'created_at' => now(), 'updated_at' => now()
                 ]);
 
+                // --- 1. SYNC CLAIM LOGS ---
                 if (!$this->sourceHasColumn('grant_claims', 'claim_log')) {
                     $logs = $this->source->table('grant_claim_logs')->where('grant_claim_id', $cl->id)->get();
                     foreach ($logs as $log) {
@@ -2070,13 +2075,14 @@ class DataWarehouseSyncService
                     }
                 }
 
+                // --- 2. SYNC SEND RECORDS ---
                 if (!$this->sourceHasColumn('grant_claims', 'send_records')) {
                     $sends = $this->source->table('grant_claim_send_records')->where('grant_claim_id', $cl->id)->get();
                     foreach ($sends as $s) {
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => $s->send_id_string,
-                            'Send_Riders_Count' => $s->send_riders,
+                            'Send_Id_String' => $s->send_id ?? $s->send_id_string ?? 'raw', // Fallback safety matrix
+                            'Send_Riders_Count' => $s->send_riders ?? 0,
                             'Send_Amount' => $s->send_amount ?? 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
@@ -2084,24 +2090,26 @@ class DataWarehouseSyncService
                 } else {
                     $sends = json_decode($cl->send_records, true) ?? [];
                     foreach ($sends as $node) {
+                        // Keys mapped precisely to matching source database JSON keys
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => $node['id_string'] ?? 'raw',
-                            'Send_Riders_Count' => $node['riders'] ?? 0,
-                            'Send_Amount' => $node['amount'] ?? 0.00,
+                            'Send_Id_String' => $node['sendId'] ?? 'raw',
+                            'Send_Riders_Count' => $node['sendRiders'] ?? 0,
+                            'Send_Amount' => $node['sendAmount'] ?? 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
                 }
 
+                // --- 3. SYNC INCLUSION RECORDS ---
                 if (!$this->sourceHasColumn('grant_claims', 'inclusion_records')) {
                     $inclusions = $this->source->table('grant_claim_inclusions')->where('grant_claim_id', $cl->id)->get();
                     foreach ($inclusions as $inc) {
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Inclusion_Id_String' => $inc->inclusion_id_string,
-                            'Inclusion_Category' => $inc->inclusion_category,
-                            'Inclusion_Delivery' => $inc->inclusion_delivery,
+                            'Inclusion_Id_String' => $inc->inclusion_id ?? $inc->inclusion_id_string ?? 'raw', // Fallback safety matrix
+                            'Inclusion_Category' => $inc->inclusion_category ?? 'N/A',
+                            'Inclusion_Delivery' => $inc->inclusion_delivery ?? null,
                             'Inclusion_Amount' => $inc->inclusion_amount ?? 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
@@ -2109,12 +2117,13 @@ class DataWarehouseSyncService
                 } else {
                     $inclusions = json_decode($cl->inclusion_records, true) ?? [];
                     foreach ($inclusions as $node) {
+                        // Keys mapped precisely to matching source database JSON keys
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
                             'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Inclusion_Id_String' => $node['id_string'] ?? 'raw',
-                            'Inclusion_Category' => $node['category'] ?? 'N/A',
-                            'Inclusion_Delivery' => $node['delivery'] ?? null,
-                            'Inclusion_Amount' => $node['amount'] ?? 0.00,
+                            'Inclusion_Id_String' => $node['inclusionId'] ?? 'raw',
+                            'Inclusion_Category' => $node['inclusionCategory'] ?? 'N/A',
+                            'Inclusion_Delivery' => isset($node['inclusionDelivery']) && $node['inclusionDelivery'] !== '' ? $node['inclusionDelivery'] : null,
+                            'Inclusion_Amount' => $node['inclusionAmount'] ?? 0.00,
                             'created_at' => now(), 'updated_at' => now()
                         ]);
                     }
