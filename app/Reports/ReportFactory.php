@@ -10,6 +10,7 @@ use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
 use App\Reports\Handlers\InstructorsDeliveriesAllocationHandler;
 use App\Reports\Handlers\ParentContactsHandler;
+use App\Reports\Handlers\ParentFollowUpSurveyHandler;
 use App\Reports\Handlers\PostCourseSurveyHandler;
 use App\Reports\Handlers\PreCourseCycleFrequencyHandler;
 use App\Reports\Handlers\PreCourseFrequencyHandler;
@@ -31,6 +32,7 @@ class ReportFactory
         'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
         'parent_contacts'                   => ParentContactsHandler::class,
+        'post-course-follow-up-survey'      => ParentFollowUpSurveyHandler::class,
         'post-course-survey'                => PostCourseSurveyHandler::class,
         'pre-course-cycle-frequency'        => PreCourseCycleFrequencyHandler::class,
         'pre-course-frequency'              => PreCourseFrequencyHandler::class,

@@ -1,0 +1,2 @@
+dsn: "mysql://link:link@127.0.0.1:3306/link-dwh"
+docPath: dwh

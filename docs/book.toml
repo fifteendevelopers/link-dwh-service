@@ -1,0 +1,15 @@
+[book]
+title = "Data Warehouse Data Dictionary"
+authors = ["Fifteen Design"]
+description = "Automated Schema Blueprints and ERD Maps"
+language = "en"
+
+src = "dwh"
+
+[output.html]
+git-repository-url = ""
+
+# Disables the search bar to prevent browser CORS security blocks
+# when opening purely offline via double-clicking index.html
+[output.html.search]
+enable = false
