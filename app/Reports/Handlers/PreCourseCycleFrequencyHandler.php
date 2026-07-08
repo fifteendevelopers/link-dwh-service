@@ -13,6 +13,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
         return Validator::make($parameters, [
             'grant_id'    => 'nullable|integer',
             'provider_id' => 'nullable|integer',
+            'recipient_id' => 'nullable|integer',
             'start_date'  => 'nullable|date_format:Y-m-d',
             'end_date'    => 'nullable|date_format:Y-m-d',
         ])->validate();
@@ -41,6 +42,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
 
         if (!empty($params['grant_id']))    $query->where('g.Source_Grant_Id', $params['grant_id']);
         if (!empty($params['provider_id'])) $query->where('tp.Source_Provider_Id', $params['provider_id']);
+        if (!empty($params['recipient_id'])) $query->where('gr.Source_Provider_Id', $params['recipient_id']);
         if (!empty($params['start_date']))  $query->where('dh.Consent_Cutoff_Date', '>=', $params['start_date']);
         if (!empty($params['end_date']))    $query->where('dh.Consent_Cutoff_Date', '<=', $params['end_date']);
 
