@@ -25,9 +25,9 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
 
         $query = $this->buildQuery($params);
 
-        // Synchronous track fallback remains identical
-        $isScopedFilter = !empty($params['recipient_id']) || !empty($params['provider_id']) || !empty($params['grant_id']);
-        if ($isScopedFilter || empty($this->callbackUrl)) {
+        // Only fallback to a synchronous return if the callback URL is empty.
+        // This ensures filtered queries still stream back through the background cURL pipeline safely!
+        if (empty($this->callbackUrl)) {
             return $query->get()->map(fn($row) => (array)$row)->toArray();
         }
 
@@ -35,25 +35,21 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
         $chunkSize = 1000;
 
         $query->chunk($chunkSize, function ($rows) {
-            // Create a temporary in-memory resource pointer to format rows to CSV text
             $memBuffer = fopen('php://temp', 'r+');
 
             foreach ($rows as $row) {
-                // Convert database row objects straight into structured flat text line blocks
                 fputcsv($memBuffer, (array)$row);
             }
 
-            // Rewind pointer positions back to zero index and extract the raw unencoded CSV string chunk
             rewind($memBuffer);
             $csvStringChunk = stream_get_contents($memBuffer);
             fclose($memBuffer);
 
-            // Transmit raw CSV lines directly.
-            // We pass this text block directly inside our standard async cURL payload tracking array wrapper.
+            // Transmit the filtered batch block
             $this->transmitBatch([$csvStringChunk], false);
         });
 
-        // Trigger closing EOF handshake packet
+        // Always send the final closing EOF handshake packet to wrap up the export
         $this->transmitBatch([], true);
 
         return ['status' => 'async_completed'];
