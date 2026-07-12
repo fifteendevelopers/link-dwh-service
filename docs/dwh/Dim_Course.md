@@ -8,7 +8,7 @@
 ```sql
 CREATE TABLE `Dim_Course` (
   `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `Source_Course_Id` bigint unsigned NOT NULL,
+  `Source_Course_Id` bigint unsigned DEFAULT NULL,
   `Source_System_Key` bigint unsigned NOT NULL,
   `Delivery_Key` bigint unsigned NOT NULL,
   `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE `Dim_Course` (
 | Name | Type | Default | Nullable | Extra Definition | Children | Parents | Comment |
 | ---- | ---- | ------- | -------- | ---------------- | -------- | ------- | ------- |
 | Course_Key | bigint unsigned |  | false | auto_increment | [Dim_Course](Dim_Course.md) [Fact_Course_Delivery](Fact_Course_Delivery.md) [Fact_HandsUp_Survey](Fact_HandsUp_Survey.md) |  |  |
-| Source_Course_Id | bigint unsigned |  | false |  |  |  |  |
+| Source_Course_Id | bigint unsigned |  | true |  |  |  |  |
 | Source_System_Key | bigint unsigned |  | false |  |  | [Dim_Source_System](Dim_Source_System.md) |  |
 | Delivery_Key | bigint unsigned |  | false |  |  | [Dim_Delivery_Header](Dim_Delivery_Header.md) |  |
 | Course_Level | varchar(45) |  | false |  |  |  |  |

@@ -3,7 +3,7 @@
     <head>
         <!-- Book generated using mdBook -->
         <meta charset="UTF-8">
-        <title>Fact_Grant_Claim_Send_Records - Data Warehouse Data Dictionary</title>
+        <title>Fact_Instructor_Renewal - Data Warehouse Data Dictionary</title>
 
 
         <!-- Custom HTML head -->
@@ -154,21 +154,46 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <h1 id="fact_grant_claim_send_records"><a class="header" href="#fact_grant_claim_send_records">Fact_Grant_Claim_Send_Records</a></h1>
+                        <h1 id="fact_instructor_renewal"><a class="header" href="#fact_instructor_renewal">Fact_Instructor_Renewal</a></h1>
 <h2 id="description"><a class="header" href="#description">Description</a></h2>
 <details>
 <summary><strong>Table Definition</strong></summary>
-<pre><code class="language-sql">CREATE TABLE `Fact_Grant_Claim_Send_Records` (
-  `Claim_Send_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `Claim_Key` bigint unsigned NOT NULL,
-  `Source_System_Key` int NOT NULL,
-  `Send_Id_String` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Send_Riders_Count` int NOT NULL DEFAULT '0',
-  `Send_Amount` decimal(15,2) NOT NULL DEFAULT '0.00',
+<pre><code class="language-sql">CREATE TABLE `Fact_Instructor_Renewal` (
+  `Renewal_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `Instructor_Key` bigint unsigned NOT NULL,
+  `Source_Renewal_Id` bigint unsigned NOT NULL,
+  `Source_System_Key` bigint unsigned NOT NULL,
+  `Status` tinyint NOT NULL,
+  `Renewal_Year` smallint NOT NULL,
+  `Date_Due` date NOT NULL,
+  `Date_Completed` date DEFAULT NULL,
+  `Date_Approved` date DEFAULT NULL,
+  `Flag_Reminder_Warning` tinyint NOT NULL DEFAULT '0',
+  `Flag_Overdue_Warning` tinyint NOT NULL DEFAULT '0',
+  `Q_Confirm_Registration_Details` tinyint NOT NULL DEFAULT '0',
+  `Q_Confirm_Status` tinyint DEFAULT '0',
+  `Q_Confirm_Delivering_Bikeability` tinyint DEFAULT NULL,
+  `Q_Confirm_Observed_By_IQA_Lead` tinyint DEFAULT NULL,
+  `Q_Confirm_Completed_CPD` tinyint DEFAULT NULL,
+  `Q_Confirm_Code_of_Practice` tinyint DEFAULT NULL,
+  `Q_Confirm_Delivering_Other` tinyint DEFAULT '0',
+  `Q_Confirm_Contact_Prefs` tinyint NOT NULL DEFAULT '0',
+  `Q_Confirm_Fee` tinyint DEFAULT '0',
+  `Q_Delivery_Examples` json DEFAULT NULL,
+  `Q_Delivery_Amount_Level_1` tinyint DEFAULT '0',
+  `Q_Delivery_Amount_Level_1_2` tinyint DEFAULT '0',
+  `Q_Delivery_Amount_Level_2` tinyint DEFAULT '0',
+  `Q_Delivery_Amount_Level_3` tinyint DEFAULT '0',
+  `Q_Delivery_Amount_Plus` tinyint DEFAULT '0',
+  `Q_Professional_Development` json DEFAULT NULL,
+  `Q_Strengths` json DEFAULT NULL,
+  `Source_Created_At` timestamp NULL DEFAULT NULL,
+  `Source_Updated_At` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
-  PRIMARY KEY (`Claim_Send_Key`),
-  KEY `fact_grant_claim_send_records_claim_key_index` (`Claim_Key`)
+  PRIMARY KEY (`Renewal_Key`),
+  UNIQUE KEY `fact_instructor_renewal_source_renewal_id_unique` (`Source_Renewal_Id`),
+  KEY `fact_instructor_renewal_instructor_key_index` (`Instructor_Key`)
 ) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 </code></pre>
 </details>
@@ -179,12 +204,36 @@
 <tr><th>Name</th><th>Type</th><th>Default</th><th>Nullable</th><th>Extra Definition</th><th>Children</th><th>Parents</th><th>Comment</th></tr>
 </thead>
 <tbody>
-<tr><td>Claim_Send_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
-<tr><td>Claim_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
-<tr><td>Source_System_Key</td><td>int</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
-<tr><td>Send_Id_String</td><td>varchar(255)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
-<tr><td>Send_Riders_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
-<tr><td>Send_Amount</td><td>decimal(15,2)</td><td>0.00</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Renewal_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td></td><td></td><td></td></tr>
+<tr><td>Instructor_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Renewal_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Status</td><td>tinyint</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Renewal_Year</td><td>smallint</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Due</td><td>date</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Completed</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Date_Approved</td><td>date</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Flag_Reminder_Warning</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Flag_Overdue_Warning</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Registration_Details</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Status</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Delivering_Bikeability</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Observed_By_IQA_Lead</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Completed_CPD</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Code_of_Practice</td><td>tinyint</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Delivering_Other</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Contact_Prefs</td><td>tinyint</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Confirm_Fee</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Examples</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Amount_Level_1</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Amount_Level_1_2</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Amount_Level_2</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Amount_Level_3</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Delivery_Amount_Plus</td><td>tinyint</td><td>0</td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Professional_Development</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Q_Strengths</td><td>json</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Created_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Updated_At</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>created_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>updated_at</td><td>timestamp</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
 </tbody>
@@ -197,7 +246,8 @@
 <tr><th>Name</th><th>Type</th><th>Definition</th></tr>
 </thead>
 <tbody>
-<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Claim_Send_Key)</td></tr>
+<tr><td>fact_instructor_renewal_source_renewal_id_unique</td><td>UNIQUE</td><td>UNIQUE KEY fact_instructor_renewal_source_renewal_id_unique (Source_Renewal_Id)</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY</td><td>PRIMARY KEY (Renewal_Key)</td></tr>
 </tbody>
 </table>
 </div>
@@ -208,13 +258,14 @@
 <tr><th>Name</th><th>Definition</th></tr>
 </thead>
 <tbody>
-<tr><td>fact_grant_claim_send_records_claim_key_index</td><td>KEY fact_grant_claim_send_records_claim_key_index (Claim_Key) USING BTREE</td></tr>
-<tr><td>PRIMARY</td><td>PRIMARY KEY (Claim_Send_Key) USING BTREE</td></tr>
+<tr><td>fact_instructor_renewal_instructor_key_index</td><td>KEY fact_instructor_renewal_instructor_key_index (Instructor_Key) USING BTREE</td></tr>
+<tr><td>PRIMARY</td><td>PRIMARY KEY (Renewal_Key) USING BTREE</td></tr>
+<tr><td>fact_instructor_renewal_source_renewal_id_unique</td><td>UNIQUE KEY fact_instructor_renewal_source_renewal_id_unique (Source_Renewal_Id) USING BTREE</td></tr>
 </tbody>
 </table>
 </div>
 <h2 id="relations"><a class="header" href="#relations">Relations</a></h2>
-<p><img src="Fact_Grant_Claim_Send_Records.svg" alt="er"></p>
+<p><img src="Fact_Instructor_Renewal.svg" alt="er"></p>
 <hr>
 <blockquote>
 <p>Generated by <a href="https://github.com/k1LoW/tbls">tbls</a></p>
@@ -224,11 +275,11 @@
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="Fact_Grant_Claim_Logs.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="Fact_Instructor_Delivery.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="Fact_Grant_Claims.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="Fact_Parent_Survey.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -238,11 +289,11 @@
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="Fact_Grant_Claim_Logs.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="Fact_Instructor_Delivery.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="Fact_Grant_Claims.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="Fact_Parent_Survey.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

@@ -37,7 +37,7 @@
             const default_dark_theme = "navy";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-665ebbf9.js"></script>
+        <script src="toc-b94d4ba1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -174,10 +174,10 @@
   `Fleet_Cycles_Used` int DEFAULT '0',
   `Consent_Cutoff_Date` date DEFAULT NULL,
   `Pref_Alt_Delivery_Location` tinyint NOT NULL DEFAULT '0',
-  `Alt_Delivery_Location` text COLLATE utf8mb4_unicode_ci,
-  `Notes` text COLLATE utf8mb4_unicode_ci,
-  `Instructor_General_Notes` text COLLATE utf8mb4_unicode_ci,
-  `Teacher_Notes` text COLLATE utf8mb4_unicode_ci,
+  `Alt_Delivery_Location` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Instructor_General_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
+  `Teacher_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `School_Contacts` json DEFAULT NULL,
   `Venue` json DEFAULT NULL,
   `Provider_Additional_Questions` json DEFAULT NULL,

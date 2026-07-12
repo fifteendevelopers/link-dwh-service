@@ -2813,6 +2813,340 @@ class DataWarehouseSyncService
         };
     }
 
+    public function syncFactGrantRecipientRenewals($command = null)
+    {
+        $sourceSystemKey =$this->getSourceSystemKey();
+        if ($command)$command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Recipient Renewals Sync...");
+
+        // Resolve Watermark using the generic sync_log tracker
+        $watermark =$this->getWatermark('Fact_Grant_Recipient_Renewal');
+
+        // Query Source delta ordering by updated_at to ensure sequential watermark tracking
+        $query =$this->source->table('grant_recipient_renewals')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total =$query->count();
+        if ($total === 0) {
+            if ($command)$command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Recipient Renewals are up to date.");
+            return;
+        }
+
+        $bar =$command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar)$bar->start();
+
+        $highestTimestampSeen =$watermark;
+
+        // Process Chunk Loop
+        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+            foreach ($renewals as$row) {
+
+                // Resolve DWH Keys from parent dimension looking up current flag
+                $recipientKey =$this->dwh->table('Dim_Grant_Recipient')
+                    ->where('Source_Recipient_Id', $row->grant_recipient_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Recipient_Key');
+
+                if (!$recipientKey) {
+                    if ($bar)$bar->advance();
+                    continue;
+                }
+
+                $this->dwh->table('Fact_Grant_Recipient_Renewal')->updateOrInsert(
+                    [
+                        'Source_Renewal_Id' => $row->id,
+                        'Source_System_Key' => $sourceSystemKey
+                    ],
+                    [
+                        'Recipient_Key'                   => $recipientKey,
+                        'Status'                          => $row->status,
+                        'Renewal_Year'                    => $row->renewal_year,
+                        'Date_Due'                        => $row->date_due,
+                        'Date_Completed'                  => $row->date_completed,
+                        'Date_Approved'                   => $row->date_approved,
+                        'Flag_Reminder_Warning'           => $row->flag_reminder_warning,
+                        'Flag_Overdue_Warning'            => $row->flag_overdue_warning,
+                        'Q_Organisation_Category'         => $row->q_organisation_category,
+                        'Q_Confirm_Details'               => $row->q_confirm_details,
+
+                        'Q_Contracted_Deliveries'         => (empty($row->q_contracted_deliveries) || !json_validate($row->q_contracted_deliveries)) ? '[]' : $row->q_contracted_deliveries,
+                        'Q_Confirm_Guidelines_Commitment' => $row->q_confirm_guidelines_commitment,
+                        'Q_Confirm_Risk_Assessment'       => $row->q_confirm_risk_assessment,
+                        'Q_Confirm_Policy_Review'         => $row->q_confirm_policy_review,
+                        'Q_Confirm_Valid_Insurance'       => $row->q_confirm_valid_insurance,
+                        'Q_Documents'                     => (empty($row->q_documents) || !json_validate($row->q_documents)) ? '[]' : $row->q_documents,
+                        'Q_Confirm_Access'                => $row->q_confirm_access,
+                        'Q_Confirm_Associated_TP'         => $row->q_confirm_assosciated_tp,
+                        'Q_Confirm_Assurance_One'         => $row->q_confirm_assurance_one,
+                        'Q_Confirm_Assurance_Two'         => $row->q_confirm_assurance_two,
+                        'Q_Confirm_Assurance_Three'       => $row->q_confirm_assurance_three,
+                        'Q_Confirm_Incidents'             => $row->q_confirm_incidents,
+                        'Q_Stage_1_Complaints'            => $row->q_stage_1_complaints,
+                        'Q_Serious_Complaints'            => $row->q_serious_complaints,
+                        'Q_Confirm_Final'                 => $row->q_confirm_final,
+                        'Q_Name'                          => $row->q_name,
+                        'Q_GR_Is_Also_TP'                 => $row->q_gr_is_also_tp,
+                        'Q_Safeguarding'                  => $row->q_safeguarding,
+                        'Users_With_Access_To_GR'         => (empty($row->users_with_access_to_gr) || !json_validate($row->users_with_access_to_gr)) ? '[]' : $row->users_with_access_to_gr,
+                        'Associated_TPs'                  => (empty($row->associated_tps) || !json_validate($row->associated_tps)) ? '[]' : $row->associated_tps,
+                        'Q_Tfl_Funded'                    => $row->q_tfl_funded,
+                        'Contact_Details_Confirmed'       => (empty($row->contact_details_confirmed) || !json_validate($row->contact_details_confirmed)) ? '[]' : $row->contact_details_confirmed,
+
+                        'Source_Created_At'               => $row->created_at,
+                        'Source_Updated_At'               => $row->updated_at,
+                        'updated_at'                      => now()
+                    ]
+                );
+
+                if ($row->updated_at >$highestTimestampSeen) {
+                    $highestTimestampSeen =$row->updated_at;
+                }
+
+                if ($bar)$bar->advance();
+            }
+        });
+
+        // Record watermark state to sync_log
+        $this->updateWatermark('Fact_Grant_Recipient_Renewal',$highestTimestampSeen);
+
+        if ($bar) {
+            $bar->finish();$command->newLine();
+        }
+        return "Fact_Grant_Recipient_Renewal synced.";
+    }
+
+    public function syncFactInstructorRenewals($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor Renewals Sync...");
+
+        $watermark = $this->getWatermark('Fact_Instructor_Renewal');
+
+        $query = $this->source->table('instructor_renewals')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructor Renewals are up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestampSeen = $watermark;
+
+        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+            foreach ($renewals as $row) {
+
+                $instructorKey = $this->dwh->table('Dim_Instructor')
+                    ->where('Source_Instructor_Id', $row->instructor_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Instructor_Key');
+
+                if (!$instructorKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $this->dwh->table('Fact_Instructor_Renewal')->updateOrInsert(
+                    [
+                        'Source_Renewal_Id' => $row->id,
+                        'Source_System_Key' => $sourceSystemKey
+                    ],
+                    [
+                        'Instructor_Key'                 => $instructorKey,
+                        'Status'                         => $row->status,
+                        'Renewal_Year'                   => $row->renewal_year,
+                        'Date_Due'                       => $row->date_due,
+                        'Date_Completed'                 => $row->date_completed,
+                        'Date_Approved'                  => $row->date_approved,
+                        'Flag_Reminder_Warning'          => $row->flag_reminder_warning,
+                        'Flag_Overdue_Warning'           => $row->flag_overdue_warning,
+                        'Q_Confirm_Registration_Details' => $row->q_confirm_registration_details,
+                        'Q_Confirm_Status'               => $row->q_confirm_status,
+                        'Q_Confirm_Delivering_Bikeability' => $row->q_confirm_delivering_bikeability,
+                        'Q_Confirm_Observed_By_IQA_Lead' => $row->q_confirm_observed_by_iqa_lead,
+                        'Q_Confirm_Completed_CPD'        => $row->q_confirm_completed_cpd,
+                        'Q_Confirm_Code_of_Practice'     => $row->q_confirm_code_of_practice,
+                        'Q_Confirm_Delivering_Other'     => $row->q_confirm_delivering_other,
+                        'Q_Confirm_Contact_Prefs'        => $row->q_confirm_contact_prefs,
+                        'Q_Confirm_Fee'                  => $row->q_confirm_fee,
+
+                        'Q_Delivery_Examples'            => (empty($row->q_delivery_examples) || !json_validate($row->q_delivery_examples)) ? '[]' : $row->q_delivery_examples,
+                        'Q_Delivery_Amount_Level_1'      => $row->q_delivery_amount_level_1,
+                        'Q_Delivery_Amount_Level_1_2'    => $row->q_delivery_amount_level_1_2,
+                        'Q_Delivery_Amount_Level_2'      => $row->q_delivery_amount_level_2,
+                        'Q_Delivery_Amount_Level_3'      => $row->q_delivery_amount_level_3,
+                        'Q_Delivery_Amount_Plus'         => $row->q_delivery_amount_plus,
+                        'Q_Professional_Development'     => (empty($row->q_professional_development) || !json_validate($row->q_professional_development)) ? '[]' : $row->q_professional_development,
+                        'Q_Strengths'                    => (empty($row->q_strengths) || !json_validate($row->q_strengths)) ? '[]' : $row->q_strengths,
+
+                        'Source_Created_At'              => $row->created_at,
+                        'Source_Updated_At'              => $row->updated_at,
+                        'updated_at'                     => now()
+                    ]
+                );
+
+                if ($row->updated_at > $highestTimestampSeen) {
+                    $highestTimestampSeen = $row->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Instructor_Renewal', $highestTimestampSeen);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+        return "Fact_Instructor_Renewal synced.";
+    }
+
+    public function syncFactTrainingProviderRenewals($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Training Provider Renewals Sync...");
+
+        $watermark = $this->getWatermark('Fact_Training_Provider_Renewal');
+
+        $query = $this->source->table('training_provider_renewals')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Training Provider Renewals are up to date.");
+            return;
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestampSeen = $watermark;
+
+        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
+            foreach ($renewals as $row) {
+
+                $providerKey = $this->dwh->table('Dim_Training_Provider')
+                    ->where('Source_Provider_Id', $row->training_provider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Provider_Key');
+
+                if (!$providerKey) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $this->dwh->table('Fact_Training_Provider_Renewal')->updateOrInsert(
+                    [
+                        'Source_Renewal_Id' => $row->id,
+                        'Source_System_Key' => $sourceSystemKey
+                    ],
+                    [
+                        'Provider_Key'                        => $providerKey,
+                        'Status'                              => $row->status,
+                        'Approved'                            => $row->approved,
+                        'Renewal_Year'                        => $row->renewal_year,
+                        'Date_Due'                            => $row->date_due,
+                        'Date_Completed'                      => $row->date_completed,
+                        'Date_Approved'                       => $row->date_approved,
+                        'Flag_Reminder_Warning'               => $row->flag_reminder_warning,
+                        'Flag_Overdue_Warning'                => $row->flag_overdue_warning,
+                        'Q_Organisation_Category'             => $row->q_organisation_category,
+                        'Q_Confirm_Details'                   => $row->q_confirm_details,
+
+                        'Q_Contracted_Deliveries'             => (empty($row->q_contracted_deliveries) || !json_validate($row->q_contracted_deliveries)) ? '[]' : $row->q_contracted_deliveries,
+                        'Q_Delivered_Places'                  => (empty($row->q_delivered_places) || !json_validate($row->q_delivered_places)) ? '[]' : $row->q_delivered_places,
+                        'Q_Instructor_Types_Breakdown'        => (empty($row->q_instructor_types_breakdown) || !json_validate($row->q_instructor_types_breakdown)) ? '[]' : $row->q_instructor_types_breakdown,
+                        'Q_Confirm_Instructor_DbsCert'        => $row->q_confirm_instructor_dbcert,
+                        'Q_Confirm_Instructor_SafetyPolicies' => $row->q_confirm_instructor_safetypolicies,
+                        'Q_Delivery_Amount_Level_1'           => $row->q_delivery_amount_level_1,
+                        'Q_Delivery_Amount_Level_1_2'         => $row->q_delivery_amount_level_1_2,
+                        'Q_Delivery_Amount_Level_2'           => $row->q_delivery_amount_level_2,
+                        'Q_Delivery_Amount_Level_3'           => $row->q_delivery_amount_level_3,
+                        'Q_Delivery_Amount_Plus_Balance'      => $row->q_delivery_amount_plus_balance,
+                        'Q_Delivery_Amount_Plus_Bus'          => $row->q_delivery_amount_plus_bus,
+                        'Q_Delivery_Amount_Plus_Fix'          => $row->q_delivery_amount_plus_fix,
+                        'Q_Delivery_Amount_Plus_Learn'        => $row->q_delivery_amount_plus_learn,
+                        'Q_Delivery_Amount_Plus_On_Show'      => $row->q_delivery_amount_plus_on_show,
+                        'Q_Delivery_Amount_Plus_Parents'      => $row->q_delivery_amount_plus_parents,
+                        'Q_Delivery_Amount_Plus_Promotion'    => $row->q_delivery_amount_plus_promotion,
+                        'Q_Delivery_Amount_Plus_Recycled'     => $row->q_delivery_amount_plus_recycled,
+                        'Q_Delivery_Amount_Plus_Ride'         => $row->q_delivery_amount_plus_ride,
+                        'Q_Delivery_Amount_Plus_Transition'   => $row->q_delivery_amount_plus_transition,
+                        'Q_Delivery_Model'                    => (empty($row->q_delivery_model) || !json_validate($row->q_delivery_model)) ? '[]' : $row->q_delivery_model,
+                        'Q_Confirm_Guidelines_Commitment'     => $row->q_confirm_guidelines_commitment,
+                        'Q_Confirm_Risk_Assessment'           => $row->q_confirm_risk_assessment,
+                        'Q_Confirm_Policy_Review'             => $row->q_confirm_policy_review,
+                        'Q_Confirm_Valid_Insurance'           => $row->q_confirm_valid_insurance,
+                        'Q_Documents'                         => (empty($row->q_documents) || !json_validate($row->q_documents)) ? '[]' : $row->q_documents,
+                        'Q_Confirm_Iqa_Plan'                  => $row->q_confirm_iqa_plan,
+                        'Q_Strengths'                         => (empty($row->q_strengths) || !json_validate($row->q_strengths)) ? '[]' : $row->q_strengths,
+                        'Q_Priority_1'                        => $row->q_priority_1,
+                        'Q_Action_Plan_1'                     => $row->q_action_plan_1,
+                        'Q_Priority_2'                        => $row->q_priority_2,
+                        'Q_Action_Plan_2'                     => $row->q_action_plan_2,
+                        'Q_Priority_3'                        => $row->q_priority_3,
+                        'Q_Action_Plan_3'                     => $row->q_action_plan_3,
+                        'Q_Associated_Instructors_Two'        => $row->q_associated_instructors_two,
+                        'Q_Children'                          => $row->q_children,
+                        'Q_Adults'                            => $row->q_adults,
+                        'Q_Families'                          => $row->q_families,
+                        'Q_Confirm_Incidents'                 => $row->q_confirm_incidents,
+                        'Q_Stage_1_Complaints'                => $row->q_stage_1_complaints,
+                        'Q_Serious_Complaints'                => $row->q_serious_complaints,
+                        'Q_Confirm_Assurance_One'             => $row->q_confirm_assurance_one,
+                        'Q_Confirm_Assurance_Two'             => $row->q_confirm_assurance_two,
+                        'Q_Confirm_Assurance_Three'           => $row->q_confirm_assurance_three,
+                        'Q_Improvements'                      => (empty($row->q_improvements) || !json_validate($row->q_improvements)) ? '[]' : $row->q_improvements,
+                        'Q_Confirm_Final_One'                 => $row->q_confirm_final_one,
+                        'Q_Confirm_Final_Two'                 => $row->q_confirm_final_two,
+                        'Q_Confirm_Final_Three'               => $row->q_confirm_final_three,
+                        'Q_Associated_Instructors'            => $row->q_associated_instructors,
+                        'Q_Confirm_Access'                    => $row->q_confirm_access,
+                        'Q_Safeguarding_Lead'                 => $row->q_safeguarding_lead,
+                        'Q_Health_And_Safety_Lead'            => $row->q_health_and_safety_lead,
+                        'Q_Iqa_Lead'                          => $row->q_iqa_lead,
+                        'Q_Iqa_Organisation'                  => $row->q_iqa_organisation,
+                        'Q_Name'                              => $row->q_name,
+                        'Q_Associated_Instructors_Three'      => $row->q_associated_instructors_three,
+                        'Q_Safeguarding'                      => $row->q_safeguarding,
+                        'Users_With_Access_To_TP'             => (empty($row->users_with_access_to_tp) || !json_validate($row->users_with_access_to_tp)) ? '[]' : $row->users_with_access_to_tp,
+                        'Associated_Instructors'              => (empty($row->associated_instructors) || !json_validate($row->associated_instructors)) ? '[]' : $row->associated_instructors,
+                        'Contact_Details_Confirmed'           => (empty($row->contact_details_confirmed) || !json_validate($row->contact_details_confirmed)) ? '[]' : $row->contact_details_confirmed,
+                        'Q_Contract_Type'                     => $row->q_contract_type,
+                        'Q_Contract_Type_Other_Text'          => $row->q_contract_type_other_text,
+                        'Q_Adult_Training_Only'               => $row->q_adult_training_only,
+                        'Q_Expected_Delivery'                 => (empty($row->q_expected_delivery) || !json_validate($row->q_expected_delivery)) ? '[]' : $row->q_expected_delivery,
+                        'Q_Expected_Delivery_Empty'           => $row->q_expected_delivery_empty,
+
+                        'Source_Created_At'                   => $row->created_at,
+                        'Source_Updated_At'                   => $row->updated_at,
+                        'updated_at'                          => now()
+                    ]
+                );
+
+                if ($row->updated_at > $highestTimestampSeen) {
+                    $highestTimestampSeen = $row->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Training_Provider_Renewal', $highestTimestampSeen);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+        return "Fact_Training_Provider_Renewal synced.";
+    }
+
     /**
      * Helper to insert a new version of a record
      */

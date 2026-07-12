@@ -37,7 +37,7 @@
             const default_dark_theme = "navy";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-665ebbf9.js"></script>
+        <script src="toc-b94d4ba1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -162,8 +162,8 @@
   `External_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
   `Source_External_System_Id` bigint unsigned NOT NULL,
   `Source_System_Key` bigint unsigned NOT NULL,
-  `Username` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `Name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Username` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `Pref_Link_Managed_Consent` tinyint NOT NULL DEFAULT '0',
   `Pref_Use_Instructor_App` tinyint NOT NULL DEFAULT '0',
   `Pref_Link_Managed_Comms` tinyint NOT NULL DEFAULT '0',

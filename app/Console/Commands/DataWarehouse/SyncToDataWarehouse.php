@@ -264,6 +264,39 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'fact_grant_recipient_renewals') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Recipient Renewals...");
+
+            try {
+                $result = $syncService->syncFactGrantRecipientRenewals($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Recipient Renewals facts: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_instructor_renewals') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor Renewals...");
+
+            try {
+                $result = $syncService->syncFactInstructorRenewals($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Renewals facts: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_training_provider_renewals') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Training Provider Renewals...");
+
+            try {
+                $result = $syncService->syncFactTrainingProviderRenewals($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Training Provider Renewals facts: " . $e->getMessage());
+            }
+        }
+
         $this->info("[".now()->format('Y-m-d H:i:s')."] Sync Process Completed.");
     }
 }

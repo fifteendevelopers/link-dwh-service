@@ -13,20 +13,27 @@ CREATE TABLE `Fact_Course_Delivery` (
   `School_Key` bigint unsigned DEFAULT NULL,
   `Organisation_Key` bigint unsigned DEFAULT NULL,
   `Course_Key` bigint unsigned NOT NULL,
-  `Provider_Key` bigint unsigned NOT NULL,
+  `Provider_Key` bigint unsigned DEFAULT NULL,
   `Grant_Key` bigint unsigned DEFAULT NULL,
   `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',
   `Riders_Completed_Count` int NOT NULL DEFAULT '0',
   `Count_Booked_Provisional` int NOT NULL DEFAULT '0',
   `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',
   `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',
+  `Count_Adults` int NOT NULL DEFAULT '0',
+  `Count_Teens` int NOT NULL DEFAULT '0',
+  `Count_Children` int NOT NULL DEFAULT '0',
   `Count_Female` int NOT NULL DEFAULT '0',
   `Count_Male` int NOT NULL DEFAULT '0',
   `Count_Gender_Other` int NOT NULL DEFAULT '0',
+  `Count_Gender_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_Pupil_Premium` int NOT NULL DEFAULT '0',
+  `Count_Pupil_Premium_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_SEND` int NOT NULL DEFAULT '0',
+  `Count_SEND_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_White_Traveller` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',
@@ -44,6 +51,18 @@ CREATE TABLE `Fact_Course_Delivery` (
   `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_18_24` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_25_34` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_35_44` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_45_54` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_55_64` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_Over_65` int NOT NULL DEFAULT '0',
+  `Count_Bikes_Swapped` int NOT NULL DEFAULT '0',
+  `Count_Bikes_Recycled` int NOT NULL DEFAULT '0',
+  `Count_Booked_Repeat_Type_Na` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Booked_Repeat_Type_Unique` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Booked_Repeat_Type_Repeat` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Age_Range_Not_Stated` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`Delivery_Fact_Key`),
   KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),
   KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),
@@ -72,20 +91,27 @@ CREATE TABLE `Fact_Course_Delivery` (
 | School_Key | bigint unsigned |  | true |  |  | [Dim_School](Dim_School.md) |  |
 | Organisation_Key | bigint unsigned |  | true |  |  |  |  |
 | Course_Key | bigint unsigned |  | false |  |  | [Dim_Course](Dim_Course.md) |  |
-| Provider_Key | bigint unsigned |  | false |  |  | [Dim_Training_Provider](Dim_Training_Provider.md) |  |
+| Provider_Key | bigint unsigned |  | true |  |  | [Dim_Training_Provider](Dim_Training_Provider.md) |  |
 | Grant_Key | bigint unsigned |  | true |  |  | [Dim_Grant](Dim_Grant.md) |  |
 | Riders_Enrolled_Count | int | 0 | false |  |  |  |  |
 | Riders_Completed_Count | int | 0 | false |  |  |  |  |
 | Count_Booked_Provisional | int | 0 | false |  |  |  |  |
 | Count_Booked_Confirmed | int | 0 | false |  |  |  |  |
 | Count_Attended_Confirmed | int | 0 | false |  |  |  |  |
+| Count_Adults | int | 0 | false |  |  |  |  |
+| Count_Teens | int | 0 | false |  |  |  |  |
+| Count_Children | int | 0 | false |  |  |  |  |
 | Count_Female | int | 0 | false |  |  |  |  |
 | Count_Male | int | 0 | false |  |  |  |  |
 | Count_Gender_Other | int | 0 | false |  |  |  |  |
+| Count_Gender_Not_Stated | int | 0 | false |  |  |  |  |
 | Count_Pupil_Premium | int | 0 | false |  |  |  |  |
+| Count_Pupil_Premium_Not_Stated | int | 0 | false |  |  |  |  |
 | Count_SEND | int | 0 | false |  |  |  |  |
+| Count_SEND_Not_Stated | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_White_British | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_White_Irish | int | 0 | false |  |  |  |  |
+| Count_Ethnicity_White_Traveller | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_Gypsy_Romany | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_White_Other | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_Mixed_White_Black_Carib | int | 0 | false |  |  |  |  |
@@ -103,6 +129,18 @@ CREATE TABLE `Fact_Course_Delivery` (
 | Count_Ethnicity_Other_Arab | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_Other_Any | int | 0 | false |  |  |  |  |
 | Count_Ethnicity_Not_Stated | int | 0 | false |  |  |  |  |
+| Count_Age_Range_18_24 | int | 0 | false |  |  |  |  |
+| Count_Age_Range_25_34 | int | 0 | false |  |  |  |  |
+| Count_Age_Range_35_44 | int | 0 | false |  |  |  |  |
+| Count_Age_Range_45_54 | int | 0 | false |  |  |  |  |
+| Count_Age_Range_55_64 | int | 0 | false |  |  |  |  |
+| Count_Age_Range_Over_65 | int | 0 | false |  |  |  |  |
+| Count_Bikes_Swapped | int | 0 | false |  |  |  |  |
+| Count_Bikes_Recycled | int | 0 | false |  |  |  |  |
+| Count_Booked_Repeat_Type_Na | varchar(20) |  | true |  |  |  |  |
+| Count_Booked_Repeat_Type_Unique | varchar(20) |  | true |  |  |  |  |
+| Count_Booked_Repeat_Type_Repeat | varchar(20) |  | true |  |  |  |  |
+| Count_Age_Range_Not_Stated | int | 0 | false |  |  |  |  |
 
 ## Constraints
 

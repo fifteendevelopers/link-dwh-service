@@ -12,8 +12,8 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
     {
         return Validator::make($parameters, [
             'year'                 => 'required|integer',
-            'grant_recipient_id'   => 'nullable|integer',
-            'training_provider_id' => 'nullable|integer',
+            'recipient_id'   => 'nullable|integer',
+            'provider_id' => 'nullable|integer',
         ])->validate();
     }
 
@@ -54,18 +54,29 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
     protected function mapRowToPayload($row): array
     {
         return [
-            'grant_number'            => $row->Grant_Number,
-            'grant_source'            => $row->Grant_Source,
-            'recipient_name'          => $row->Recipient_Name ?? 'Non Grant Delivery',
-            'delivery_id'             => $row->Source_Delivery_Id,
-            'rider_id'                => $row->Source_Rider_Id,
-            'provider_name'           => $row->Provider_Name,
-            'establishment_name'      => $row->School_Name,
-            'school_urn'              => $row->School_Urn,
-            'course_label'            => $row->Course_Label_Raw,
-            'created_at'              => $row->Survey_Created_At,
-            'invitation_month'        => $row->Invitation_Month,
-            'parent_follow_up_survey' => $row->Parent_Follow_Up_Survey_Json, // Pass survey JSON to be unpacked locally
+            'grant_number'             => $row->Grant_Number,
+            'grant_source'             => $row->Grant_Source,
+            'recipient_name'           => $row->Recipient_Name ?? 'Non Grant Delivery',
+            'delivery_id'              => $row->Source_Delivery_Id,
+            'rider_id'                 => $row->Source_Rider_Id,
+            'provider_name'            => $row->Provider_Name,
+            'establishment_name'       => $row->School_Name,
+            'school_urn'               => $row->School_Urn,
+            'course_label'             => $row->Course_Label_Raw,
+            'created_at'               => $row->Survey_Created_At,
+            'invitation_month'         => $row->Invitation_Month,
+            'q1a_freq_school'          => $row->q1a_freq_school,
+            'q1b_freq_leisure'         => $row->q1b_freq_leisure,
+            'q1c_freq_exercise'        => $row->q1c_freq_exercise,
+            'q2a_conf_use_cycle'       => $row->q2a_conf_use_cycle,
+            'q2b_conf_cycle_roads'     => $row->q2b_conf_cycle_roads,
+            'q3a_enc_use_cycle'        => $row->q3a_enc_use_cycle,
+            'q3b_enc_cycle_roads'      => $row->q3b_enc_cycle_roads,
+            'q4_safety_roads'          => $row->q4_safety_roads,
+            'q5_child_desire'          => $row->q5_child_desire,
+            'q6_encouragement_factors' => $row->q6_encouragement_factors,
+            'q7_conf_change'           => $row->q7_conf_change,
+            'q8_physical_activity'     => $row->q8_physical_activity,
         ];
     }
 
@@ -74,27 +85,6 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
      */
     protected function buildQuery(array $params)
     {
-        // Reconstruct a JSON array matching the source ParentFollowUpSurveyHelper mapping.
-        // It strings together single entries or multi-select JSON blocks into an identical legacy footprint.
-        $jsonExpression = "
-            JSON_MERGE_PRESERVE(
-                JSON_ARRAY(
-                    pfu.q1a_freq_school,
-                    pfu.q1b_freq_leisure,
-                    pfu.q1c_freq_exercise,
-                    pfu.q2a_conf_use_cycle,
-                    pfu.q2b_conf_cycle_roads,
-                    pfu.q3a_enc_use_cycle,
-                    pfu.q3b_enc_cycle_roads,
-                    pfu.q4_safety_roads,
-                    pfu.q5_child_desire,
-                    pfu.q7_conf_change,
-                    pfu.q8_physical_activity
-                ),
-                COALESCE(pfu.q6_encouragement_factors, JSON_ARRAY())
-            )
-        ";
-
         $query = DB::connection('mysql')->table('Fact_Follow_Up_Survey as pfu')
             ->join('Dim_Delivery_Header as d', 'pfu.Delivery_Key', '=', 'd.Delivery_Key')
             ->join('Dim_Training_Provider as tp', 'd.Training_Provider_Key', '=', 'tp.Provider_Key')
@@ -114,18 +104,29 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
                 'pfu.Course_Label_Raw',
                 'pfu.Source_Created_At as Survey_Created_At',
                 'pfu.Invitation_Month',
-                DB::raw("{$jsonExpression} as Parent_Follow_Up_Survey_Json")
+                'pfu.q1a_freq_school',
+                'pfu.q1b_freq_leisure',
+                'pfu.q1c_freq_exercise',
+                'pfu.q2a_conf_use_cycle',
+                'pfu.q2b_conf_cycle_roads',
+                'pfu.q3a_enc_use_cycle',
+                'pfu.q3b_enc_cycle_roads',
+                'pfu.q4_safety_roads',
+                'pfu.q5_child_desire',
+                'pfu.q6_encouragement_factors',
+                'pfu.q7_conf_change',
+                'pfu.q8_physical_activity'
             ])
             ->where('g.Grant_Period_Start_Year', (int)$params['year'])
             ->where('d.Digitisation_Booking', true);
 
-        if (!empty($params['grant_recipient_id'])) {
-            $query->where('gr.Source_Recipient_Id', (int)$params['grant_recipient_id']);
+        if (!empty($params['recipient_id'])) {
+            $query->where('gr.Source_Recipient_Id', (int)$params['recipient_id']);
         }
 
-        if (!empty($params['training_provider_id'])) {
-            $query->where('tp.Source_Provider_Id', (int)$params['training_provider_id']);
-        }
+//        if (!empty($params['provider_id'])) {
+//            $query->where('tp.Source_Provider_Id', (int)$params['provider_id']);
+//        }
 
         return $query->orderBy('pfu.Source_Created_At', 'desc');
     }

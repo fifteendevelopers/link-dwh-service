@@ -37,7 +37,7 @@
             const default_dark_theme = "navy";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-665ebbf9.js"></script>
+        <script src="toc-b94d4ba1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -160,7 +160,7 @@
 <summary><strong>Table Definition</strong></summary>
 <pre><code class="language-sql">CREATE TABLE `Dim_Course` (
   `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `Source_Course_Id` bigint unsigned NOT NULL,
+  `Source_Course_Id` bigint unsigned DEFAULT NULL,
   `Source_System_Key` bigint unsigned NOT NULL,
   `Delivery_Key` bigint unsigned NOT NULL,
   `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -188,7 +188,7 @@
 </thead>
 <tbody>
 <tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td>auto_increment</td><td><a href="Dim_Course.html">Dim_Course</a> <a href="Fact_Course_Delivery.html">Fact_Course_Delivery</a> <a href="Fact_HandsUp_Survey.html">Fact_HandsUp_Survey</a></td><td></td><td></td></tr>
-<tr><td>Source_Course_Id</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Source_Course_Id</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Source_System_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="Dim_Source_System.html">Dim_Source_System</a></td><td></td></tr>
 <tr><td>Delivery_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="Dim_Delivery_Header.html">Dim_Delivery_Header</a></td><td></td></tr>
 <tr><td>Course_Level</td><td>varchar(45)</td><td></td><td>false</td><td></td><td></td><td></td><td></td></tr>

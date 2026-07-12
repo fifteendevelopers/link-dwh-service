@@ -9,11 +9,11 @@
 CREATE TABLE `Fact_Rider_Course` (
   `Source_Rider_Id` bigint unsigned NOT NULL,
   `Source_Course_Id` bigint unsigned NOT NULL,
-  `Source_System_Key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `Source_System_Key` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `Status` int NOT NULL DEFAULT '0',
   `Attended` tinyint DEFAULT '1',
   `Withdrawn` tinyint(1) DEFAULT '0',
-  `Withdrawal_Reason` text COLLATE utf8mb4_unicode_ci,
+  `Withdrawal_Reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `Has_Completed_Course` tinyint(1) DEFAULT '0',
   `Has_Survey_Completed` tinyint(1) NOT NULL DEFAULT '0',
   `Course_Complete_Date` date DEFAULT NULL,

@@ -14,11 +14,14 @@
 * [Fact_Grant_Financials](Fact_Grant_Financials.md)
 * [Fact_Grant_Reallocation_Logs](Fact_Grant_Reallocation_Logs.md)
 * [Fact_Grant_Reallocations](Fact_Grant_Reallocations.md)
+* [Fact_Grant_Recipient_Renewal](Fact_Grant_Recipient_Renewal.md)
 * [Fact_HandsUp_Survey](Fact_HandsUp_Survey.md)
 * [Fact_Instructor_Course](Fact_Instructor_Course.md)
 * [Fact_Instructor_Delivery](Fact_Instructor_Delivery.md)
+* [Fact_Instructor_Renewal](Fact_Instructor_Renewal.md)
 * [Fact_Parent_Survey](Fact_Parent_Survey.md)
 * [Fact_Rider_Course](Fact_Rider_Course.md)
+* [Fact_Training_Provider_Renewal](Fact_Training_Provider_Renewal.md)
 
 ## Dimension Tables
 * [Dim_Consent](Dim_Consent.md)

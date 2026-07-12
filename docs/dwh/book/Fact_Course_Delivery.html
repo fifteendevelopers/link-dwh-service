@@ -37,7 +37,7 @@
             const default_dark_theme = "navy";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-665ebbf9.js"></script>
+        <script src="toc-b94d4ba1.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -165,20 +165,27 @@
   `School_Key` bigint unsigned DEFAULT NULL,
   `Organisation_Key` bigint unsigned DEFAULT NULL,
   `Course_Key` bigint unsigned NOT NULL,
-  `Provider_Key` bigint unsigned NOT NULL,
+  `Provider_Key` bigint unsigned DEFAULT NULL,
   `Grant_Key` bigint unsigned DEFAULT NULL,
   `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',
   `Riders_Completed_Count` int NOT NULL DEFAULT '0',
   `Count_Booked_Provisional` int NOT NULL DEFAULT '0',
   `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',
   `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',
+  `Count_Adults` int NOT NULL DEFAULT '0',
+  `Count_Teens` int NOT NULL DEFAULT '0',
+  `Count_Children` int NOT NULL DEFAULT '0',
   `Count_Female` int NOT NULL DEFAULT '0',
   `Count_Male` int NOT NULL DEFAULT '0',
   `Count_Gender_Other` int NOT NULL DEFAULT '0',
+  `Count_Gender_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_Pupil_Premium` int NOT NULL DEFAULT '0',
+  `Count_Pupil_Premium_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_SEND` int NOT NULL DEFAULT '0',
+  `Count_SEND_Not_Stated` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',
+  `Count_Ethnicity_White_Traveller` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',
@@ -196,6 +203,18 @@
   `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',
   `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_18_24` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_25_34` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_35_44` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_45_54` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_55_64` int NOT NULL DEFAULT '0',
+  `Count_Age_Range_Over_65` int NOT NULL DEFAULT '0',
+  `Count_Bikes_Swapped` int NOT NULL DEFAULT '0',
+  `Count_Bikes_Recycled` int NOT NULL DEFAULT '0',
+  `Count_Booked_Repeat_Type_Na` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Booked_Repeat_Type_Unique` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Booked_Repeat_Type_Repeat` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `Count_Age_Range_Not_Stated` int NOT NULL DEFAULT '0',
   PRIMARY KEY (`Delivery_Fact_Key`),
   KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),
   KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),
@@ -225,20 +244,27 @@
 <tr><td>School_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="Dim_School.html">Dim_School</a></td><td></td></tr>
 <tr><td>Organisation_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Course_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="Dim_Course.html">Dim_Course</a></td><td></td></tr>
-<tr><td>Provider_Key</td><td>bigint unsigned</td><td></td><td>false</td><td></td><td></td><td><a href="Dim_Training_Provider.html">Dim_Training_Provider</a></td><td></td></tr>
+<tr><td>Provider_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="Dim_Training_Provider.html">Dim_Training_Provider</a></td><td></td></tr>
 <tr><td>Grant_Key</td><td>bigint unsigned</td><td></td><td>true</td><td></td><td></td><td><a href="Dim_Grant.html">Dim_Grant</a></td><td></td></tr>
 <tr><td>Riders_Enrolled_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Riders_Completed_Count</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Booked_Provisional</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Booked_Confirmed</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Attended_Confirmed</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Adults</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Teens</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Children</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Female</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Male</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Gender_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Gender_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Pupil_Premium</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Pupil_Premium_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_SEND</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_SEND_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_White_British</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_White_Irish</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Ethnicity_White_Traveller</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_Gypsy_Romany</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_White_Other</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_Mixed_White_Black_Carib</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
@@ -256,6 +282,18 @@
 <tr><td>Count_Ethnicity_Other_Arab</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_Other_Any</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 <tr><td>Count_Ethnicity_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_18_24</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_25_34</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_35_44</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_45_54</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_55_64</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_Over_65</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Bikes_Swapped</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Bikes_Recycled</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Booked_Repeat_Type_Na</td><td>varchar(20)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Booked_Repeat_Type_Unique</td><td>varchar(20)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Booked_Repeat_Type_Repeat</td><td>varchar(20)</td><td></td><td>true</td><td></td><td></td><td></td><td></td></tr>
+<tr><td>Count_Age_Range_Not_Stated</td><td>int</td><td>0</td><td>false</td><td></td><td></td><td></td><td></td></tr>
 </tbody>
 </table>
 </div>

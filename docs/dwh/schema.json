@@ -50,7 +50,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `cache` (\n  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `value` mediumtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `cache` (\n  `key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `value` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "cache_locks",
@@ -101,7 +101,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `cache_locks` (\n  `key` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `owner` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_locks_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `cache_locks` (\n  `key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `owner` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `expiration` int NOT NULL,\n  PRIMARY KEY (`key`),\n  KEY `cache_locks_expiration_index` (`expiration`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Dim_Consent",
@@ -368,7 +368,7 @@
         {
           "name": "Source_Course_Id",
           "type": "bigint unsigned",
-          "nullable": false
+          "nullable": true
         },
         {
           "name": "Source_System_Key",
@@ -504,7 +504,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Dim_Course` (\n  `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Course_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int DEFAULT NULL,\n  `Start_Date` date DEFAULT NULL,\n  `Date_Complete` date DEFAULT NULL,\n  `Year_Group` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Parent_Course_Key` bigint unsigned DEFAULT NULL,\n  PRIMARY KEY (`Course_Key`),\n  KEY `dim_course_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_course_delivery_key_foreign` (`Delivery_Key`),\n  KEY `dim_course_parent_course_key_foreign` (`Parent_Course_Key`),\n  KEY `idx_course_source` (`Source_Course_Id`,`Source_System_Key`),\n  CONSTRAINT `dim_course_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `dim_course_parent_course_key_foreign` FOREIGN KEY (`Parent_Course_Key`) REFERENCES `Dim_Course` (`Course_Key`) ON DELETE SET NULL,\n  CONSTRAINT `dim_course_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Dim_Course` (\n  `Course_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Course_Id` bigint unsigned DEFAULT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Course_Level` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int DEFAULT NULL,\n  `Start_Date` date DEFAULT NULL,\n  `Date_Complete` date DEFAULT NULL,\n  `Year_Group` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Parent_Course_Key` bigint unsigned DEFAULT NULL,\n  PRIMARY KEY (`Course_Key`),\n  KEY `dim_course_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_course_delivery_key_foreign` (`Delivery_Key`),\n  KEY `dim_course_parent_course_key_foreign` (`Parent_Course_Key`),\n  KEY `idx_course_source` (`Source_Course_Id`,`Source_System_Key`),\n  CONSTRAINT `dim_course_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `dim_course_parent_course_key_foreign` FOREIGN KEY (`Parent_Course_Key`) REFERENCES `Dim_Course` (`Course_Key`) ON DELETE SET NULL,\n  CONSTRAINT `dim_course_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Dim_Date",
@@ -853,7 +853,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Dim_Delivery_Header` (\n  `Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Delivery_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Training_Provider_Key` bigint unsigned DEFAULT NULL,\n  `External_System_Key` bigint unsigned DEFAULT NULL,\n  `Delivery_Status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Date_Delivery_Start` date DEFAULT NULL,\n  `Date_Delivery_End` date DEFAULT NULL,\n  `Digitisation_Booking` tinyint NOT NULL DEFAULT '0',\n  `Fleet_Cycles_Used` int DEFAULT '0',\n  `Consent_Cutoff_Date` date DEFAULT NULL,\n  `Pref_Alt_Delivery_Location` tinyint NOT NULL DEFAULT '0',\n  `Alt_Delivery_Location` text COLLATE utf8mb4_unicode_ci,\n  `Notes` text COLLATE utf8mb4_unicode_ci,\n  `Instructor_General_Notes` text COLLATE utf8mb4_unicode_ci,\n  `Teacher_Notes` text COLLATE utf8mb4_unicode_ci,\n  `School_Contacts` json DEFAULT NULL,\n  `Venue` json DEFAULT NULL,\n  `Provider_Additional_Questions` json DEFAULT NULL,\n  `Comms_Start_Date` date DEFAULT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint DEFAULT NULL,\n  `Include_Tp_Terms_In_Consent` tinyint NOT NULL DEFAULT '0',\n  `Consent_Src_Characteristics` tinyint NOT NULL DEFAULT '0',\n  `Max_Consents` int DEFAULT NULL,\n  `Waiting_List_Enabled` tinyint NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Key`),\n  KEY `dim_delivery_header_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_delivery_header_school_key_foreign` (`School_Key`),\n  KEY `dim_delivery_header_organisation_key_foreign` (`Organisation_Key`),\n  KEY `dim_delivery_header_training_provider_key_foreign` (`Training_Provider_Key`),\n  CONSTRAINT `dim_delivery_header_organisation_key_foreign` FOREIGN KEY (`Organisation_Key`) REFERENCES `Dim_Organisation` (`Organisation_Key`),\n  CONSTRAINT `dim_delivery_header_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),\n  CONSTRAINT `dim_delivery_header_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`),\n  CONSTRAINT `dim_delivery_header_training_provider_key_foreign` FOREIGN KEY (`Training_Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Dim_Delivery_Header` (\n  `Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_Delivery_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Training_Provider_Key` bigint unsigned DEFAULT NULL,\n  `External_System_Key` bigint unsigned DEFAULT NULL,\n  `Delivery_Status` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Date_Delivery_Start` date DEFAULT NULL,\n  `Date_Delivery_End` date DEFAULT NULL,\n  `Digitisation_Booking` tinyint NOT NULL DEFAULT '0',\n  `Fleet_Cycles_Used` int DEFAULT '0',\n  `Consent_Cutoff_Date` date DEFAULT NULL,\n  `Pref_Alt_Delivery_Location` tinyint NOT NULL DEFAULT '0',\n  `Alt_Delivery_Location` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Instructor_General_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Teacher_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `School_Contacts` json DEFAULT NULL,\n  `Venue` json DEFAULT NULL,\n  `Provider_Additional_Questions` json DEFAULT NULL,\n  `Comms_Start_Date` date DEFAULT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint DEFAULT NULL,\n  `Include_Tp_Terms_In_Consent` tinyint NOT NULL DEFAULT '0',\n  `Consent_Src_Characteristics` tinyint NOT NULL DEFAULT '0',\n  `Max_Consents` int DEFAULT NULL,\n  `Waiting_List_Enabled` tinyint NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Key`),\n  KEY `dim_delivery_header_source_system_key_foreign` (`Source_System_Key`),\n  KEY `dim_delivery_header_school_key_foreign` (`School_Key`),\n  KEY `dim_delivery_header_organisation_key_foreign` (`Organisation_Key`),\n  KEY `dim_delivery_header_training_provider_key_foreign` (`Training_Provider_Key`),\n  CONSTRAINT `dim_delivery_header_organisation_key_foreign` FOREIGN KEY (`Organisation_Key`) REFERENCES `Dim_Organisation` (`Organisation_Key`),\n  CONSTRAINT `dim_delivery_header_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`),\n  CONSTRAINT `dim_delivery_header_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`),\n  CONSTRAINT `dim_delivery_header_training_provider_key_foreign` FOREIGN KEY (`Training_Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Dim_External_Systems",
@@ -973,7 +973,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Dim_External_Systems` (\n  `External_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_External_System_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Username` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint NOT NULL DEFAULT '0',\n  `Pref_Use_Instructor_App` tinyint NOT NULL DEFAULT '0',\n  `Pref_Link_Managed_Comms` tinyint NOT NULL DEFAULT '0',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`External_System_Key`),\n  UNIQUE KEY `dim_external_systems_source_external_system_id_unique` (`Source_External_System_Id`),\n  KEY `dim_external_systems_source_system_key_foreign` (`Source_System_Key`),\n  CONSTRAINT `dim_external_systems_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Dim_External_Systems` (\n  `External_System_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_External_System_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Username` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Pref_Link_Managed_Consent` tinyint NOT NULL DEFAULT '0',\n  `Pref_Use_Instructor_App` tinyint NOT NULL DEFAULT '0',\n  `Pref_Link_Managed_Comms` tinyint NOT NULL DEFAULT '0',\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`External_System_Key`),\n  UNIQUE KEY `dim_external_systems_source_external_system_id_unique` (`Source_External_System_Id`),\n  KEY `dim_external_systems_source_system_key_foreign` (`Source_System_Key`),\n  CONSTRAINT `dim_external_systems_source_system_key_foreign` FOREIGN KEY (`Source_System_Key`) REFERENCES `Dim_Source_System` (`Source_System_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Dim_Grant",
@@ -2261,7 +2261,7 @@
         {
           "name": "Provider_Key",
           "type": "bigint unsigned",
-          "nullable": false
+          "nullable": true
         },
         {
           "name": "Grant_Key",
@@ -2299,6 +2299,24 @@
           "default": "0"
         },
         {
+          "name": "Count_Adults",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Teens",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Children",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
           "name": "Count_Female",
           "type": "int",
           "nullable": false,
@@ -2317,13 +2335,31 @@
           "default": "0"
         },
         {
+          "name": "Count_Gender_Not_Stated",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
           "name": "Count_Pupil_Premium",
           "type": "int",
           "nullable": false,
           "default": "0"
         },
         {
+          "name": "Count_Pupil_Premium_Not_Stated",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
           "name": "Count_SEND",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_SEND_Not_Stated",
           "type": "int",
           "nullable": false,
           "default": "0"
@@ -2336,6 +2372,12 @@
         },
         {
           "name": "Count_Ethnicity_White_Irish",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Ethnicity_White_Traveller",
           "type": "int",
           "nullable": false,
           "default": "0"
@@ -2438,6 +2480,75 @@
         },
         {
           "name": "Count_Ethnicity_Not_Stated",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_18_24",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_25_34",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_35_44",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_45_54",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_55_64",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Age_Range_Over_65",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Bikes_Swapped",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Bikes_Recycled",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Count_Booked_Repeat_Type_Na",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "Count_Booked_Repeat_Type_Unique",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "Count_Booked_Repeat_Type_Repeat",
+          "type": "varchar(20)",
+          "nullable": true
+        },
+        {
+          "name": "Count_Age_Range_Not_Stated",
           "type": "int",
           "nullable": false,
           "default": "0"
@@ -2590,7 +2701,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Fact_Course_Delivery` (\n  `Delivery_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Date_Key` int DEFAULT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Provider_Key` bigint unsigned NOT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',\n  `Riders_Completed_Count` int NOT NULL DEFAULT '0',\n  `Count_Booked_Provisional` int NOT NULL DEFAULT '0',\n  `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Female` int NOT NULL DEFAULT '0',\n  `Count_Male` int NOT NULL DEFAULT '0',\n  `Count_Gender_Other` int NOT NULL DEFAULT '0',\n  `Count_Pupil_Premium` int NOT NULL DEFAULT '0',\n  `Count_SEND` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Asian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Indian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Pakistani` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Bangladeshi` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Chinese` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Caribbean` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Fact_Key`),\n  KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),\n  KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),\n  KEY `fact_course_delivery_school_key_foreign` (`School_Key`),\n  KEY `fact_course_delivery_course_key_foreign` (`Course_Key`),\n  KEY `fact_course_delivery_provider_key_foreign` (`Provider_Key`),\n  KEY `fact_course_delivery_grant_key_foreign` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),\n  CONSTRAINT `fact_course_delivery_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`),\n  CONSTRAINT `fact_course_delivery_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `fact_course_delivery_grant_key_foreign` FOREIGN KEY (`Grant_Key`) REFERENCES `Dim_Grant` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),\n  CONSTRAINT `fact_course_delivery_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Fact_Course_Delivery` (\n  `Delivery_Fact_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Date_Key` int DEFAULT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `School_Key` bigint unsigned DEFAULT NULL,\n  `Organisation_Key` bigint unsigned DEFAULT NULL,\n  `Course_Key` bigint unsigned NOT NULL,\n  `Provider_Key` bigint unsigned DEFAULT NULL,\n  `Grant_Key` bigint unsigned DEFAULT NULL,\n  `Riders_Enrolled_Count` int NOT NULL DEFAULT '0',\n  `Riders_Completed_Count` int NOT NULL DEFAULT '0',\n  `Count_Booked_Provisional` int NOT NULL DEFAULT '0',\n  `Count_Booked_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Attended_Confirmed` int NOT NULL DEFAULT '0',\n  `Count_Adults` int NOT NULL DEFAULT '0',\n  `Count_Teens` int NOT NULL DEFAULT '0',\n  `Count_Children` int NOT NULL DEFAULT '0',\n  `Count_Female` int NOT NULL DEFAULT '0',\n  `Count_Male` int NOT NULL DEFAULT '0',\n  `Count_Gender_Other` int NOT NULL DEFAULT '0',\n  `Count_Gender_Not_Stated` int NOT NULL DEFAULT '0',\n  `Count_Pupil_Premium` int NOT NULL DEFAULT '0',\n  `Count_Pupil_Premium_Not_Stated` int NOT NULL DEFAULT '0',\n  `Count_SEND` int NOT NULL DEFAULT '0',\n  `Count_SEND_Not_Stated` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_British` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Irish` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Traveller` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Gypsy_Romany` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_White_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_Carib` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_White_Asian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Mixed_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Indian` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Pakistani` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Bangladeshi` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Chinese` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Asian_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_African` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Caribbean` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Black_Other` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Arab` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Other_Any` int NOT NULL DEFAULT '0',\n  `Count_Ethnicity_Not_Stated` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_18_24` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_25_34` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_35_44` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_45_54` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_55_64` int NOT NULL DEFAULT '0',\n  `Count_Age_Range_Over_65` int NOT NULL DEFAULT '0',\n  `Count_Bikes_Swapped` int NOT NULL DEFAULT '0',\n  `Count_Bikes_Recycled` int NOT NULL DEFAULT '0',\n  `Count_Booked_Repeat_Type_Na` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Count_Booked_Repeat_Type_Unique` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Count_Booked_Repeat_Type_Repeat` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Count_Age_Range_Not_Stated` int NOT NULL DEFAULT '0',\n  PRIMARY KEY (`Delivery_Fact_Key`),\n  KEY `fact_course_delivery_date_key_foreign` (`Date_Key`),\n  KEY `fact_course_delivery_delivery_key_foreign` (`Delivery_Key`),\n  KEY `fact_course_delivery_school_key_foreign` (`School_Key`),\n  KEY `fact_course_delivery_course_key_foreign` (`Course_Key`),\n  KEY `fact_course_delivery_provider_key_foreign` (`Provider_Key`),\n  KEY `fact_course_delivery_grant_key_foreign` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_course_key_foreign` FOREIGN KEY (`Course_Key`) REFERENCES `Dim_Course` (`Course_Key`),\n  CONSTRAINT `fact_course_delivery_date_key_foreign` FOREIGN KEY (`Date_Key`) REFERENCES `Dim_Date` (`Date_Key`),\n  CONSTRAINT `fact_course_delivery_delivery_key_foreign` FOREIGN KEY (`Delivery_Key`) REFERENCES `Dim_Delivery_Header` (`Delivery_Key`),\n  CONSTRAINT `fact_course_delivery_grant_key_foreign` FOREIGN KEY (`Grant_Key`) REFERENCES `Dim_Grant` (`Grant_Key`),\n  CONSTRAINT `fact_course_delivery_provider_key_foreign` FOREIGN KEY (`Provider_Key`) REFERENCES `Dim_Training_Provider` (`Provider_Key`),\n  CONSTRAINT `fact_course_delivery_school_key_foreign` FOREIGN KEY (`School_Key`) REFERENCES `Dim_School` (`School_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Fact_Follow_Up_Survey",
@@ -3737,7 +3848,271 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Fact_Grant_Reallocations` (\n  `Reallocation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Source_Reallocation_Id` bigint unsigned NOT NULL,\n  `Reallocation_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Reallocation_Type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Reallocation_Notes` text COLLATE utf8mb4_unicode_ci,\n  `Reallocation_Increase_Reasons` text COLLATE utf8mb4_unicode_ci,\n  `Date_Approved` date DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Reallocation_Key`),\n  KEY `idx_realloc_base` (`Grant_Key`,`Source_Reallocation_Id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Fact_Grant_Reallocations` (\n  `Reallocation_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Grant_Key` bigint unsigned NOT NULL,\n  `Source_System_Key` int NOT NULL,\n  `Source_Reallocation_Id` bigint unsigned NOT NULL,\n  `Reallocation_Number` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Reallocation_Type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Status_Raw` tinyint NOT NULL DEFAULT '0',\n  `Reallocation_Notes` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Reallocation_Increase_Reasons` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Date_Approved` date DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Reallocation_Key`),\n  KEY `idx_realloc_base` (`Grant_Key`,`Source_Reallocation_Id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Grant_Recipient_Renewal",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Renewal_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Recipient_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_Renewal_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Status",
+          "type": "tinyint",
+          "nullable": false
+        },
+        {
+          "name": "Renewal_Year",
+          "type": "smallint",
+          "nullable": false
+        },
+        {
+          "name": "Date_Due",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Date_Completed",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Flag_Reminder_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Flag_Overdue_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Organisation_Category",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Details",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Contracted_Deliveries",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Guidelines_Commitment",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Risk_Assessment",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Policy_Review",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Valid_Insurance",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Documents",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Access",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Associated_TP",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_One",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_Two",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_Three",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Incidents",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Stage_1_Complaints",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Serious_Complaints",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Final",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Name",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_GR_Is_Also_TP",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Safeguarding",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Users_With_Access_To_GR",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Associated_TPs",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Tfl_Funded",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Contact_Details_Confirmed",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_grant_recipient_renewal_recipient_key_index",
+          "def": "KEY fact_grant_recipient_renewal_recipient_key_index (Recipient_Key) USING BTREE",
+          "table": "Fact_Grant_Recipient_Renewal",
+          "columns": [
+            "Recipient_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Renewal_Key) USING BTREE",
+          "table": "Fact_Grant_Recipient_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        },
+        {
+          "name": "fact_grant_recipient_renewal_source_renewal_id_unique",
+          "def": "UNIQUE KEY fact_grant_recipient_renewal_source_renewal_id_unique (Source_Renewal_Id) USING BTREE",
+          "table": "Fact_Grant_Recipient_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_grant_recipient_renewal_source_renewal_id_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY fact_grant_recipient_renewal_source_renewal_id_unique (Source_Renewal_Id)",
+          "table": "Fact_Grant_Recipient_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Renewal_Key)",
+          "table": "Fact_Grant_Recipient_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Grant_Recipient_Renewal` (\n  `Renewal_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Recipient_Key` bigint unsigned NOT NULL,\n  `Source_Renewal_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Status` tinyint NOT NULL,\n  `Renewal_Year` smallint NOT NULL,\n  `Date_Due` date NOT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Date_Approved` date DEFAULT NULL,\n  `Flag_Reminder_Warning` tinyint NOT NULL DEFAULT '0',\n  `Flag_Overdue_Warning` tinyint NOT NULL DEFAULT '0',\n  `Q_Organisation_Category` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Confirm_Details` tinyint NOT NULL DEFAULT '0',\n  `Q_Contracted_Deliveries` json DEFAULT NULL,\n  `Q_Confirm_Guidelines_Commitment` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Risk_Assessment` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Policy_Review` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Valid_Insurance` tinyint NOT NULL DEFAULT '0',\n  `Q_Documents` json DEFAULT NULL,\n  `Q_Confirm_Access` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Associated_TP` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_One` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_Two` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_Three` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Incidents` tinyint NOT NULL DEFAULT '0',\n  `Q_Stage_1_Complaints` text COLLATE utf8mb4_unicode_ci,\n  `Q_Serious_Complaints` text COLLATE utf8mb4_unicode_ci,\n  `Q_Confirm_Final` tinyint NOT NULL DEFAULT '0',\n  `Q_Name` text COLLATE utf8mb4_unicode_ci,\n  `Q_GR_Is_Also_TP` tinyint NOT NULL DEFAULT '0',\n  `Q_Safeguarding` text COLLATE utf8mb4_unicode_ci,\n  `Users_With_Access_To_GR` json DEFAULT NULL,\n  `Associated_TPs` json DEFAULT NULL,\n  `Q_Tfl_Funded` tinyint DEFAULT NULL,\n  `Contact_Details_Confirmed` json DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Renewal_Key`),\n  UNIQUE KEY `fact_grant_recipient_renewal_source_renewal_id_unique` (`Source_Renewal_Id`),\n  KEY `fact_grant_recipient_renewal_recipient_key_index` (`Recipient_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Fact_HandsUp_Survey",
@@ -4092,6 +4467,232 @@
         }
       ],
       "def": "CREATE TABLE `Fact_Instructor_Delivery` (\n  `Instructor_Delivery_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Source_System_Key` int NOT NULL,\n  `Delivery_Key` bigint unsigned NOT NULL,\n  `Instructor_Key` bigint unsigned NOT NULL,\n  `Instructor_Notified` tinyint(1) NOT NULL DEFAULT '0',\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `Source_Deleted_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Instructor_Delivery_Key`),\n  KEY `idx_delivery_instructor` (`Delivery_Key`,`Instructor_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Instructor_Renewal",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Renewal_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Instructor_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_Renewal_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Status",
+          "type": "tinyint",
+          "nullable": false
+        },
+        {
+          "name": "Renewal_Year",
+          "type": "smallint",
+          "nullable": false
+        },
+        {
+          "name": "Date_Due",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Date_Completed",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Flag_Reminder_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Flag_Overdue_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Registration_Details",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Status",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Delivering_Bikeability",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Observed_By_IQA_Lead",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Completed_CPD",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Code_of_Practice",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Delivering_Other",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Contact_Prefs",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Fee",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Examples",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_1",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_1_2",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_2",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_3",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Professional_Development",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Strengths",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_instructor_renewal_instructor_key_index",
+          "def": "KEY fact_instructor_renewal_instructor_key_index (Instructor_Key) USING BTREE",
+          "table": "Fact_Instructor_Renewal",
+          "columns": [
+            "Instructor_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Renewal_Key) USING BTREE",
+          "table": "Fact_Instructor_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        },
+        {
+          "name": "fact_instructor_renewal_source_renewal_id_unique",
+          "def": "UNIQUE KEY fact_instructor_renewal_source_renewal_id_unique (Source_Renewal_Id) USING BTREE",
+          "table": "Fact_Instructor_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_instructor_renewal_source_renewal_id_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY fact_instructor_renewal_source_renewal_id_unique (Source_Renewal_Id)",
+          "table": "Fact_Instructor_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Renewal_Key)",
+          "table": "Fact_Instructor_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Instructor_Renewal` (\n  `Renewal_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Instructor_Key` bigint unsigned NOT NULL,\n  `Source_Renewal_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Status` tinyint NOT NULL,\n  `Renewal_Year` smallint NOT NULL,\n  `Date_Due` date NOT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Date_Approved` date DEFAULT NULL,\n  `Flag_Reminder_Warning` tinyint NOT NULL DEFAULT '0',\n  `Flag_Overdue_Warning` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Registration_Details` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Status` tinyint DEFAULT '0',\n  `Q_Confirm_Delivering_Bikeability` tinyint DEFAULT NULL,\n  `Q_Confirm_Observed_By_IQA_Lead` tinyint DEFAULT NULL,\n  `Q_Confirm_Completed_CPD` tinyint DEFAULT NULL,\n  `Q_Confirm_Code_of_Practice` tinyint DEFAULT NULL,\n  `Q_Confirm_Delivering_Other` tinyint DEFAULT '0',\n  `Q_Confirm_Contact_Prefs` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Fee` tinyint DEFAULT '0',\n  `Q_Delivery_Examples` json DEFAULT NULL,\n  `Q_Delivery_Amount_Level_1` tinyint DEFAULT '0',\n  `Q_Delivery_Amount_Level_1_2` tinyint DEFAULT '0',\n  `Q_Delivery_Amount_Level_2` tinyint DEFAULT '0',\n  `Q_Delivery_Amount_Level_3` tinyint DEFAULT '0',\n  `Q_Delivery_Amount_Plus` tinyint DEFAULT '0',\n  `Q_Professional_Development` json DEFAULT NULL,\n  `Q_Strengths` json DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Renewal_Key`),\n  UNIQUE KEY `fact_instructor_renewal_source_renewal_id_unique` (`Source_Renewal_Id`),\n  KEY `fact_instructor_renewal_instructor_key_index` (`Instructor_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Fact_Parent_Survey",
@@ -4591,7 +5192,499 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `Fact_Rider_Course` (\n  `Source_Rider_Id` bigint unsigned NOT NULL,\n  `Source_Course_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` varchar(50) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int NOT NULL DEFAULT '0',\n  `Attended` tinyint DEFAULT '1',\n  `Withdrawn` tinyint(1) DEFAULT '0',\n  `Withdrawal_Reason` text COLLATE utf8mb4_unicode_ci,\n  `Has_Completed_Course` tinyint(1) DEFAULT '0',\n  `Has_Survey_Completed` tinyint(1) NOT NULL DEFAULT '0',\n  `Course_Complete_Date` date DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `Updated_At` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`Source_Rider_Id`,`Source_Course_Id`),\n  KEY `idx_dwh_source_updated` (`Source_Updated_At`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `Fact_Rider_Course` (\n  `Source_Rider_Id` bigint unsigned NOT NULL,\n  `Source_Course_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `Status` int NOT NULL DEFAULT '0',\n  `Attended` tinyint DEFAULT '1',\n  `Withdrawn` tinyint(1) DEFAULT '0',\n  `Withdrawal_Reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `Has_Completed_Course` tinyint(1) DEFAULT '0',\n  `Has_Survey_Completed` tinyint(1) NOT NULL DEFAULT '0',\n  `Course_Complete_Date` date DEFAULT NULL,\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `Updated_At` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  PRIMARY KEY (`Source_Rider_Id`,`Source_Course_Id`),\n  KEY `idx_dwh_source_updated` (`Source_Updated_At`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    },
+    {
+      "name": "Fact_Training_Provider_Renewal",
+      "type": "BASE TABLE",
+      "columns": [
+        {
+          "name": "Renewal_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "extra_def": "auto_increment"
+        },
+        {
+          "name": "Provider_Key",
+          "type": "bigint unsigned",
+          "nullable": false,
+          "comment": "FK to Dim_Training_Provider"
+        },
+        {
+          "name": "Source_Renewal_Id",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Source_System_Key",
+          "type": "bigint unsigned",
+          "nullable": false
+        },
+        {
+          "name": "Status",
+          "type": "tinyint",
+          "nullable": false
+        },
+        {
+          "name": "Approved",
+          "type": "tinyint",
+          "nullable": true
+        },
+        {
+          "name": "Renewal_Year",
+          "type": "smallint",
+          "nullable": false
+        },
+        {
+          "name": "Date_Due",
+          "type": "date",
+          "nullable": false
+        },
+        {
+          "name": "Date_Completed",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Date_Approved",
+          "type": "date",
+          "nullable": true
+        },
+        {
+          "name": "Flag_Reminder_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Flag_Overdue_Warning",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Organisation_Category",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Details",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Contracted_Deliveries",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivered_Places",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Instructor_Types_Breakdown",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Instructor_DbsCert",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Instructor_SafetyPolicies",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_1",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_1_2",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_2",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Level_3",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Balance",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Bus",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Fix",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Learn",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_On_Show",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Parents",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Promotion",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Recycled",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Ride",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Amount_Plus_Transition",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Delivery_Model",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Guidelines_Commitment",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Risk_Assessment",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Policy_Review",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Valid_Insurance",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Documents",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Iqa_Plan",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Strengths",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Priority_1",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Action_Plan_1",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Priority_2",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Action_Plan_2",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Priority_3",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Action_Plan_3",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Q_Associated_Instructors_Two",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Children",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Adults",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Families",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Incidents",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Stage_1_Complaints",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Serious_Complaints",
+          "type": "int",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_One",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_Two",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Assurance_Three",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Improvements",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Confirm_Final_One",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Final_Two",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Final_Three",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Associated_Instructors",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Confirm_Access",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Q_Safeguarding_Lead",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Health_And_Safety_Lead",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Iqa_Lead",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Iqa_Organisation",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Name",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Associated_Instructors_Three",
+          "type": "tinyint",
+          "nullable": true,
+          "default": "0"
+        },
+        {
+          "name": "Q_Safeguarding",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "Users_With_Access_To_TP",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Associated_Instructors",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Contact_Details_Confirmed",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Contract_Type",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Contract_Type_Other_Text",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Adult_Training_Only",
+          "type": "varchar(255)",
+          "nullable": true
+        },
+        {
+          "name": "Q_Expected_Delivery",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "Q_Expected_Delivery_Empty",
+          "type": "tinyint",
+          "nullable": false,
+          "default": "0"
+        },
+        {
+          "name": "Source_Created_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "Source_Updated_At",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        {
+          "name": "fact_training_provider_renewal_provider_key_index",
+          "def": "KEY fact_training_provider_renewal_provider_key_index (Provider_Key) USING BTREE",
+          "table": "Fact_Training_Provider_Renewal",
+          "columns": [
+            "Provider_Key"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "def": "PRIMARY KEY (Renewal_Key) USING BTREE",
+          "table": "Fact_Training_Provider_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        },
+        {
+          "name": "fact_training_provider_renewal_source_renewal_id_unique",
+          "def": "UNIQUE KEY fact_training_provider_renewal_source_renewal_id_unique (Source_Renewal_Id) USING BTREE",
+          "table": "Fact_Training_Provider_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        }
+      ],
+      "constraints": [
+        {
+          "name": "fact_training_provider_renewal_source_renewal_id_unique",
+          "type": "UNIQUE",
+          "def": "UNIQUE KEY fact_training_provider_renewal_source_renewal_id_unique (Source_Renewal_Id)",
+          "table": "Fact_Training_Provider_Renewal",
+          "columns": [
+            "Source_Renewal_Id"
+          ]
+        },
+        {
+          "name": "PRIMARY",
+          "type": "PRIMARY KEY",
+          "def": "PRIMARY KEY (Renewal_Key)",
+          "table": "Fact_Training_Provider_Renewal",
+          "columns": [
+            "Renewal_Key"
+          ]
+        }
+      ],
+      "def": "CREATE TABLE `Fact_Training_Provider_Renewal` (\n  `Renewal_Key` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `Provider_Key` bigint unsigned NOT NULL COMMENT 'FK to Dim_Training_Provider',\n  `Source_Renewal_Id` bigint unsigned NOT NULL,\n  `Source_System_Key` bigint unsigned NOT NULL,\n  `Status` tinyint NOT NULL,\n  `Approved` tinyint DEFAULT NULL,\n  `Renewal_Year` smallint NOT NULL,\n  `Date_Due` date NOT NULL,\n  `Date_Completed` date DEFAULT NULL,\n  `Date_Approved` date DEFAULT NULL,\n  `Flag_Reminder_Warning` tinyint NOT NULL DEFAULT '0',\n  `Flag_Overdue_Warning` tinyint NOT NULL DEFAULT '0',\n  `Q_Organisation_Category` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Confirm_Details` tinyint NOT NULL DEFAULT '0',\n  `Q_Contracted_Deliveries` json DEFAULT NULL,\n  `Q_Delivered_Places` json DEFAULT NULL,\n  `Q_Instructor_Types_Breakdown` json DEFAULT NULL,\n  `Q_Confirm_Instructor_DbsCert` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Instructor_SafetyPolicies` tinyint NOT NULL DEFAULT '0',\n  `Q_Delivery_Amount_Level_1` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Level_1_2` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Level_2` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Level_3` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Balance` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Bus` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Fix` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Learn` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_On_Show` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Parents` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Promotion` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Recycled` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Ride` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Amount_Plus_Transition` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Delivery_Model` json DEFAULT NULL,\n  `Q_Confirm_Guidelines_Commitment` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Risk_Assessment` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Policy_Review` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Valid_Insurance` tinyint NOT NULL DEFAULT '0',\n  `Q_Documents` json DEFAULT NULL,\n  `Q_Confirm_Iqa_Plan` tinyint NOT NULL DEFAULT '0',\n  `Q_Strengths` json DEFAULT NULL,\n  `Q_Priority_1` text COLLATE utf8mb4_unicode_ci,\n  `Q_Action_Plan_1` text COLLATE utf8mb4_unicode_ci,\n  `Q_Priority_2` text COLLATE utf8mb4_unicode_ci,\n  `Q_Action_Plan_2` text COLLATE utf8mb4_unicode_ci,\n  `Q_Priority_3` text COLLATE utf8mb4_unicode_ci,\n  `Q_Action_Plan_3` text COLLATE utf8mb4_unicode_ci,\n  `Q_Associated_Instructors_Two` tinyint NOT NULL DEFAULT '0',\n  `Q_Children` int NOT NULL DEFAULT '0',\n  `Q_Adults` int NOT NULL DEFAULT '0',\n  `Q_Families` int NOT NULL DEFAULT '0',\n  `Q_Confirm_Incidents` tinyint NOT NULL DEFAULT '0',\n  `Q_Stage_1_Complaints` int NOT NULL DEFAULT '0',\n  `Q_Serious_Complaints` int NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_One` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_Two` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Assurance_Three` tinyint NOT NULL DEFAULT '0',\n  `Q_Improvements` json DEFAULT NULL,\n  `Q_Confirm_Final_One` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Final_Two` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Final_Three` tinyint NOT NULL DEFAULT '0',\n  `Q_Associated_Instructors` tinyint NOT NULL DEFAULT '0',\n  `Q_Confirm_Access` tinyint NOT NULL DEFAULT '0',\n  `Q_Safeguarding_Lead` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Health_And_Safety_Lead` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Iqa_Lead` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Iqa_Organisation` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Name` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Associated_Instructors_Three` tinyint DEFAULT '0',\n  `Q_Safeguarding` text COLLATE utf8mb4_unicode_ci,\n  `Users_With_Access_To_TP` json DEFAULT NULL,\n  `Associated_Instructors` json DEFAULT NULL,\n  `Contact_Details_Confirmed` json DEFAULT NULL,\n  `Q_Contract_Type` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Contract_Type_Other_Text` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Adult_Training_Only` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,\n  `Q_Expected_Delivery` json DEFAULT NULL,\n  `Q_Expected_Delivery_Empty` tinyint NOT NULL DEFAULT '0',\n  `Source_Created_At` timestamp NULL DEFAULT NULL,\n  `Source_Updated_At` timestamp NULL DEFAULT NULL,\n  `created_at` timestamp NULL DEFAULT NULL,\n  `updated_at` timestamp NULL DEFAULT NULL,\n  PRIMARY KEY (`Renewal_Key`),\n  UNIQUE KEY `fact_training_provider_renewal_source_renewal_id_unique` (`Source_Renewal_Id`),\n  KEY `fact_training_provider_renewal_provider_key_index` (`Provider_Key`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "failed_jobs",
@@ -4674,7 +5767,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `failed_jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `connection` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `queue` text COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `exception` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `failed_jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `uuid` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `connection` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `queue` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `exception` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `failed_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (`id`),\n  UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "job_batches",
@@ -4752,7 +5845,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `job_batches` (\n  `id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `total_jobs` int NOT NULL,\n  `pending_jobs` int NOT NULL,\n  `failed_jobs` int NOT NULL,\n  `failed_job_ids` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `options` mediumtext COLLATE utf8mb4_unicode_ci,\n  `cancelled_at` int DEFAULT NULL,\n  `created_at` int NOT NULL,\n  `finished_at` int DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `job_batches` (\n  `id` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `name` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `total_jobs` int NOT NULL,\n  `pending_jobs` int NOT NULL,\n  `failed_jobs` int NOT NULL,\n  `failed_job_ids` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `options` mediumtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,\n  `cancelled_at` int DEFAULT NULL,\n  `created_at` int NOT NULL,\n  `finished_at` int DEFAULT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "jobs",
@@ -4824,7 +5917,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `queue` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext COLLATE utf8mb4_unicode_ci NOT NULL,\n  `attempts` tinyint unsigned NOT NULL,\n  `reserved_at` int unsigned DEFAULT NULL,\n  `available_at` int unsigned NOT NULL,\n  `created_at` int unsigned NOT NULL,\n  PRIMARY KEY (`id`),\n  KEY `jobs_queue_index` (`queue`)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `jobs` (\n  `id` bigint unsigned NOT NULL AUTO_INCREMENT,\n  `queue` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `attempts` tinyint unsigned NOT NULL,\n  `reserved_at` int unsigned DEFAULT NULL,\n  `available_at` int unsigned NOT NULL,\n  `created_at` int unsigned NOT NULL,\n  PRIMARY KEY (`id`),\n  KEY `jobs_queue_index` (`queue`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Map_Rider_Send",
@@ -4942,7 +6035,7 @@
           ]
         }
       ],
-      "def": "CREATE TABLE `migrations` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,\n  `batch` int NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+      "def": "CREATE TABLE `migrations` (\n  `id` int unsigned NOT NULL AUTO_INCREMENT,\n  `migration` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,\n  `batch` int NOT NULL,\n  PRIMARY KEY (`id`)\n) ENGINE=InnoDB AUTO_INCREMENT=[Redacted by tbls] DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     },
     {
       "name": "Sync_Log",
@@ -5311,7 +6404,7 @@
       "parent_columns": [
         "Provider_Key"
       ],
-      "parent_cardinality": "exactly_one",
+      "parent_cardinality": "zero_or_one",
       "def": "FOREIGN KEY (Provider_Key) REFERENCES Dim_Training_Provider (Provider_Key)"
     },
     {

@@ -21,7 +21,7 @@
 | [Dim_Source_System](Dim_Source_System.md) | 4 |  | BASE TABLE |
 | [Dim_Training_Provider](Dim_Training_Provider.md) | 20 |  | BASE TABLE |
 | [Dwh_Api_Consumers](Dwh_Api_Consumers.md) | 9 |  | BASE TABLE |
-| [Fact_Course_Delivery](Fact_Course_Delivery.md) | 37 |  | BASE TABLE |
+| [Fact_Course_Delivery](Fact_Course_Delivery.md) | 56 |  | BASE TABLE |
 | [Fact_Follow_Up_Survey](Fact_Follow_Up_Survey.md) | 23 |  | BASE TABLE |
 | [Fact_Grant_Amendment_Logs](Fact_Grant_Amendment_Logs.md) | 9 |  | BASE TABLE |
 | [Fact_Grant_Amendments](Fact_Grant_Amendments.md) | 9 |  | BASE TABLE |
@@ -32,11 +32,14 @@
 | [Fact_Grant_Financials](Fact_Grant_Financials.md) | 45 |  | BASE TABLE |
 | [Fact_Grant_Reallocation_Logs](Fact_Grant_Reallocation_Logs.md) | 8 |  | BASE TABLE |
 | [Fact_Grant_Reallocations](Fact_Grant_Reallocations.md) | 12 |  | BASE TABLE |
+| [Fact_Grant_Recipient_Renewal](Fact_Grant_Recipient_Renewal.md) | 39 |  | BASE TABLE |
 | [Fact_HandsUp_Survey](Fact_HandsUp_Survey.md) | 19 |  | BASE TABLE |
 | [Fact_Instructor_Course](Fact_Instructor_Course.md) | 7 |  | BASE TABLE |
 | [Fact_Instructor_Delivery](Fact_Instructor_Delivery.md) | 10 |  | BASE TABLE |
+| [Fact_Instructor_Renewal](Fact_Instructor_Renewal.md) | 32 |  | BASE TABLE |
 | [Fact_Parent_Survey](Fact_Parent_Survey.md) | 63 |  | BASE TABLE |
 | [Fact_Rider_Course](Fact_Rider_Course.md) | 13 |  | BASE TABLE |
+| [Fact_Training_Provider_Renewal](Fact_Training_Provider_Renewal.md) | 82 |  | BASE TABLE |
 | [failed_jobs](failed_jobs.md) | 7 |  | BASE TABLE |
 | [job_batches](job_batches.md) | 10 |  | BASE TABLE |
 | [jobs](jobs.md) | 7 |  | BASE TABLE |

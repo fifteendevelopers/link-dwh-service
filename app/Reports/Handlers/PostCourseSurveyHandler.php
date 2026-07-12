@@ -16,6 +16,8 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
         return Validator::make($parameters, [
             'year'        => 'nullable|integer|digits:4',
             'grant_id'    => 'nullable|integer',
+            'recipient_id'=> 'nullable|integer',
+            'provider_id' => 'nullable|integer',
             'delivery_id' => 'nullable|integer',
         ])->validate();
     }
@@ -166,6 +168,15 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
         if (isset($params['delivery_id']) && $params['delivery_id'] !== '' && $params['delivery_id'] !== null) {
             $query->where('dh.Source_Delivery_Id', $params['delivery_id']);
         }
+
+        if (!empty($params['recipient_id'])) {
+            $query->where('gr.Source_Recipient_Id', (int)$params['recipient_id']);
+        }
+
+        if (!empty($params['provider_id'])) {
+            $query->where('tp.Source_Provider_Id', (int)$params['provider_id']);
+        }
+
 
         // Return chronological descending track matching: ORDER BY f.Source_Created_At DESC
         return $query->orderBy('f.Source_Created_At', 'desc')
