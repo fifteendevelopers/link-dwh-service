@@ -35,7 +35,7 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
             ->join('Dim_Delivery_Header as dh', 'c.Delivery_Key', '=', 'dh.Delivery_Key')
             ->join('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
             ->leftJoin('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
-
+            ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             // Join BOTH possible destination dimension tables
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
