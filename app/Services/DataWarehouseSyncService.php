@@ -1042,9 +1042,10 @@ class DataWarehouseSyncService
             'Count_Ethnicity_White_British' => 0,
             'Count_Ethnicity_White_Irish' => 0,
             'Count_Ethnicity_White_Other' => 0,
+            'Count_Ethnicity_White_Traveller' => 0,
+            'Count_Ethnicity_Gypsy_Romany' => 0,
             'Count_Ethnicity_Mixed_White_Black_Carib' => 0,
             'Count_Ethnicity_Mixed_White_Black_African' => 0,
-            'Count_Ethnicity_white_traveller' => 0,
             'Count_Ethnicity_Mixed_White_Asian' => 0,
             'Count_Ethnicity_Mixed_Other' => 0,
             'Count_Ethnicity_Asian_Indian' => 0,
@@ -1237,12 +1238,8 @@ class DataWarehouseSyncService
                 $fact_date = $record->course_start ?: $record->date_delivery_start;
 
                 // Composite Upsert targeting BOTH key tracks safely (without leaking virtual dimension columns)
-                $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
-                    [
-                        'Delivery_Key' => $delivery->Delivery_Key,
-                        'Course_Key'   => $courseKey
-                    ],
-                    array_merge($metrics, $deliveryDetailMetrics, [
+                if ($useLegacy) {
+                    $finalPayload = array_merge($deliveryDetailMetrics, [
                         'Riders_Enrolled_Count'  => $enrolledCount,
                         'Riders_Completed_Count' => $completedCount,
                         'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
@@ -1250,7 +1247,25 @@ class DataWarehouseSyncService
                         'Organisation_Key'       => $delivery->Organisation_Key,
                         'Provider_Key'           => $delivery->Training_Provider_Key,
                         'Grant_Key'              => $delivery->Grant_Key,
-                    ])
+                    ]);
+                } else {
+                    $finalPayload = array_merge($metrics, $deliveryDetailMetrics, [
+                        'Riders_Enrolled_Count'  => $enrolledCount,
+                        'Riders_Completed_Count' => $completedCount,
+                        'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
+                        'School_Key'             => $delivery->School_Key,
+                        'Organisation_Key'       => $delivery->Organisation_Key,
+                        'Provider_Key'           => $delivery->Training_Provider_Key,
+                        'Grant_Key'              => $delivery->Grant_Key,
+                    ]);
+                }
+
+                $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
+                    [
+                        'Delivery_Key' => $delivery->Delivery_Key,
+                        'Course_Key'   => $courseKey
+                    ],
+                    $finalPayload
                 );
 
                 if ($bar) $bar->advance();
@@ -1299,6 +1314,10 @@ class DataWarehouseSyncService
             'Extracted_Course_Level'   => null,
             'Extracted_Year_Group'     => null,
             'Count_Gender_Not_Stated'   => 0,
+            'Count_SEND'                     => 0,
+            'Count_Pupil_Premium'            => 0,
+            'Count_SEND_Not_Stated'          => 0,
+            'Count_Pupil_Premium_Not_Stated' => 0,
         ]);
 
         foreach ($details as $entry) {
@@ -1366,6 +1385,8 @@ class DataWarehouseSyncService
                 }
 
                 // Privacy Indicators fallbacks
+                $metrics['Count_SEND']                     += (int)($booked['send'] ?? 0);
+                $metrics['Count_Pupil_Premium']            += (int)($booked['free_school_meals'] ?? 0);
                 $metrics['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
                 $metrics['Count_Pupil_Premium_Not_Stated'] += (int)($booked['free_school_meals_na'] ?? 0);
 
@@ -1380,18 +1401,13 @@ class DataWarehouseSyncService
 
     private function extractFromNormalizedTables($course)
     {
-        $metrics = [
-            'Count_Male'                 => 0,
-            'Count_Female'               => 0,
-            'Count_Gender_Other'         => 0,
-            'Count_Gender_Not_Stated'    => 0,
-            'Count_Ethnicity_Not_Stated' => 0,
+        $metrics = array_merge($this->initializeExtendedMetricArray(), [
             'Count_Booked_Provisional' => 0,
             'Count_Booked_Confirmed'   => 0,
             'Count_Attended_Confirmed' => 0,
             'Count_Bikes_Swapped'      => 0,
             'Count_Bikes_Recycled'     => 0
-        ];
+        ]);
 
         // 1. Query the delivery_modules bridge using the unique criteria combo
         $moduleQuery = $this->source->table('delivery_modules');
@@ -1459,9 +1475,16 @@ class DataWarehouseSyncService
             }
 
             // Extract privacy disclosure indicators
-            if ($cat === 'booked_demographics') {
-                if ($sub === 'send_na' || $sub === 'booked_send_na') $metrics['Count_SEND_Not_Stated'] = $val;
-                if ($sub === 'free_school_meals_na') $metrics['Count_Pupil_Premium_Not_Stated'] = $val;
+            if ($cat === 'booked_demographics' || $cat === 'demographics') {
+                if (in_array($sub, ['send', 'booked_send'])) {
+                    $metrics['Count_SEND'] = $val;
+                } elseif (in_array($sub, ['send_na', 'booked_send_na'])) {
+                    $metrics['Count_SEND_Not_Stated'] = $val;
+                } elseif (in_array($sub, ['free_school_meals', 'pupil_premium', 'booked_free_school_meals'])) {
+                    $metrics['Count_Pupil_Premium'] = $val;
+                } elseif (in_array($sub, ['free_school_meals_na', 'pupil_premium_na'])) {
+                    $metrics['Count_Pupil_Premium_Not_Stated'] = $val;
+                }
             }
         }
 
