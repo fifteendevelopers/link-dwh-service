@@ -8,12 +8,14 @@ use App\Reports\Handlers\DeliveriesPerGrantRecipientHandler;
 use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
+use App\Reports\Handlers\InstructorFeedbackStatementSummaryHandler;
 use App\Reports\Handlers\InstructorsDeliveriesAllocationHandler;
 use App\Reports\Handlers\ParentContactsHandler;
 use App\Reports\Handlers\ParentFollowUpSurveyHandler;
 use App\Reports\Handlers\PostCourseSurveyHandler;
 use App\Reports\Handlers\PreCourseCycleFrequencyHandler;
 use App\Reports\Handlers\PreCourseFrequencyHandler;
+use App\Reports\Handlers\RiderActivityOutcomesHandler;
 use App\Reports\Handlers\SchoolDeliveriesAuditHandler;
 use App\Reports\Handlers\SchoolDeliveriesHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
@@ -37,6 +39,8 @@ class ReportFactory
         'pre-course-cycle-frequency'        => PreCourseCycleFrequencyHandler::class,
         'pre-course-frequency'              => PreCourseFrequencyHandler::class,
         'report-29.0'                       => PreCourseCycleFrequencyHandler::class, // e.g. Supports aliases
+        'rider-activity-outcomes'           => RiderActivityOutcomesHandler::class,
+        'rider-feedback-summary'            => InstructorFeedbackStatementSummaryHandler::class,
         'school-deliveries'                 => SchoolDeliveriesHandler::class,
         'school-deliveries-audit'           => SchoolDeliveriesAuditHandler::class,
         'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,

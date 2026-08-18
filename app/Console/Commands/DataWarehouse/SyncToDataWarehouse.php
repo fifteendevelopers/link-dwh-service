@@ -40,6 +40,17 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'instructor_feedback_lookup') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Instructor Feedback lookup...");
+
+            try {
+                $result = $syncService->syncInstructorFeedbackLookups($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Feedback lookup: " . $e->getMessage());
+            }
+        }
+
         if ($table === 'all' || $table === 'providers') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Training Providers...");
 
@@ -182,6 +193,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Activity outcomes: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_rider_instructor_feedback') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Instructor Feedback...");
+
+            try {
+                $result = $syncService->syncFactRiderInstructorFeedback($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Instructor Feedback: " . $e->getMessage());
             }
         }
 

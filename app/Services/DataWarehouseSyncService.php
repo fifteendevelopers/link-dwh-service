@@ -101,6 +101,66 @@ class DataWarehouseSyncService
         return "Successfully synced {$syncCount} Course Activities into Dim_Course_Activity.";
     }
 
+    public function syncInstructorFeedbackLookups($command = null)
+    {
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor Feedback Lookups Sync (Exact ID Mapping)...");
+
+        $sourceLookups = $this->source->table('instructor_feedback_lookup as ifl')
+            ->leftJoin('general_LOOKUP as gl', function ($join) {
+                $join->on('ifl.category_id', '=', 'gl.id')
+                    ->where('gl.lookup_group', '=', 'instructor_feedback_heading');
+            })
+            ->select([
+                'ifl.id as source_feedback_id',
+                'ifl.category_id',
+                'gl.lookup_code as course_code',
+                'gl.lookup_text_value as category_label',
+                'ifl.short_text',
+                'ifl.long_text',
+                'ifl.links_lookup',
+            ])
+            ->get();
+
+        $total = count($sourceLookups);
+        if ($total === 0) {
+            if ($command) $command->info("No feedback lookups found in source system.");
+            return "No feedback lookups found.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $syncCount = 0;
+
+        foreach ($sourceLookups as $row) {
+            $this->dwh->table('Dim_Instructor_Feedback_Lookup')->updateOrInsert(
+                [
+                    // Exact 1:1 ID alignment
+                    'Feedback_Lookup_Key' => (int) $row->source_feedback_id
+                ],
+                [
+                    'Category_Id'     => $row->category_id,
+                    'Course_Code'     => $row->course_code,
+                    'Category_Label'  => $row->category_label ?? 'General',
+                    'Short_Text'      => $row->short_text,
+                    'Long_Text'       => $row->long_text,
+                    'Links_Lookup'    => $row->links_lookup,
+                    'updated_at'      => now(),
+                ]
+            );
+
+            if ($bar) $bar->advance();
+            $syncCount++;
+        }
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Successfully synced {$syncCount} Instructor Feedback Lookups with exact source IDs.";
+    }
+
     public function syncTrainingProviders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -1909,6 +1969,165 @@ class DataWarehouseSyncService
         }
 
         return "Fact_Rider_Activity_Outcome synced successfully with descriptive grades.";
+    }
+
+    public function syncFactRiderInstructorFeedback($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Instructor Feedback Sync...");
+
+        $watermark = $this->getWatermark('Fact_Rider_Instructor_Feedback');
+
+        if (!$this->sourceHasColumn('join_riders_courses', 'instructor_feedback')) {
+            if ($command) $command->warn("Column 'instructor_feedback' does not exist in source table.");
+            return "Skipped: 'instructor_feedback' column missing.";
+        }
+
+        $query = $this->source->table('join_riders_courses as jrc')
+            ->whereNotNull('jrc.instructor_feedback')
+            ->where('jrc.instructor_feedback', '!=', '[]')
+            ->where('jrc.instructor_feedback', '!=', '')
+            ->where('jrc.updated_at', '>', $watermark);
+
+        if ($this->sourceHasColumn('join_riders_courses', 'deleted_at')) {
+            $query->whereNull('jrc.deleted_at');
+        }
+
+        $query->select([
+            'jrc.rider_id',
+            'jrc.course_id',
+            'jrc.instructor_feedback',
+            'jrc.updated_at'
+        ])
+            ->orderBy('jrc.updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Rider Instructor Feedback are already up to date.");
+            return "Fact_Rider_Instructor_Feedback up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        $query->chunk(250, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+            foreach ($rows as $row) {
+                // 1. Resolve Rider Key
+                $riderKey = $this->dwh->table('Dim_Rider')
+                    ->where('Source_Rider_Id', $row->rider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Rider_Key');
+
+                // 2. Resolve Course Dimension
+                $course = $this->dwh->table('Dim_Course')
+                    ->where('Source_Course_Id', $row->course_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->first();
+
+                if (!$riderKey || !$course) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                // 3. Resolve Header Dimension
+                $delivery = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Delivery_Key', $course->Delivery_Key)
+                    ->first();
+
+                $fbData = json_decode($row->instructor_feedback, true);
+                if (!is_array($fbData)) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                // 4. Resolve Instructor Key
+                $instructorKey = null;
+                if (!empty($fbData['instructor_id'])) {
+                    $instructorKey = $this->dwh->table('Dim_Instructor')
+                        ->where('Source_Instructor_Id', $fbData['instructor_id'])
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Instructor_Key');
+                }
+
+                // Cleanly unpack JSON array string if nested
+                $paragraphsRaw = $fbData['paragraphs'] ?? [];
+                if (is_string($paragraphsRaw)) {
+                    $paragraphs = json_decode($paragraphsRaw, true) ?? [];
+                } else {
+                    $paragraphs = (array) $paragraphsRaw;
+                }
+
+                $feedbackDate = !empty($fbData['feedbackDate']) ? $fbData['feedbackDate'] : null;
+                $notes        = $fbData['notes'] ?? null;
+
+                // 5. Insert each exact paragraph ID
+                foreach ($paragraphs as $paragraphId) {
+                    $exactFeedbackId = (int) $paragraphId;
+                    if (!$exactFeedbackId) {
+                        continue;
+                    }
+
+                    $this->dwh->table('Fact_Rider_Instructor_Feedback')->updateOrInsert(
+                        [
+                            'Course_Key'          => $course->Course_Key,
+                            'Rider_Key'           => $riderKey,
+                            'Feedback_Lookup_Key' => $exactFeedbackId,
+                        ],
+                        [
+                            'Delivery_Key'          => $course->Delivery_Key,
+                            'Instructor_Key'        => $instructorKey,
+                            'Grant_Key'             => $delivery->Grant_Key ?? null,
+                            'Training_Provider_Key' => $delivery->Training_Provider_Key ?? null,
+                            'School_Key'            => $delivery->School_Key ?? null,
+                            'Feedback_Date'         => $feedbackDate,
+                            'Instructor_Notes'      => $notes,
+                            'Created_At'            => now(),
+                        ]
+                    );
+                }
+
+                if ($row->updated_at > $highestTimestamp) {
+                    $highestTimestamp = $row->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Rider_Instructor_Feedback', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Fact_Rider_Instructor_Feedback synced with exact statement IDs and soft-deletes filtered.";
+    }
+
+    private function mapFeedbackCategoryLabel(int $categoryId): string
+    {
+        return match ($categoryId) {
+            11      => 'Core - General Preparation & Setting Off',
+            12      => 'Core - Control, Steering & Braking',
+            13      => 'Core - Road Safety & Decision Making',
+            14      => 'Communication & Hand Signals',
+            15      => 'Observations & Shoulder Checks',
+            16      => 'Road Positioning (Primary/Secondary)',
+            17      => 'Junctions & Priorities',
+            18      => 'Advanced - Road Awareness & Route Planning',
+            19      => 'Advanced - Communication at Junctions',
+            20      => 'Advanced - Observations & Hazard Awareness',
+            21      => 'Advanced - Road Positioning & Blind Spots',
+            22      => 'Advanced - Junctions & Filtering',
+            23      => 'Plus Fix (Cycle Maintenance)',
+            24      => 'Plus Learn (Balance & Pedalling)',
+            25      => 'Plus Balance / Learn (Starting & Stopping)',
+            26      => 'Plus Balance (Gliding & Mounting)',
+            133, 134, 135, 136, 137, 138 => 'Praise & Positive Reinforcement',
+            default => 'General Feedback',
+        };
     }
 
     /**
