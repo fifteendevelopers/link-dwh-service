@@ -61,7 +61,7 @@ class DataWarehouseSyncService
     {
         if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Course Activities Dimension Sync...");
 
-        $sourceActivities = $this->source->table('course_activities_lookup')->get();
+        $sourceActivities = $this->source->table('course_activities_LOOKUP')->get();
 
         $total = count($sourceActivities);
         if ($total === 0) {
