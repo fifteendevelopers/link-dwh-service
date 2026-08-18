@@ -57,6 +57,50 @@ class DataWarehouseSyncService
         return "Successfully synced External Systems.";
     }
 
+    public function syncCourseActivities($command = null)
+    {
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Course Activities Dimension Sync...");
+
+        $sourceActivities = $this->source->table('course_activities_lookup')->get();
+
+        $total = count($sourceActivities);
+        if ($total === 0) {
+            if ($command) $command->info("No course activities found in source system.");
+            return "No course activities found.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $syncCount = 0;
+
+        foreach ($sourceActivities as $activity) {
+            $this->dwh->table('Dim_Course_Activity')->updateOrInsert(
+                [
+                    'Source_Activity_Id' => $activity->id
+                ],
+                [
+                    'Course_Code'          => $activity->course_id,
+                    'Activity_Code'        => $activity->activity_id,
+                    'Activity_Label'       => $activity->activity_label,
+                    'Activity_Description' => $activity->activity_description,
+                    'Outcomes_Lookup_Id'   => $activity->outcomes_lookup_id ?? null,
+                    'updated_at'           => now(),
+                ]
+            );
+
+            if ($bar) $bar->advance();
+            $syncCount++;
+        }
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Successfully synced {$syncCount} Course Activities into Dim_Course_Activity.";
+    }
+
     public function syncTrainingProviders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -1725,6 +1769,146 @@ class DataWarehouseSyncService
         }
 
         return "Fact_Rider_Course synced.";
+    }
+
+    public function syncFactRiderActivityOutcomes($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Activity Outcomes Sync...");
+
+        $watermark = $this->getWatermark('Fact_Rider_Activity_Outcome');
+
+        if (!$this->sourceHasColumn('join_riders_courses', 'outcomes')) {
+            if ($command) $command->warn("Column 'outcomes' does not exist in source table 'join_riders_courses'.");
+            return "Skipped: 'outcomes' column missing.";
+        }
+
+        $query = $this->source->table('join_riders_courses as jrc')
+            ->whereNotNull('jrc.outcomes')
+            ->where('jrc.outcomes', '!=', '[]')
+            ->where('jrc.outcomes', '!=', '')
+            ->where('jrc.updated_at', '>', $watermark)
+            ->select([
+                'jrc.rider_id',
+                'jrc.course_id',
+                'jrc.outcomes',
+                'jrc.updated_at'
+            ])
+            ->orderBy('jrc.updated_at', 'asc');
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Rider Activity Outcomes are already up to date.");
+            return "Fact_Rider_Activity_Outcome up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        // In-memory mapping table for outcomes metadata
+        $outcomesLookup = [
+            1 => ['code' => 'O', 'grade' => 'On my own'],
+            2 => ['code' => 'P', 'grade' => 'With practice'],
+            3 => ['code' => 'A', 'grade' => 'With assistance'],
+            4 => ['code' => 'N', 'grade' => 'Not seen'],
+        ];
+
+        // Cache Activity_Keys in memory: Source_Activity_Id => Activity_Key
+        $activityKeyMap = $this->dwh->table('Dim_Course_Activity')
+            ->pluck('Activity_Key', 'Source_Activity_Id')
+            ->toArray();
+
+        $query->chunk(250, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, $activityKeyMap, $outcomesLookup) {
+            foreach ($rows as $row) {
+                // 1. Resolve Rider Key
+                $riderKey = $this->dwh->table('Dim_Rider')
+                    ->where('Source_Rider_Id', $row->rider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Rider_Key');
+
+                // 2. Resolve Course Dimension
+                $course = $this->dwh->table('Dim_Course')
+                    ->where('Source_Course_Id', $row->course_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->first();
+
+                if (!$riderKey || !$course) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                // 3. Resolve Header dimension keys
+                $delivery = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Delivery_Key', $course->Delivery_Key)
+                    ->first();
+
+                $outcomes = json_decode($row->outcomes, true);
+                if (!is_array($outcomes)) {
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                // 4. Iterate over evaluated activity outcomes
+                foreach ($outcomes as $item) {
+                    $sourceActivityId = $item['id'] ?? null;
+                    $outcomeScore     = (int)($item['outcome'] ?? 0);
+
+                    if (!$sourceActivityId || empty($outcomeScore)) {
+                        continue;
+                    }
+
+                    $activityKey = $activityKeyMap[$sourceActivityId] ?? null;
+
+                    if (!$activityKey) {
+                        $activityKey = $this->dwh->table('Dim_Course_Activity')
+                            ->where('Source_Activity_Id', $sourceActivityId)
+                            ->value('Activity_Key');
+                    }
+
+                    if (!$activityKey) {
+                        continue;
+                    }
+
+                    // Map textual code and grade from lookup array
+                    $outcomeMeta = $outcomesLookup[$outcomeScore] ?? ['code' => null, 'grade' => null];
+
+                    $this->dwh->table('Fact_Rider_Activity_Outcome')->updateOrInsert(
+                        [
+                            'Course_Key'   => $course->Course_Key,
+                            'Rider_Key'    => $riderKey,
+                            'Activity_Key' => $activityKey,
+                        ],
+                        [
+                            'Delivery_Key'          => $course->Delivery_Key,
+                            'School_Key'            => $delivery->School_Key ?? null,
+                            'Training_Provider_Key' => $delivery->Training_Provider_Key ?? null,
+                            'Grant_Key'             => $delivery->Grant_Key ?? null,
+                            'Outcome_Score'         => $outcomeScore,
+                            'Outcome_Code'          => $outcomeMeta['code'],
+                            'Outcome_Grade'         => $outcomeMeta['grade'],
+                            'Created_At'            => now()
+                        ]
+                    );
+                }
+
+                if ($row->updated_at > $highestTimestamp) {
+                    $highestTimestamp = $row->updated_at;
+                }
+
+                if ($bar) $bar->advance();
+            }
+        });
+
+        $this->updateWatermark('Fact_Rider_Activity_Outcome', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Fact_Rider_Activity_Outcome synced successfully with descriptive grades.";
     }
 
     /**

@@ -18,8 +18,6 @@ class SyncToDataWarehouse extends Command
 
         $this->info("[".now()->format('Y-m-d H:i:s')."] Starting Data Warehouse Sync...");
 
-        // Starting with Training Providers only
-        // TODO: Add other Dimensions and Facts for sync process
         if ($table === 'all' || $table === 'external_systems') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing External Systems...");
 
@@ -28,6 +26,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync External Systems: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'course_activities_lookup') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Course Activities lookup...");
+
+            try {
+                $result = $syncService->syncCourseActivities($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Activities lookup: " . $e->getMessage());
             }
         }
 
@@ -162,6 +171,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Facts: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_rider_activity_outcome') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Course Activity outcomes...");
+
+            try {
+                $result = $syncService->syncFactRiderActivityOutcomes($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Activity outcomes: " . $e->getMessage());
             }
         }
 
