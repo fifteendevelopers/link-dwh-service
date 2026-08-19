@@ -235,13 +235,14 @@ class DataWarehouseSyncService
             ->where('Table_Name', 'Dim_School')
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
 
-        // 2. Count only new or changed schools
+        // 1. Count only new or changed schools
         $query = $this->source->table('vendor_edubase')
             ->where('updated_at', '>', $watermark);
 
         $total = $query->count();
 
         if ($total === 0) {
+            if ($command) $command->info("Schools are already up to date.");
             return "Schools are already up to date.";
         }
 
@@ -251,29 +252,43 @@ class DataWarehouseSyncService
         $highestTimestampSeen = $watermark;
         $syncCount = 0;
 
-        // 2. Chunking to avoid the memory exhaustion error
+        // 2. Chunked processing with deprivation and rural attributes
         $this->source->table('vendor_edubase')
-            ->select('id', 'urn', 'establishment_name', 'la_code', 'la_name', 'updated_at')
+            ->select([
+                'id',
+                'urn',
+                'establishment_name',
+                'la_code',
+                'la_name',
+                'urban_rural_code',
+                'urban_rural_name',
+                'deprivation_index',
+                'updated_at',
+            ])
             ->orderBy('id')
             ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
                 foreach ($schools as $school) {
+                    // Convert deprivation_index to clean integer IMD decile (1-10) or null
+                    $imdDecile = is_numeric($school->deprivation_index)
+                        ? (int) round((float) $school->deprivation_index)
+                        : null;
 
-                    // Using updateOrInsert (SCD Type 1)
-                    // This will update the existing record if the ID + System Key matches
                     $this->dwh->table('Dim_School')->updateOrInsert(
                         [
                             'Source_School_Id' => $school->id,
-                            'Source_System_Key' => $sourceSystemKey
+                            'Source_System_Key' => $sourceSystemKey,
                         ],
                         [
-                            'School_Urn' => $school->urn,
-                            'School_Name' => $school->establishment_name,
-                            'La_Code' => $school->la_code,
-                            'La_Name' => $school->la_name
+                            'School_Urn'                  => $school->urn,
+                            'School_Name'                 => $school->establishment_name,
+                            'La_Code'                     => $school->la_code,
+                            'La_Name'                     => $school->la_name,
+                            'Urban_Rural_Code'            => $school->urban_rural_code,
+                            'Rural_Urban_Classification'  => $school->urban_rural_name,
+                            'Imd_Decile'                  => $imdDecile,
                         ]
                     );
 
-                    // Track the latest timestamp processed
                     if ($school->updated_at > $highestTimestampSeen) {
                         $highestTimestampSeen = $school->updated_at;
                     }
@@ -287,7 +302,7 @@ class DataWarehouseSyncService
             ['Table_Name' => 'Dim_School'],
             [
                 'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total
+                'Records_Processed' => $total,
             ]
         );
 
@@ -296,7 +311,7 @@ class DataWarehouseSyncService
             $command->newLine();
         }
 
-        return "Successfully synced {$syncCount} Schools (Overwritten/Updated).";
+        return "Successfully synced {$syncCount} Schools.";
     }
 
     public function syncOrganisations($command = null)
