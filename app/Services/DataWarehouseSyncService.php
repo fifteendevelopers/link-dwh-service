@@ -105,7 +105,7 @@ class DataWarehouseSyncService
     {
         if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor Feedback Lookups Sync (Exact ID Mapping)...");
 
-        $sourceLookups = $this->source->table('instructor_feedback_lookup as ifl')
+        $sourceLookups = $this->source->table('instructor_feedback_LOOKUP as ifl')
             ->leftJoin('general_LOOKUP as gl', function ($join) {
                 $join->on('ifl.category_id', '=', 'gl.id')
                     ->where('gl.lookup_group', '=', 'instructor_feedback_heading');
