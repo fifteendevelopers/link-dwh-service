@@ -2,100 +2,93 @@
 
 namespace App\Reports\Handlers;
 
-use App\Reports\Contracts\ReportHandlerInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
-class DeliveriesPerGrantRecipientHandler implements ReportHandlerInterface
+class DeliveriesPerGrantRecipientHandler extends AbstractStreamingReportHandler
 {
-    /**
-     * Define and validate optional filters for the Deliveries per Grant Recipient report.
-     */
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
+            'year'         => 'nullable|integer',
             'recipient_id' => 'nullable|integer',
-            'grant_id'     => 'nullable|integer',
-            'provider_id'  => 'nullable|integer',
-            'status'       => 'nullable|string',
+            'start_date'   => 'nullable|string',
+            'end_date'     => 'nullable|string',
         ])->validate();
     }
 
-    /**
-     * Execute the DWH Query using your verified working SQL structure.
-     */
     public function execute(array $params): array
     {
-        $query = DB::connection('mysql')->table('Fact_Course_Delivery as f')
-            ->join('Dim_Delivery_Header as dh', 'f.Delivery_Key', '=', 'dh.Delivery_Key')
-            ->join('Dim_Course as c', 'f.Course_Key', '=', 'c.Course_Key')
-            ->join('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
-            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
-            ->join('Dim_Training_Provider as tp', 'f.Provider_Key', '=', 'tp.Provider_Key')
-            ->leftJoin('Dim_School as s', 'f.School_Key', '=', 's.School_Key')
-            ->leftJoin('Dim_Organisation as o', 'f.Organisation_Key', '=', 'o.Organisation_Key')
-            ->select([
-                'gr.Recipient_Name as Grant Recipient',
-                'g.Grant_Number as Grant Number',
-                'dh.Source_Delivery_Id as Delivery ID',
-                'tp.Provider_Name as Training Provider',
-                DB::raw("COALESCE(s.School_Name, o.Organisation_Name) as 'School / Organisation'"),
-                'c.Course_Level as Module',
-                'c.Year_Group as Year Group',
-                'dh.Delivery_Status as Status',
-                'f.Count_Booked_Confirmed as Booked',
-                'f.Count_Attended_Confirmed as Attended',
-                'f.Count_Male as Male',
-                'f.Count_Female as Female',
-                'f.Count_SEND as SEND',
-                'f.Count_Pupil_Premium as Pupil Premium',
+        ini_set('memory_limit', '512M');
+        ini_set('max_execution_time', '600');
 
-                // Granular Ethnicity Mappings matching your working query aliases exactly
-                'f.Count_Ethnicity_White_British as Ethnicity: White British',
-                'f.Count_Ethnicity_White_Irish as Ethnicity: White Irish',
-                'f.Count_Ethnicity_Gypsy_Romany as Ethnicity: Gypsy / Romany',
-                'f.Count_Ethnicity_White_Other as Ethnicity: White Other',
-                'f.Count_Ethnicity_Mixed_White_Black_Carib as Ethnicity: Mixed White & Black Caribbean',
-                'f.Count_Ethnicity_Mixed_White_Black_African as Ethnicity: Mixed White & Black African',
-                'f.Count_Ethnicity_Mixed_White_Asian as Ethnicity: Mixed White & Asian',
-                'f.Count_Ethnicity_Mixed_Other as Ethnicity: Mixed Other',
-                'f.Count_Ethnicity_Asian_Indian as Ethnicity: Asian Indian',
-                'f.Count_Ethnicity_Asian_Pakistani as Ethnicity: Asian Pakistani',
-                'f.Count_Ethnicity_Asian_Bangladeshi as Ethnicity: Asian Bangladeshi',
-                'f.Count_Ethnicity_Asian_Chinese as Ethnicity: Asian Chinese',
-                'f.Count_Ethnicity_Asian_Other as Ethnicity: Asian Other',
-                'f.Count_Ethnicity_Black_African as Ethnicity: Black African',
-                'f.Count_Ethnicity_Black_Caribbean as Ethnicity: Black Caribbean',
-                'f.Count_Ethnicity_Black_Other as Ethnicity: Black Other',
-                'f.Count_Ethnicity_Other_Arab as Ethnicity: Other Arab',
-                'f.Count_Ethnicity_Other_Any as Ethnicity: Other Any',
-                'f.Count_Ethnicity_Not_Stated as Ethnicity: Not Stated'
+        $query = $this->buildQuery($params);
+
+        if (empty($this->callbackUrl)) {
+            return $query->get()->map(fn($row) => (array)$row)->toArray();
+        }
+
+        $chunkSize = 500;
+
+        $query->chunk($chunkSize, function ($rows) {
+            $chunkArray = $rows->map(fn($row) => (array)$row)->toArray();
+            $this->transmitBatch($chunkArray, false);
+        });
+
+        $this->transmitBatch([], true);
+
+        return ['status' => 'async_completed'];
+    }
+
+    protected function buildQuery(array $params)
+    {
+        $query = DB::connection('mysql')->table('Fact_Course_Delivery as fcd')
+            ->join('Dim_Delivery_Header as dh', 'fcd.Delivery_Key', '=', 'dh.Delivery_Key')
+            ->join('Dim_Course as c', 'fcd.Course_Key', '=', 'c.Course_Key')
+            ->join('Dim_Grant as g', 'fcd.Grant_Key', '=', 'g.Grant_Key')
+            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+            ->leftJoin('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
+            ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
+            ->select([
+                'dh.Source_Delivery_Id as delivery_id',
+                'gr.Recipient_Name as recipient_name',
+                'gr.Recipient_Number as recipient_number',
+                'g.Grant_Number as grant_number',
+                'g.Grant_Source as grant_source',
+                'g.Grant_Period_Start_Year as financial_year',
+                'tp.Provider_Name as tp_name',
+                DB::raw("IFNULL(s.School_Urn, '') as school_urn"),
+                DB::raw("IFNULL(s.School_Name, 'N/A') as school_name"),
+                DB::raw("IFNULL(s.La_Name, '') as la_name"),
+                DB::raw("IFNULL(s.Rural_Urban_Classification, '') as rural_classification"),
+                'c.Course_Code as course_code',
+                'c.Course_Level as course_level',
+                DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y'), '') as date_delivery_start"),
+                DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_End, '%d/%m/%Y'), '') as date_delivery_end"),
+                'dh.Delivery_Status as delivery_status',
+                DB::raw("IFNULL(fcd.Riders_Enrolled_Count, 0) as riders_booked"),
+                DB::raw("IFNULL(fcd.Count_Attended_Confirmed, 0) as riders_attended"),
+                DB::raw("IFNULL(fcd.Count_Male, 0) as count_male"),
+                DB::raw("IFNULL(fcd.Count_Female, 0) as count_female"),
+                DB::raw("IFNULL(fcd.Count_SEND, 0) as count_send"),
+                DB::raw("IFNULL(fcd.Count_Pupil_Premium, 0) as count_pupil_premium"),
+                DB::raw("IFNULL(fcd.Count_Ethnic_Minority, 0) as count_ethnic_minority"),
             ])
-            // Matches: WHERE c.Parent_Course_Key IS NULL
             ->whereNull('c.Parent_Course_Key');
 
-        // Optional Runtime Parameter Filters (Only applied if sent in the API request body)
+        if (!empty($params['year'])) {
+            $query->where('g.Grant_Period_Start_Year', (int)$params['year']);
+        }
+
         if (!empty($params['recipient_id'])) {
-            $query->where('gr.Source_Recipient_Id', $params['recipient_id']);
+            $query->where('gr.Source_Recipient_Id', (int)$params['recipient_id']);
         }
 
-        if (!empty($params['grant_id'])) {
-            $query->where('g.Source_Grant_Id', $params['grant_id']);
+        if (!empty($params['start_date']) && !empty($params['end_date'])) {
+            $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'], $params['end_date']]);
         }
 
-        if (!empty($params['provider_id'])) {
-            $query->where('tp.Source_Provider_Id', $params['provider_id']);
-        }
-
-        if (!empty($params['status'])) {
-            $query->where('dh.Delivery_Status', $params['status']);
-        }
-
-        // Matches: ORDER BY gr.Recipient_Name, g.Grant_Number, dh.Source_Delivery_Id
-        return $query->orderBy('gr.Recipient_Name')
-            ->orderBy('g.Grant_Number')
-            ->orderBy('dh.Source_Delivery_Id')
-            ->get()
-            ->toArray();
+        return $query->orderBy('gr.Recipient_Name', 'asc')
+            ->orderBy('dh.Source_Delivery_Id', 'asc');
     }
 }
