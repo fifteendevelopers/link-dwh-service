@@ -10,7 +10,7 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
-            'recipient_id' => 'required|integer', // Required to lock down the local territory scope
+            'recipient_id' => 'nullable|integer', // Required to lock down the local territory scope
             'start_date'   => 'nullable|string',
             'end_date'     => 'nullable|string',
         ])->validate();
@@ -33,7 +33,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             // Drive from schools and pull down optional matching transaction slices
             ->leftJoin('Fact_Course_Delivery as f', 'f.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Delivery_Header as dh', 'f.Delivery_Key', '=', 'dh.Delivery_Key')
-            ->leftJoin('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
             ->leftJoin('Dim_Course as c', 'f.Course_Key', '=', 'c.Course_Key')
             ->leftJoin('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
@@ -46,7 +45,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
                 's.LA_Name',
                 's.LA_Code',
                 DB::raw("IFNULL(dh.Source_Delivery_Id, '') as Source_Delivery_Id"),
-                DB::raw("IFNULL(tp.Provider_Name, '') as Training_Provider"),
                 DB::raw("IFNULL(dh.Delivery_Status, 'No Deliveries Logged') as Delivery_Status"),
                 DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y'), '') as Date_Delivery_Start"),
                 DB::raw("IFNULL(f.Riders_Enrolled_Count, 0) as Count_Booked"),
@@ -66,6 +64,14 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
         if (!empty($params['start_date']) && !empty($params['end_date'])) {
             $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'], $params['end_date']]);
+        }
+
+        if (!empty($params['deliveries_type'])) {
+            if ($params['deliveries_type'] === 'with_deliveries') {
+                $query->whereNotNull('dh.Delivery_Key');
+            } elseif ($params['deliveries_type'] === 'no_deliveries') {
+                $query->whereNull('dh.Delivery_Key');
+            }
         }
 
         // Return alphabetically by URN to make gaps visually striking
