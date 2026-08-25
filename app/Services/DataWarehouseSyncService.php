@@ -1081,6 +1081,259 @@ class DataWarehouseSyncService
     }
 
     /**
+     * Sync Dim_Teacher_Trainer Dimension Table
+     */
+    public function syncTeacherTrainers($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Dimension - Teacher Trainers Sync...");
+
+        $watermark = $this->getWatermark('Dim_Teacher_Trainer') ?? '1900-01-01 00:00:00';
+
+        $query = $this->source->table('teacher_trainers')
+            ->where('updated_at', '>', $watermark);
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("Dim_Teacher_Trainer is already up to date.");
+            return "Dim_Teacher_Trainer up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+        $syncCount = 0;
+
+        // 🎯 Use chunkById on primary key 'id' to prevent pagination drift
+        $this->source->table('teacher_trainers')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, &$syncCount) {
+                foreach ($rows as $row) {
+                    $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
+
+                    $this->dwh->table('Dim_Teacher_Trainer')->updateOrInsert(
+                        [
+                            'Source_Teacher_Trainer_Id' => $row->id,
+                            'Source_System_Key'         => $sourceSystemKey,
+                        ],
+                        [
+                            'First_Name'                                  => $row->first_name,
+                            'Last_Name'                                   => $row->last_name,
+                            'Full_Name'                                   => $fullName ?: null,
+                            'Email'                                       => $row->email,
+                            'Telephone'                                   => $row->telephone,
+                            'Landline'                                    => $row->landline ?? null,
+                            'Main_School_Urn'                             => $row->main_school_urn,
+                            'Active'                                      => $row->active ?? 1,
+                            'Status'                                      => $row->status ?? 0,
+                            'Enable_Rider_Upload'                         => $row->enable_rider_upload ?? 0,
+                            'Enable_App_Access'                           => $row->enable_app_access ?? 0,
+                            'Enable_Get_Cycling_Admin'                    => $row->enable_get_cycling_admin ?? 0,
+                            'Pref_Receive_News'                           => $row->pref_receive_news ?? 0,
+                            'Pref_Delivering_Bikeability'                 => $row->pref_delivering_bikeability ?? 0,
+                            'Age_Range_Id'                                => $row->age_range_id,
+                            'Gender_Id'                                   => $row->gender_id,
+                            'Ethnicity_Id'                                => $row->ethnicity_id,
+                            'Date_Registered'                             => $row->date_registered,
+                            'Date_Renewal'                                => $row->date_renewal,
+                            'Date_Deregistered'                           => $row->date_deregistered,
+                            'Deregistration_Reason'                       => $row->deregistration_reason,
+                            'Rdc_Practical_Training_Complete_Date'        => $row->rdc_practical_training_complete_date,
+                            'In_School_Training_Complete_Date'            => $row->in_school_training_complete_date,
+                            'In_School_Training_Certificate_Download_Date'=> $row->in_school_training_certificate_download_date,
+                            'Send_Training_Complete_Date'                 => $row->send_training_complete_date,
+                            'Send_Training_Certificate_Download_Date'     => $row->send_training_certificate_download_date,
+                            'Updated_At'                                  => now(),
+                        ]
+                    );
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) $bar->advance();
+                    $syncCount++;
+                }
+            });
+
+        $this->updateWatermark('Dim_Teacher_Trainer', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Successfully synced {$syncCount} Teacher Trainers.";
+    }
+
+    /**
+     * 1. Sync Dim_Get_Cycling_Course (Full Catalog Sync)
+     */
+    public function syncGetCyclingCourses($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Course (Full Sync)...");
+
+        $courses = $this->source->table('get_cycling_courses')->get();
+
+        foreach ($courses as $c) {
+            $this->dwh->table('Dim_Get_Cycling_Course')->updateOrInsert(
+                [
+                    'Source_Course_Id'  => $c->id,
+                    'Source_System_Key' => $sourceSystemKey,
+                ],
+                [
+                    'Course_Code' => $c->course_id,
+                    'Course_Name' => $c->name,
+                    'Updated_At'  => now(),
+                ]
+            );
+        }
+
+        return "Dim_Get_Cycling_Course synced successfully.";
+    }
+
+    /**
+     * 2. Sync Dim_Get_Cycling_Rider (Watermark Sync with PII Filter)
+     */
+    public function syncGetCyclingRiders($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Rider...");
+
+        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider') ?? '1900-01-01 00:00:00';
+        $highestTimestamp = $watermark;
+
+        $total = $this->source->table('get_cycling_riders')
+            ->where('updated_at', '>', $watermark)
+            ->count();
+
+        if ($total === 0) {
+            if ($command) $command->info("Dim_Get_Cycling_Rider is up to date.");
+            return "Dim_Get_Cycling_Rider up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $this->source->table('get_cycling_riders')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+                foreach ($rows as $row) {
+                    // Resolve School Key
+                    $schoolKey = null;
+                    if (!empty($row->school_urn)) {
+                        $schoolKey = $this->dwh->table('Dim_School')
+                            ->where('School_Urn', (string)$row->school_urn)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('School_Key');
+                    }
+
+                    // Resolve Teacher Trainer Key
+                    $trainerKey = null;
+                    if (!empty($row->uploaded_by_teacher_trainer_id)) {
+                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                            ->where('Source_Teacher_Trainer_Id', (int)$row->uploaded_by_teacher_trainer_id)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('Teacher_Trainer_Key');
+                    }
+
+                    // Upsert excluding first_name, last_name, hash_first_name, hash_last_name
+                    $this->dwh->table('Dim_Get_Cycling_Rider')->updateOrInsert(
+                        [
+                            'Source_Rider_Id'   => $row->id,
+                            'Source_System_Key' => $sourceSystemKey,
+                        ],
+                        [
+                            'School_Key'                     => $schoolKey,
+                            'Teacher_Trainer_Key'            => $trainerKey,
+                            'School_Urn'                     => $row->school_urn ? (string)$row->school_urn : null,
+                            'Archived'                       => (bool)($row->archived ?? 0),
+                            'Archived_At'                    => $row->archived_at,
+                            'Upn'                            => $row->upn,
+                            'Year_Group'                     => $row->year_group,
+                            'Class_Name'                     => $row->class_name,
+                            'Gender'                         => $row->gender,
+                            'Ethnicity'                      => $row->ethnicity,
+                            'Send_Code'                      => $row->send_code,
+                            'Pupil_Premium'                  => $row->pp,
+                            'Uploaded_By_Teacher_Trainer_Id' => $row->uploaded_by_teacher_trainer_id ? (int)$row->uploaded_by_teacher_trainer_id : null,
+                            'Last_Activity_Date'             => $row->last_activity_date,
+                            'Updated_At'                     => now(),
+                        ]
+                    );
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) $bar->advance();
+                }
+            });
+
+        $this->updateWatermark('Dim_Get_Cycling_Rider', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Dim_Get_Cycling_Rider synced successfully.";
+    }
+
+    /**
+     * 3. Sync Dim_Get_Cycling_Rider_Note (Watermark Sync)
+     */
+    public function syncGetCyclingRiderNotes($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Rider_Note...");
+
+        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider_Note') ?? '1900-01-01 00:00:00';
+        $highestTimestamp = $watermark;
+
+        $this->source->table('get_cycling_rider_notes')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, &$highestTimestamp) {
+                foreach ($rows as $row) {
+                    $riderKey = $this->dwh->table('Dim_Get_Cycling_Rider')
+                        ->where('Source_Rider_Id', $row->rider_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('GC_Rider_Key');
+
+                    if (!$riderKey) {
+                        continue;
+                    }
+
+                    $this->dwh->table('Dim_Get_Cycling_Rider_Note')->updateOrInsert(
+                        [
+                            'Source_Note_Id'    => $row->id,
+                            'Source_System_Key' => $sourceSystemKey,
+                        ],
+                        [
+                            'GC_Rider_Key'    => $riderKey,
+                            'Source_Rider_Id' => $row->rider_id,
+                            'Note'            => $row->note,
+                            'Updated_At'      => now(),
+                        ]
+                    );
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+                }
+            });
+
+        $this->updateWatermark('Dim_Get_Cycling_Rider_Note', $highestTimestamp);
+
+        return "Dim_Get_Cycling_Rider_Note synced.";
+    }
+
+    /**
      * Synchronise the "Facts"
      */
     private function mapEthnicityToColumn($input)
@@ -3754,6 +4007,498 @@ class DataWarehouseSyncService
             $command->newLine();
         }
         return "Fact_Training_Provider_Renewal synced.";
+    }
+
+    /**
+     * Sync Fact_Teacher_Trainer_Delivery, Modules, and Granular Metrics
+     */
+    public function syncFactTeacherTrainerDeliveries($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Teacher Trainer Deliveries Sync...");
+
+        $watermark = $this->getWatermark('Fact_Teacher_Trainer_Delivery') ?? '1900-01-01 00:00:00';
+
+        $hasJsonColumn = $this->sourceHasColumn('teacher_trainer_deliveries', 'delivery_details');
+
+        $query = $this->source->table('teacher_trainer_deliveries')
+            ->where('updated_at', '>', $watermark);
+
+        if ($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at')) {
+            $query->whereNull('deleted_at');
+        }
+
+        $total = $query->count();
+        if ($total === 0) {
+            if ($command) $command->info("Fact_Teacher_Trainer_Delivery is up to date.");
+            return "Fact_Teacher_Trainer_Delivery up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $highestTimestamp = $watermark;
+
+        // Use chunkById on primary key 'id' to prevent pagination drift
+        $this->source->table('teacher_trainer_deliveries')
+            ->where('updated_at', '>', $watermark)
+            ->when($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at'), function ($q) {
+                $q->whereNull('deleted_at');
+            })
+            ->orderBy('id', 'asc')
+            ->chunkById(250, function ($rows) use ($sourceSystemKey, $hasJsonColumn, $bar, &$highestTimestamp) {
+                foreach ($rows as $row) {
+                    // 1. Resolve Dimension Keys
+                    $schoolKey = null;
+                    if (!empty($row->school_urn)) {
+                        $schoolKey = $this->dwh->table('Dim_School')
+                            ->where('School_Urn', $row->school_urn)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('School_Key');
+                    }
+
+                    $trainerKey = null;
+                    if (!empty($row->school_urn)) {
+                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                            ->where('Main_School_Urn', $row->school_urn)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('Teacher_Trainer_Key');
+                    }
+
+                    // 2. Sync Header Fact
+                    $this->dwh->table('Fact_Teacher_Trainer_Delivery')->updateOrInsert(
+                        [
+                            'Source_TT_Delivery_Id' => $row->id,
+                            'Source_System_Key'     => $sourceSystemKey,
+                        ],
+                        [
+                            'School_Key'          => $schoolKey,
+                            'Teacher_Trainer_Key' => $trainerKey,
+                            'School_Urn'          => $row->school_urn,
+                            'Date_Delivery_Start' => $row->date_delivery_start,
+                            'Date_Delivery_End'   => $row->date_delivery_end,
+                            'Completion_Date'     => $row->completion_date,
+                            'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? 0),
+                            'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? 0),
+                            'Has_Survey'          => (bool) ($row->has_survey ?? 0),
+                            'Notes'               => $row->notes,
+                            'Updated_At'          => now(),
+                        ]
+                    );
+
+                    $ttDeliveryKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery')
+                        ->where('Source_TT_Delivery_Id', $row->id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('TT_Delivery_Key');
+
+                    if (!$ttDeliveryKey) {
+                        if ($bar) $bar->advance();
+                        continue;
+                    }
+
+                    // 3. Sync Modules & Metrics (Legacy JSON vs Relational Tables)
+                    if ($hasJsonColumn && !empty($row->delivery_details)) {
+                        $this->syncModulesAndMetricsFromJson($row, $ttDeliveryKey, $sourceSystemKey);
+                    } else {
+                        $this->syncModulesAndMetricsFromRelational($row->id, $ttDeliveryKey, $sourceSystemKey);
+                    }
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) $bar->advance();
+                }
+            });
+
+        $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Fact_Teacher_Trainer_Delivery, Modules, and Metrics synced successfully.";
+    }
+
+    /**
+     * Path A: Parse Legacy delivery_details JSON column into Fact_Teacher_Trainer_Delivery_Module
+     * and generate synthetic metric rows into Fact_Teacher_Trainer_Delivery_Metric.
+     */
+    protected function syncModulesAndMetricsFromJson($row, int $ttDeliveryKey, string $sourceSystemKey): void
+    {
+        $modules = json_decode($row->delivery_details, true) ?? [];
+        if (!is_array($modules)) {
+            return;
+        }
+
+        foreach ($modules as $moduleIndex => $moduleEntry) {
+            $moduleId    = $moduleEntry['module']['id'] ?? 'unknown';
+            $moduleLabel = $moduleEntry['module']['label'] ?? null;
+            $attended    = $moduleEntry['delivery']['attended'] ?? [];
+
+            // Creating a deterministic synthetic module ID combining delivery ID and index
+            $syntheticModuleId = (int) ($row->id . sprintf('%03d', $moduleIndex));
+
+            // 1. Sync Module
+            $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')->updateOrInsert(
+                [
+                    'Source_TT_Delivery_Id' => $row->id,
+                    'Source_TT_Module_Id'   => $syntheticModuleId,
+                    'Source_System_Key'     => $sourceSystemKey,
+                ],
+                [
+                    'TT_Delivery_Key'       => $ttDeliveryKey,
+                    'Module_Id'             => $moduleId,
+                    'Module_Label'          => $moduleLabel,
+                    'Updated_At'            => now(),
+                ]
+            );
+
+            $ttDeliveryModuleKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')
+                ->where('TT_Delivery_Key', $ttDeliveryKey)
+                ->where('Module_Id', $moduleId)
+                ->value('TT_Delivery_Module_Key');
+
+            if (!$ttDeliveryModuleKey) {
+                continue;
+            }
+
+            // 2. Unpack JSON sections into granular metric records
+            $metricsList = [];
+
+            // Total
+            if (isset($attended['total'])) {
+                $metricsList[] = ['Category' => 'attended', 'Sub_Category' => 'total', 'Metric_Value' => (int) $attended['total']];
+            }
+
+            // Gender
+            foreach ($attended['gender'] ?? [] as $sub => $val) {
+                if ($val !== null) {
+                    $metricsList[] = ['Category' => 'gender', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
+                }
+            }
+
+            // Year Group
+            foreach ($attended['yeargroup'] ?? [] as $sub => $val) {
+                if ($val !== null) {
+                    $metricsList[] = ['Category' => 'yeargroup', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
+                }
+            }
+
+            // Ethnicity
+            foreach ($attended['ethnicity'] ?? [] as $sub => $val) {
+                if ($val !== null) {
+                    $metricsList[] = ['Category' => 'ethnicity', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
+                }
+            }
+
+            // SEND & FSM
+            if (isset($attended['send'])) {
+                $metricsList[] = ['Category' => 'send', 'Sub_Category' => 'send', 'Metric_Value' => (int) $attended['send']];
+            }
+            if (isset($attended['send_na'])) {
+                $metricsList[] = ['Category' => 'send', 'Sub_Category' => 'send_na', 'Metric_Value' => (int) $attended['send_na']];
+            }
+            if (isset($attended['free_school_meals'])) {
+                $metricsList[] = ['Category' => 'free_school_meals', 'Sub_Category' => 'free_school_meals', 'Metric_Value' => (int) $attended['free_school_meals']];
+            }
+            if (isset($attended['free_school_meals_na'])) {
+                $metricsList[] = ['Category' => 'free_school_meals', 'Sub_Category' => 'free_school_meals_na', 'Metric_Value' => (int) $attended['free_school_meals_na']];
+            }
+
+            // Insert/Update Metrics
+            foreach ($metricsList as $idx => $m) {
+                // Generate deterministic synthetic ID from delivery, module, and sequence
+                $syntheticMetricId = (int) ($row->id . sprintf('%02d', crc32($moduleId) % 100) . sprintf('%02d', $idx));
+
+                $this->dwh->table('Fact_Teacher_Trainer_Delivery_Metric')->updateOrInsert(
+                    [
+                        'Source_TT_Metric_Id' => $syntheticMetricId,
+                        'Source_System_Key'   => $sourceSystemKey,
+                    ],
+                    [
+                        'TT_Delivery_Key'        => $ttDeliveryKey,
+                        'TT_Delivery_Module_Key' => $ttDeliveryModuleKey,
+                        'Source_TT_Delivery_Id'  => $row->id,
+                        'Source_TT_Module_Id'    => null,
+                        'Category'               => $m['Category'],
+                        'Sub_Category'           => $m['Sub_Category'],
+                        'Metric_Value'           => $m['Metric_Value'],
+                        'Updated_At'             => now(),
+                    ]
+                );
+            }
+        }
+    }
+
+    /**
+     * Path B: Sync from normalized relational tables (teacher_trainer_delivery_modules & teacher_trainer_delivery_metrics)
+     */
+    protected function syncModulesAndMetricsFromRelational(int $sourceDeliveryId, int $ttDeliveryKey, string $sourceSystemKey): void
+    {
+        if (!$this->source->getSchemaBuilder()->hasTable('teacher_trainer_delivery_modules')) {
+            return;
+        }
+
+        $modules = $this->source->table('teacher_trainer_delivery_modules')
+            ->where('tt_delivery_id', $sourceDeliveryId)
+            ->get();
+
+        foreach ($modules as $module) {
+            // 1. Sync Module using Source_TT_Module_Id as the unique key
+            $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')->updateOrInsert(
+                [
+                    'Source_TT_Module_Id' => $module->id,
+                    'Source_System_Key'   => $sourceSystemKey,
+                ],
+                [
+                    'TT_Delivery_Key'       => $ttDeliveryKey,
+                    'Source_TT_Delivery_Id' => $sourceDeliveryId,
+                    'Module_Id'             => $module->module_id,
+                    'Module_Label'          => $module->module_label,
+                    'Updated_At'            => now(),
+                ]
+            );
+
+            // Look up by module id directly
+            $ttDeliveryModuleKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')
+                ->where('Source_TT_Module_Id', $module->id)
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->value('TT_Delivery_Module_Key');
+
+            if (!$ttDeliveryModuleKey || !$this->source->getSchemaBuilder()->hasTable('teacher_trainer_delivery_metrics')) {
+                continue;
+            }
+
+            // 2. Sync Granular Metrics
+            $metrics = $this->source->table('teacher_trainer_delivery_metrics')
+                ->where('tt_module_id', $module->id)
+                ->whereNotNull('value')
+                ->get();
+
+            foreach ($metrics as $m) {
+                $this->dwh->table('Fact_Teacher_Trainer_Delivery_Metric')->updateOrInsert(
+                    [
+                        'Source_TT_Metric_Id' => $m->id,
+                        'Source_System_Key'   => $sourceSystemKey,
+                    ],
+                    [
+                        'TT_Delivery_Key'        => $ttDeliveryKey,
+                        'TT_Delivery_Module_Key' => $ttDeliveryModuleKey,
+                        'Source_TT_Delivery_Id'  => $sourceDeliveryId,
+                        'Source_TT_Module_Id'    => $module->id,
+                        'Category'               => (string) $m->category,
+                        'Sub_Category'           => (string) $m->sub_category,
+                        'Metric_Value'           => (int) ($m->value ?? 0),
+                        'Updated_At'             => now(),
+                    ]
+                );
+            }
+        }
+    }
+
+    /**
+     * 4. Sync Fact_Get_Cycling_Rider_Course & Activities (Normalized JSON)
+     */
+    public function syncGetCyclingRiderCourses($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Fact_Get_Cycling_Rider_Course & Activities...");
+
+        $watermark = $this->getWatermark('Fact_Get_Cycling_Rider_Course') ?? '1900-01-01 00:00:00';
+        $highestTimestamp = $watermark;
+
+        $total = $this->source->table('get_cycling_join_riders_courses')
+            ->where('updated_at', '>', $watermark)
+            ->count();
+
+        if ($total === 0) {
+            if ($command) $command->info("Fact_Get_Cycling_Rider_Course is up to date.");
+            return "Fact_Get_Cycling_Rider_Course up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $this->source->table('get_cycling_join_riders_courses')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+                foreach ($rows as $row) {
+                    // 1. Resolve Foreign Keys
+                    $rider = $this->dwh->table('Dim_Get_Cycling_Rider')
+                        ->where('Source_Rider_Id', $row->rider_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->first(['GC_Rider_Key', 'School_Key']);
+
+                    $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
+                        ->where('Source_Course_Id', $row->course_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('GC_Course_Key');
+
+                    $trainerKey = null;
+                    if (!empty($row->teacher_trainer_id)) {
+                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                            ->where('Source_Teacher_Trainer_Id', $row->teacher_trainer_id)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('Teacher_Trainer_Key');
+                    }
+
+                    if ($rider && $courseKey) {
+                        // 2. Upsert Header Fact
+                        $this->dwh->table('Fact_Get_Cycling_Rider_Course')->updateOrInsert(
+                            [
+                                'Source_Join_Id'    => $row->id,
+                                'Source_System_Key' => $sourceSystemKey,
+                            ],
+                            [
+                                'GC_Rider_Key'               => $rider->GC_Rider_Key,
+                                'GC_Course_Key'              => $courseKey,
+                                'Teacher_Trainer_Key'        => $trainerKey,
+                                'School_Key'                 => $rider->School_Key,
+                                'Source_Rider_Id'            => $row->rider_id,
+                                'Source_Course_Id'           => $row->course_id,
+                                'Source_Teacher_Trainer_Id'  => $row->teacher_trainer_id,
+                                'Does_Not_Wish_To_Continue'  => (bool)($row->does_not_wish_to_continue ?? 0),
+                                'Overall_Progress'           => $row->overall_progress,
+                                'Has_Survey_Completed'       => (bool)($row->has_survey_completed ?? 0),
+                                'Updated_At'                 => now(),
+                            ]
+                        );
+
+                        $rcKey = $this->dwh->table('Fact_Get_Cycling_Rider_Course')
+                            ->where('Source_Join_Id', $row->id)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('GC_Rider_Course_Key');
+
+                        // 3. Normalize Activities JSON Array
+                        $activities = json_decode($row->activities, true) ?? [];
+                        if (is_array($activities) && $rcKey) {
+                            foreach ($activities as $act) {
+                                if (isset($act['id'])) {
+                                    $this->dwh->table('Fact_Get_Cycling_Rider_Course_Activity')->updateOrInsert(
+                                        [
+                                            'GC_Rider_Course_Key' => $rcKey,
+                                            'Activity_Id'         => (int)$act['id'],
+                                        ],
+                                        [
+                                            'Source_Join_Id'    => $row->id,
+                                            'Source_System_Key' => $sourceSystemKey,
+                                            'Activity_Score'    => (int)($act['value'] ?? 0),
+                                            'Updated_At'        => now(),
+                                        ]
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) $bar->advance();
+                }
+            });
+
+        $this->updateWatermark('Fact_Get_Cycling_Rider_Course', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Fact_Get_Cycling_Rider_Course and Activities synced.";
+    }
+
+    /**
+     * 5. Sync Fact_Get_Cycling_Survey_Response (Normalized Survey JSON)
+     */
+    public function syncGetCyclingSurveys($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Fact_Get_Cycling_Survey_Response...");
+
+        $watermark = $this->getWatermark('Fact_Get_Cycling_Survey_Response') ?? '1900-01-01 00:00:00';
+        $highestTimestamp = $watermark;
+
+        $total = $this->source->table('get_cycling_join_surveys_courses')
+            ->where('updated_at', '>', $watermark)
+            ->count();
+
+        if ($total === 0) {
+            if ($command) $command->info("Fact_Get_Cycling_Survey_Response is up to date.");
+            return "Fact_Get_Cycling_Survey_Response up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        $this->source->table('get_cycling_join_surveys_courses')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
+                foreach ($rows as $row) {
+                    // Resolve Dimensions
+                    $schoolKey = null;
+                    if (!empty($row->school_urn)) {
+                        $schoolKey = $this->dwh->table('Dim_School')
+                            ->where('School_Urn', (string)$row->school_urn)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('School_Key');
+                    }
+
+                    $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
+                        ->where('Source_Course_Id', $row->course_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('GC_Course_Key');
+
+                    // Unpack nested survey JSON
+                    $surveyData = json_decode($row->survey, true) ?? [];
+                    if (is_array($surveyData)) {
+                        foreach ($surveyData as $q) {
+                            $qId = (string)($q['q_id'] ?? '');
+                            foreach ($q['options'] ?? [] as $opt) {
+                                $optId = (string)($opt['id'] ?? '');
+                                $totalCount = (int)($opt['total'] ?? 0);
+
+                                $this->dwh->table('Fact_Get_Cycling_Survey_Response')->updateOrInsert(
+                                    [
+                                        'Source_Survey_Join_Id' => $row->id,
+                                        'Question_Id'           => $qId,
+                                        'Option_Id'             => $optId,
+                                        'Source_System_Key'     => $sourceSystemKey,
+                                    ],
+                                    [
+                                        'School_Key'       => $schoolKey,
+                                        'GC_Course_Key'    => $courseKey,
+                                        'School_Urn'       => (string)$row->school_urn,
+                                        'Source_Course_Id' => $row->course_id,
+                                        'Response_Count'   => $totalCount,
+                                        'Updated_At'       => now(),
+                                    ]
+                                );
+                            }
+                        }
+                    }
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) $bar->advance();
+                }
+            });
+
+        $this->updateWatermark('Fact_Get_Cycling_Survey_Response', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Fact_Get_Cycling_Survey_Response synced.";
     }
 
     /**

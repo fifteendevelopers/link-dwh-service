@@ -161,6 +161,50 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        if ($table === 'all' || $table === 'teacher_trainers') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Teacher Trainers...");
+
+            try {
+                $result = $syncService->syncTeacherTrainers($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Teacher Trainers: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'get_cycling_courses') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Courses...");
+
+            try {
+                $result = $syncService->syncGetCyclingCourses($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Courses: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'get_cycling_riders') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Riders...");
+
+            try {
+                $result = $syncService->syncGetCyclingRiders($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Riders: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'get_cycling_rider_notes') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Rider Notes...");
+
+            try {
+                $result = $syncService->syncGetCyclingRiderNotes($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Rider Notes: " . $e->getMessage());
+            }
+        }
+
         /* Now Sync the FACTS */
 
         if ($table === 'all' || $table === 'fact_course_delivery') {
@@ -349,6 +393,40 @@ class SyncToDataWarehouse extends Command
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Training Provider Renewals facts: " . $e->getMessage());
             }
         }
+
+        if ($table === 'all' || $table === 'fact_teacher_trainer_deliveries') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Teacher Trainer deliveries...");
+
+            try {
+                $result = $syncService->syncFactTeacherTrainerDeliveries($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Teacher Trainer deliveries: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_get_cycling_rider_courses') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling rider courses...");
+
+            try {
+                $result = $syncService->syncGetCyclingRiderCourses($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling rider courses: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_get_cycling_survey_courses') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling survey courses...");
+
+            try {
+                $result = $syncService->syncGetCyclingSurveys($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling survey courses: " . $e->getMessage());
+            }
+        }
+
 
         $this->info("[".now()->format('Y-m-d H:i:s')."] Sync Process Completed.");
     }
