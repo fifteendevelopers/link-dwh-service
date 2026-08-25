@@ -18,6 +18,8 @@ use App\Reports\Handlers\PreCourseFrequencyHandler;
 use App\Reports\Handlers\RiderActivityOutcomesHandler;
 use App\Reports\Handlers\SchoolDeliveriesAuditHandler;
 use App\Reports\Handlers\SchoolDeliveriesHandler;
+use App\Reports\Handlers\TeacherTrainerDeliveriesDetailedHandler;
+use App\Reports\Handlers\TeacherTrainerDeliveriesSimpleHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
 
 class ReportFactory
@@ -44,6 +46,8 @@ class ReportFactory
         'school-deliveries'                 => SchoolDeliveriesHandler::class,
         'school-deliveries-audit'           => SchoolDeliveriesAuditHandler::class,
         'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,
+        'teacher-trainer-deliveries-simple'   => TeacherTrainerDeliveriesSimpleHandler::class,
+        'teacher-trainer-deliveries-detailed' => TeacherTrainerDeliveriesDetailedHandler::class,
     ];
 
     /**
