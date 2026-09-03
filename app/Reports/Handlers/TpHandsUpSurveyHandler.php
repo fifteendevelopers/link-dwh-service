@@ -60,7 +60,7 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
                 "),
 
                 'c.Course_Level as Module',
-                'dh.Date_Delivery_End as Course Completion Date',
+                DB::raw("DATE_FORMAT(dh.Date_Delivery_End, '%d/%m/%Y') as 'Course Completion Date'"),
 
                 // Positional Metric Mapping Blocks
                 'f.Exp_Enjoyed as Q1_Enjoyed',

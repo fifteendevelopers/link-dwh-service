@@ -58,7 +58,7 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
                     ELSE REPLACE(REPLACE(c.Course_Level, 'level_', 'Level '), '_', ' ')
                 END as 'Course Name'"),
 
-                DB::raw("DATE_FORMAT(f.Source_Created_At, '%d %b %Y') as 'Received Date'"),
+                DB::raw("DATE_FORMAT(f.Source_Created_At, '%d/%m/%Y') as 'Received Date'"),
 
                 // Consent / Participation (q1)
                 DB::raw("CASE f.Like_To_Participate WHEN 1 THEN 'Yes' ELSE 'No' END as 'q1.1: Voluntary Participation'"),
