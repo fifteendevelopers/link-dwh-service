@@ -50,14 +50,14 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
                 'dh.Source_Delivery_Id as Delivery ID',
                 'tp.Provider_Name as Training provider',
 
-                // 🪄 Dynamic Case/When Switch Matrix: Resolves School, then Org, then defaults to "None"
+                // Dynamic Case/When Switch Matrix: Resolves School, then Org, then defaults to "None"
                 DB::raw("
-            CASE
-                WHEN dh.School_Key IS NOT NULL AND s.School_Name IS NOT NULL THEN s.School_Name
-                WHEN dh.Organisation_Key IS NOT NULL AND o.Organisation_Name IS NOT NULL THEN o.Organisation_Name
-                ELSE 'None'
-            END as `School/Organisation`
-        "),
+                    CASE
+                        WHEN dh.School_Key IS NOT NULL AND s.School_Name IS NOT NULL THEN s.School_Name
+                        WHEN dh.Organisation_Key IS NOT NULL AND o.Organisation_Name IS NOT NULL THEN o.Organisation_Name
+                        ELSE 'None'
+                    END as `School/Organisation`
+                "),
 
                 'c.Course_Level as Module',
                 'dh.Date_Delivery_End as Course Completion Date',
@@ -81,6 +81,8 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
                 'f.Conf_Less as Q4_Less',
                 'f.Conf_No_Diff as Q4_No_Diff',
                 'f.Conf_Not_Sure as Q4_Not_Sure',
+                's.Rural_Urban_Classification',
+                's.Imd_Decile'
             ]);
 
         // --- Financial Year Date Range Calculator Layer ---

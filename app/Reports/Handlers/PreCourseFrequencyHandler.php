@@ -92,7 +92,9 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as 'Frequency: Other'")
+                END as 'Frequency: Other'"),
+                's.Rural_Urban_Classification',
+                's.Imd_Decile'
             ]);
 
         // --- Strict Param Isolations ---

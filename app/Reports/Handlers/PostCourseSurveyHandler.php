@@ -149,7 +149,10 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
 
                 // q11 & q12 Columns
                 DB::raw("CASE f.Likely_To_Recommend WHEN 1 THEN 'Very likely' WHEN 2 THEN 'Likely' WHEN 3 THEN 'Unlikely' ELSE 'N/A' END as 'q11'"),
-                DB::raw("IF(f.Likert_Life_Skill IS NULL AND f.Likert_Fitness IS NULL, 'Yes', 'No') as 'q12: Optional Questions Skipped'")
+                DB::raw("IF(f.Likert_Life_Skill IS NULL AND f.Likert_Fitness IS NULL, 'Yes', 'No') as 'q12: Optional Questions Skipped'"),
+
+                's.Rural_Urban_Classification',
+                's.Imd_Decile'
             ]);
 
         // --- Year Filter Rule Block ---

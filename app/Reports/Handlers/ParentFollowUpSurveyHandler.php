@@ -53,62 +53,30 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
      */
     protected function mapRowToPayload($row): array
     {
-        // 1. Resolve module prefix from Course_Label_Raw
-        $moduleKey = match (strtolower(trim($row->Course_Label_Raw))) {
-            'level 1' => 'level_1',
-            'level 2' => 'level_2',
-            'level 1 & 2 combined', 'level 1 & 2' => 'level_1_2',
-            'level 3' => 'level_3',
-            'learn to ride' => 'learn_to_ride',
-            default => str_replace(' ', '_', strtolower(trim($row->Course_Label_Raw)))
-        };
-
-        // Helper to rebuild full code (e.g. 'o5' -> 'level_1_2_q1a_o5')
-        $formatCode = fn($qKey, $val) => (!empty($val) && $val !== 'N/A') ? "{$moduleKey}_{$qKey}_{$val}" : null;
-
-        // Reconstruct q6 array (encouragement factors)
-        $q6Codes = [];
-        if (!empty($row->q6_encouragement_factors)) {
-            $rawQ6 = is_string($row->q6_encouragement_factors)
-                ? json_decode($row->q6_encouragement_factors, true)
-                : $row->q6_encouragement_factors;
-
-            if (is_array($rawQ6)) {
-                $q6Codes = array_map(function($item) use ($moduleKey) {
-                    // Handles both full strings or short 'o1' strings stored in DWH
-                    return str_contains($item, '_o') ? $item : "{$moduleKey}_q6_{$item}";
-                }, $rawQ6);
-            }
-        }
-
         return [
-            'grant_number'             => $row->Grant_Number ?? 'N/A',
-            'grant_source'             => $row->Grant_Source ?? 'N/A',
+            'grant_number'             => $row->Grant_Number,
+            'grant_source'             => $row->Grant_Source,
             'recipient_name'           => $row->Recipient_Name ?? 'Non Grant Delivery',
             'delivery_id'              => $row->Source_Delivery_Id,
             'rider_id'                 => $row->Source_Rider_Id,
             'provider_name'            => $row->Provider_Name,
-            'establishment_name'       => $row->School_Name ?? '',
-            'school_urn'               => $row->School_Urn ?? '',
+            'establishment_name'       => $row->School_Name,
+            'school_urn'               => $row->School_Urn,
             'course_label'             => $row->Course_Label_Raw,
             'created_at'               => $row->Survey_Created_At,
             'invitation_month'         => $row->Invitation_Month,
-
-            // Reconstructed payload array matching the local JSON array format
-            'survey_json' => array_filter([
-                $formatCode('q1a', $row->q1a_freq_school),
-                $formatCode('q1b', $row->q1b_freq_leisure),
-                $formatCode('q1c', $row->q1c_freq_exercise),
-                $formatCode('q2a', $row->q2a_conf_use_cycle),
-                $formatCode('q2b', $row->q2b_conf_cycle_roads),
-                $formatCode('q3a', $row->q3a_enc_use_cycle),
-                $formatCode('q3b', $row->q3b_enc_cycle_roads),
-                $formatCode('q4',  $row->q4_safety_roads),
-                $formatCode('q5',  $row->q5_child_desire),
-                !empty($q6Codes) ? $q6Codes : null,
-                $formatCode('q7',  $row->q7_conf_change),
-                $formatCode('q8',  $row->q8_physical_activity),
-            ])
+            'q1a_freq_school'          => $row->q1a_freq_school,
+            'q1b_freq_leisure'         => $row->q1b_freq_leisure,
+            'q1c_freq_exercise'        => $row->q1c_freq_exercise,
+            'q2a_conf_use_cycle'       => $row->q2a_conf_use_cycle,
+            'q2b_conf_cycle_roads'     => $row->q2b_conf_cycle_roads,
+            'q3a_enc_use_cycle'        => $row->q3a_enc_use_cycle,
+            'q3b_enc_cycle_roads'      => $row->q3b_enc_cycle_roads,
+            'q4_safety_roads'          => $row->q4_safety_roads,
+            'q5_child_desire'          => $row->q5_child_desire,
+            'q6_encouragement_factors' => $row->q6_encouragement_factors,
+            'q7_conf_change'           => $row->q7_conf_change,
+            'q8_physical_activity'     => $row->q8_physical_activity,
         ];
     }
 
@@ -147,7 +115,9 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
                 'pfu.q5_child_desire',
                 'pfu.q6_encouragement_factors',
                 'pfu.q7_conf_change',
-                'pfu.q8_physical_activity'
+                'pfu.q8_physical_activity',
+                's.Rural_Urban_Classification',
+                's.Imd_Decile'
             ])
             ->where('g.Grant_Period_Start_Year', (int)$params['year'])
             ->where('d.Digitisation_Booking', true);
