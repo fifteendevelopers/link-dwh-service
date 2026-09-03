@@ -76,6 +76,9 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             ->leftJoin('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
 
+            // Left Join the Training Provider
+            ->leftJoin('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
+
             ->select([
                 DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
                 DB::raw("IFNULL(g.Grant_Source, 'N/A') as Grant_Source"),
@@ -85,6 +88,7 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
                 's.LA_Name',
                 's.LA_Code',
                 DB::raw("IFNULL(dh.Source_Delivery_Id, '') as Source_Delivery_Id"),
+                'tp.Provider_Name as Provider_Name',
                 DB::raw("IFNULL(dh.Delivery_Status, 'No Deliveries Logged') as Delivery_Status"),
                 DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y'), '') as Date_Delivery_Start"),
                 DB::raw("IFNULL(f.Riders_Enrolled_Count, 0) as Count_Booked"),
