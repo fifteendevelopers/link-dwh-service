@@ -46,12 +46,36 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
     protected function buildQuery(array $params)
     {
+        $startDate = !empty($params['start_date']) ? $params['start_date'] : null;
+        $endDate   = !empty($params['end_date']) ? $params['end_date'] : null;
+
         $query = DB::connection('mysql')->table('Dim_School as s')
+            // 1. Left join Fact_Course_Delivery
             ->leftJoin('Fact_Course_Delivery as f', 'f.School_Key', '=', 's.School_Key')
-            ->leftJoin('Dim_Delivery_Header as dh', 'f.Delivery_Key', '=', 'dh.Delivery_Key')
-            ->leftJoin('Dim_Course as c', 'f.Course_Key', '=', 'c.Course_Key')
+
+            // 2. Left join Delivery Header with DATE filters moved INTO the JOIN condition
+            ->leftJoin('Dim_Delivery_Header as dh', function ($join) use ($startDate, $endDate) {
+                $join->on('f.Delivery_Key', '=', 'dh.Delivery_Key');
+
+                if ($startDate && $endDate) {
+                    $join->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
+                } elseif ($startDate) {
+                    $join->where('dh.Date_Delivery_Start', '>=', $startDate);
+                } elseif ($endDate) {
+                    $join->where('dh.Date_Delivery_Start', '<=', $endDate);
+                }
+            })
+
+            // 3. Left join Course ensuring parent course exclusion stays scoped to deliveries
+            ->leftJoin('Dim_Course as c', function ($join) {
+                $join->on('f.Course_Key', '=', 'c.Course_Key')
+                    ->whereNull('c.Parent_Course_Key');
+            })
+
+            // 4. Left join Grant & Recipient
             ->leftJoin('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+
             ->select([
                 DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
                 DB::raw("IFNULL(g.Grant_Source, 'N/A') as Grant_Source"),
@@ -65,22 +89,17 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
                 DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y'), '') as Date_Delivery_Start"),
                 DB::raw("IFNULL(f.Riders_Enrolled_Count, 0) as Count_Booked"),
                 DB::raw("IFNULL(f.Riders_Completed_Count, 0) as Count_Attended"),
-            ])
-            ->where(function($q) {
-                $q->whereNull('c.Parent_Course_Key');
-            });
+            ]);
 
+        // Recipient filtering: If filtered by recipient, include matching deliveries OR schools with no deliveries
         if (!empty($params['recipient_id'])) {
-            $query->where(function($sub) use ($params) {
+            $query->where(function ($sub) use ($params) {
                 $sub->where('gr.Source_Recipient_Id', $params['recipient_id'])
-                    ->orWhereNull('f.School_Key');
+                    ->orWhereNull('dh.Delivery_Key');
             });
         }
 
-        if (!empty($params['start_date']) && !empty($params['end_date'])) {
-            $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'], $params['end_date']]);
-        }
-
+        // Deliveries Type filter: safely operates after the conditional join
         if (!empty($params['deliveries_type'])) {
             if ($params['deliveries_type'] === 'with_deliveries') {
                 $query->whereNotNull('dh.Delivery_Key');
