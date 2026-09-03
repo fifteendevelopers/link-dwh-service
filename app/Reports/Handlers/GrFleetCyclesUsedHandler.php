@@ -42,9 +42,12 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
 
         // Iterate through records in lightweight increments to bypass process RAM inflation
         $query->chunk($chunkSize, function ($rows) {
-            $chunkArray = $rows->map(fn($row) => (array)$row)->toArray();
+            $chunkArray = $rows->map(function ($row) {
+                $data = (array) $row;
+                $data['Total Fleet Cycles Used'] = (int) ($data['Total Fleet Cycles Used'] ?? 0);
+                return $data;
+            })->toArray();
 
-            // Transmit the current batch over HTTP to your local source webhook
             $this->transmitBatch($chunkArray, false);
         });
 
