@@ -14,9 +14,8 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
-            'instructor_id' => 'nullable|integer',
-            'delivery_id'   => 'nullable|integer',
-            'year'          => 'nullable|integer|digits:4', // Allows overriding current year for historical deep-dives
+            'training_provider_id' => 'required|integer',
+            'year'                 => 'nullable|integer|digits:4',
         ])->validate();
     }
 
@@ -32,6 +31,7 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
         $query = DB::connection('mysql')->table('Fact_Instructor_Delivery as fi')
             ->join('Dim_Delivery_Header as dh', 'fi.Delivery_Key', '=', 'dh.Delivery_Key')
             ->join('Dim_Instructor as i', 'fi.Instructor_Key', '=', 'i.Instructor_Key')
+            ->join('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
@@ -42,7 +42,8 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
                 'i.Source_Instructor_Id as Instructor ID',
                 DB::raw("CONCAT(i.First_Name,' ',i.Last_Name) as 'Instructor Name'"),
                 'dh.Delivery_Status as Delivery Status'
-            ]);
+            ])
+            ->where('tp.Source_Provider_Id', (int) $params['training_provider_id']);
 
         // --- Handle Year Constraint ---
         // If an explicit override year is sent in parameters, use it. Otherwise, default strictly to Current Year
@@ -50,15 +51,6 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
             $query->whereRaw('YEAR(dh.Date_Delivery_Start) = ?', [$params['year']]);
         } else {
             $query->whereRaw('YEAR(dh.Date_Delivery_Start) = YEAR(CURDATE())');
-        }
-
-        // --- Dynamic Contextual Parameter Filters ---
-        if (isset($params['instructor_id']) && $params['instructor_id'] !== '' && $params['instructor_id'] !== null) {
-            $query->where('i.Source_Instructor_Id', $params['instructor_id']);
-        }
-
-        if (isset($params['delivery_id']) && $params['delivery_id'] !== '' && $params['delivery_id'] !== null) {
-            $query->where('dh.Source_Delivery_Id', $params['delivery_id']);
         }
 
         // Return sorted output listing instructors grouped by delivery tracks cleanly
