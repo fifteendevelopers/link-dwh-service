@@ -105,36 +105,42 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             $query->where('dh.Consent_Cutoff_Date', '<=', $params['end_date']);
         }
 
-        $results = $query->orderBy('g.Grant_Number')
-            ->orderBy('dh.Source_Delivery_Id')
-            ->get();
+        $query->orderBy('g.Grant_Number')
+            ->orderBy('dh.Source_Delivery_Id');
 
-        // Convert explicitly into an array of associative dictionaries
-        return $results->map(function ($row) {
-            return [
-                'Grant_Number'       => $row->Grant_Number ?? 'N/A',
-                'Grant_Source'       => $row->Grant_Source ?? 'N/A',
-                'Recipient_Name'     => $row->Recipient_Name ?? 'Unlinked',
-                'Delivery_ID'        => $row->Delivery_ID ?? '',
-                'Training_Provider'  => $row->Training_Provider ?? '',
-                'School_Name'        => $row->School_Name ?? 'N/A',
-                'Rider_ID'           => $row->Rider_ID ?? '',
-                'Year_Group'         => $row->Year_Group ?? '',
-                'Consent_Cutoff_Date'=> $row->Consent_Cutoff_Date ?? null,
-                'Frequency_School'   => $row->Frequency_School ?? 'Not Provided',
-                'Frequency_Leisure'  => $row->Frequency_Leisure ?? 'Not Provided',
-                'Frequency_Exercise' => $row->Frequency_Exercise ?? 'Not Provided',
-                'Frequency_Other'    => $row->Frequency_Other ?? 'Not Provided',
-            ];
-        })->toArray();
+        // Fallback for direct local calls (Tinker / synchronous CLI)
+        if (empty($this->callbackUrl)) {
+            return $query->get()->map(fn($row) => $this->mapRow($row))->toArray();
+        }
+
+        // Stream chunk-by-chunk to the callback URL
+        $query->chunk(500, function ($rows) {
+            $chunk = $rows->map(fn($row) => $this->mapRow($row))->toArray();
+            $this->transmitBatch($chunk, false);
+        });
+
+        // Transmit closing handshake EOF packet to trigger Link finalizer
+        $this->transmitBatch([], true);
+
+        return ['status' => 'async_completed'];
     }
 
-    private function translateFreq($val): string
+    protected function mapRow($row): array
     {
-        return match ((int) $val) {
-            5 => 'Not applicable', 6 => 'Never', 7 => 'Less than once a month',
-            8 => 'Once or twice a month', 9 => 'One to three days a week',
-            10 => 'Four or more days a week', default => 'Not Provided'
-        };
+        return [
+            'Grant_Number'        => $row->Grant_Number ?? 'N/A',
+            'Grant_Source'        => $row->Grant_Source ?? 'N/A',
+            'Recipient_Name'      => $row->Recipient_Name ?? 'Unlinked',
+            'Delivery_ID'         => $row->Delivery_ID ?? '',
+            'Training_Provider'   => $row->Training_Provider ?? '',
+            'School_Name'         => $row->School_Name ?? 'N/A',
+            'Rider_ID'            => $row->Rider_ID ?? '',
+            'Year_Group'          => $row->Year_Group ?? '',
+            'Consent_Cutoff_Date' => $row->Consent_Cutoff_Date ?? null,
+            'Frequency_School'    => $row->Frequency_School ?? 'Not Provided',
+            'Frequency_Leisure'   => $row->Frequency_Leisure ?? 'Not Provided',
+            'Frequency_Exercise'  => $row->Frequency_Exercise ?? 'Not Provided',
+            'Frequency_Other'     => $row->Frequency_Other ?? 'Not Provided',
+        ];
     }
 }
