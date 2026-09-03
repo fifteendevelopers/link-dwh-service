@@ -51,7 +51,31 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
 
         $chunkSize = 1000;
         $query->chunk($chunkSize, function ($rows) use ($mapRecord) {
+
+            foreach ($rows as $rawRow) {
+                $rawArr = (array) $rawRow;
+                if (str_contains($rawArr['gr_name'] ?? $rawArr['GR Name'] ?? '', 'Anthony Gell')) {
+                    Log::info("DWH DEBUG: Raw SQL row for Anthony Gell", [
+                        'raw_keys'   => array_keys($rawArr),
+                        'raw_cycles' => $rawArr['total_fleet_cycles_used'] ?? ($rawArr['Total Fleet Cycles Used'] ?? 'KEY_NOT_FOUND'),
+                        'var_dump'   => var_export($rawArr['total_fleet_cycles_used'] ?? null, true),
+                    ]);
+                    break;
+                }
+            }
+
             $chunkArray = $rows->map($mapRecord)->toArray();
+
+            foreach ($chunkArray as $mapped) {
+                if (str_contains($mapped['GR Name'] ?? '', 'Anthony Gell')) {
+                    Log::info("DWH DEBUG: Transmitting Mapped row for Anthony Gell", [
+                        'mapped_val'  => $mapped['Total Fleet Cycles Used'],
+                        'mapped_type' => gettype($mapped['Total Fleet Cycles Used']),
+                    ]);
+                    break;
+                }
+            }
+            
             $this->transmitBatch($chunkArray, false);
         });
 
