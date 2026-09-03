@@ -40,15 +40,15 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
-                'g.Grant_Number as Grant Number',
-                'g.Grant_Source as Grant Source',
-                'gr.Recipient_Name as Grant Recipient',
-                'dh.Source_Delivery_Id as Delivery ID',
-                'tp.Provider_Name as Training Provider',
-                DB::raw("COALESCE(s.School_Name, o.Organisation_Name, 'N/A') as 'School/Organisation'"),
-                'r.Source_Rider_Id as Rider ID',
-                'dc.Year_Group as Year Group',
-                DB::raw("DATE_FORMAT(dh.Consent_Cutoff_Date, '%d/%m/%Y') as 'Consent Cutoff Date'"),
+                'g.Grant_Number',
+                'g.Grant_Source',
+                'gr.Recipient_Name',
+                'dh.Source_Delivery_Id as Delivery_ID',
+                'tp.Provider_Name as Training_Provider',
+                DB::raw("COALESCE(s.School_Name, o.Organisation_Name, 'N/A') as School_Name"),
+                'r.Source_Rider_Id as Rider_ID',
+                'dc.Year_Group',
+                'dh.Consent_Cutoff_Date',
 
                 // Frequency: To/From School Mapping
                 DB::raw("CASE dc.Pre_Freq_To_School
@@ -59,7 +59,7 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as 'Frequency: To/From School'"),
+                END as Frequency_School"),
 
                 // Frequency: Leisure Mapping
                 DB::raw("CASE dc.Pre_Freq_Leisure
@@ -70,7 +70,7 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as 'Frequency: Leisure'"),
+                END as Frequency_Leisure"),
 
                 // Frequency: Exercise Mapping
                 DB::raw("CASE dc.Pre_Freq_Exercise
@@ -81,7 +81,7 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as 'Frequency: Exercise'"),
+                END as Frequency_Exercise"),
 
                 // Frequency: Other Mapping
                 DB::raw("CASE dc.Pre_Freq_Other
@@ -92,7 +92,7 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as 'Frequency: Other'"),
+                END as Frequency_Other"),
                 's.Rural_Urban_Classification',
                 's.Imd_Decile'
             ]);
