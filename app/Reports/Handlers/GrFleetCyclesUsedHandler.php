@@ -41,17 +41,15 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
                 'Delivery Month'          => (string) ($row['delivery_month'] ?? ($row['Delivery Month'] ?? ($row[3] ?? ''))),
                 'Delivery Year'           => (string) ($row['delivery_year'] ?? ($row['Delivery Year'] ?? ($row[4] ?? ''))),
                 'Delivery Count'          => (int) ($row['delivery_count'] ?? ($row['Delivery Count'] ?? ($row[5] ?? 0))),
-                'Total Fleet Cycles Used' => $cycles, // Integer 0
+                'Total Fleet Cycles Used' => $cycles,
             ];
         };
 
-        // Fallback for CLI/Tinker without callbackUrl
         if (empty($this->callbackUrl)) {
             return $query->get()->map($mapRecord)->toArray();
         }
 
         $chunkSize = 1000;
-
         $query->chunk($chunkSize, function ($rows) use ($mapRecord) {
             $chunkArray = $rows->map($mapRecord)->toArray();
             $this->transmitBatch($chunkArray, false);
