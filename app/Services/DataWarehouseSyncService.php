@@ -2999,6 +2999,131 @@ class DataWarehouseSyncService
         return "Fact_Grant_Claims synced.";
     }
 
+    public function syncFactGrantFormatDft($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Grant Format DfT Allocations Sync...");
+        }
+
+        $watermark = $this->getWatermark('Fact_Grant_Allocation_Dft') ?? '1900-01-01 00:00:00';
+        $highestTimestamp = $watermark;
+
+        $baseQuery = $this->source->table('grant_format_dft')
+            ->where('updated_at', '>', $watermark)
+            ->whereNull('deleted_at');
+
+        $total = $baseQuery->count();
+        if ($total === 0) {
+            if ($command) {
+                $command->info("Fact_Grant_Allocation_Dft is up to date.");
+            }
+            return "Fact_Grant_Allocation_Dft up to date.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) {
+            $bar->start();
+        }
+
+        $syncCount = 0;
+
+        $this->source->table('grant_format_dft')
+            ->where('updated_at', '>', $watermark)
+            ->whereNull('deleted_at')
+            ->orderBy('id', 'asc')
+            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, &$syncCount) {
+                foreach ($rows as $row) {
+                    // 1. Resolve Dim_Grant foreign surrogate key
+                    $grantKey = $this->dwh->table('Dim_Grant')
+                        ->where('Source_Grant_Id', $row->grant_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Grant_Key');
+
+                    if (!$grantKey) {
+                        if ($bar) {
+                            $bar->advance();
+                        }
+                        continue;
+                    }
+
+                    $sendAmount      = (float) ($row->grant_send ?? 0);
+                    $inclusionAmount = (float) ($row->grant_inclusion ?? 0);
+
+                    // 2. Upsert DfT Allocation Fact Record
+                    $this->dwh->table('Fact_Grant_Allocation_Dft')->updateOrInsert(
+                        [
+                            'Source_Allocation_Id' => $row->id,
+                            'Source_System_Key'    => $sourceSystemKey,
+                        ],
+                        [
+                            'Grant_Key'                => $grantKey,
+                            'Source_Grant_Id'          => $row->grant_id,
+                            'Max_Allocation'           => (float) ($row->max_allocation ?? 0),
+                            'Total_Levels'             => (int) ($row->total_levels ?? 0),
+                            'Total_Plus'               => (int) ($row->total_plus ?? 0),
+                            'Places_Level_1'           => (int) ($row->places_level_1 ?? 0),
+                            'Grant_Level_1'            => (float) ($row->grant_level_1 ?? 0),
+                            'Places_Level_1_2'         => (int) ($row->places_level_1_2 ?? 0),
+                            'Grant_Level_1_2'          => (float) ($row->grant_level_1_2 ?? 0),
+                            'Places_Level_2'           => (int) ($row->places_level_2 ?? 0),
+                            'Grant_Level_2'            => (float) ($row->grant_level_2 ?? 0),
+                            'Places_Level_3'           => (int) ($row->places_level_3 ?? 0),
+                            'Grant_Level_3'            => (float) ($row->grant_level_3 ?? 0),
+                            'Places_Plus_Balance'      => (int) ($row->places_plus_balance ?? 0),
+                            'Grant_Plus_Balance'       => (float) ($row->grant_plus_balance ?? 0),
+                            'Places_Plus_Bus'          => (int) ($row->places_plus_bus ?? 0),
+                            'Grant_Plus_Bus'           => (float) ($row->grant_plus_bus ?? 0),
+                            'Places_Plus_Fix'          => (int) ($row->places_plus_fix ?? 0),
+                            'Grant_Plus_Fix'           => (float) ($row->grant_plus_fix ?? 0),
+                            'Places_Plus_Learn'        => (int) ($row->places_plus_learn ?? 0),
+                            'Grant_Plus_Learn'         => (float) ($row->grant_plus_learn ?? 0),
+                            'Places_Plus_On_Show'      => (int) ($row->places_plus_on_show ?? 0),
+                            'Grant_Plus_On_Show'       => (float) ($row->grant_plus_on_show ?? 0),
+                            'Places_Plus_Parents'      => (int) ($row->places_plus_parents ?? 0),
+                            'Grant_Plus_Parents'       => (float) ($row->grant_plus_parents ?? 0),
+                            'Places_Plus_Promotion'    => (int) ($row->places_plus_promotion ?? 0),
+                            'Grant_Plus_Promotion'     => (float) ($row->grant_plus_promotion ?? 0),
+                            'Places_Plus_Recycled'     => (int) ($row->places_plus_recycled ?? 0),
+                            'Grant_Plus_Recycled'      => (float) ($row->grant_plus_recycled ?? 0),
+                            'Places_Plus_Ride'         => (int) ($row->places_plus_ride ?? 0),
+                            'Grant_Plus_Ride'          => (float) ($row->grant_plus_ride ?? 0),
+                            'Places_Plus_Transition'   => (int) ($row->places_plus_transition ?? 0),
+                            'Grant_Plus_Transition'    => (float) ($row->grant_plus_transition ?? 0),
+                            'Places_Plus_Family'       => (int) ($row->places_plus_family ?? 0),
+                            'Grant_Plus_Family'        => (float) ($row->grant_plus_family ?? 0),
+                            'Places_Plus_Adult'        => (int) ($row->places_plus_adult ?? 0),
+                            'Grant_Plus_Adult'         => (float) ($row->grant_plus_adult ?? 0),
+                            'Grant_Send'               => $sendAmount,
+                            'Places_Send'              => (int) ($row->places_send ?? 0),
+                            'Grant_Inclusion'          => $inclusionAmount,
+                            'Places_Inclusion'         => (int) ($row->places_inclusion ?? 0),
+                            'Updated_At'               => now(),
+                        ]
+                    );
+
+                    if ($row->updated_at > $highestTimestamp) {
+                        $highestTimestamp = $row->updated_at;
+                    }
+
+                    if ($bar) {
+                        $bar->advance();
+                    }
+                    $syncCount++;
+                }
+            });
+
+        $this->updateWatermark('Fact_Grant_Allocation_Dft', $highestTimestamp);
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine();
+        }
+
+        return "Successfully synced {$syncCount} DfT Grant Allocations.";
+    }
+
+
     public function syncFactInstructorDeliveries($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();

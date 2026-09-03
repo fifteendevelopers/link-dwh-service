@@ -10,7 +10,7 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
-            'grant_source' => 'nullable|string',
+            'grant_source'   => 'nullable|string',
             'financial_year' => 'nullable|integer',
         ])->validate();
     }
@@ -58,6 +58,11 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
         $inclusionReasons = !empty($row->inclusion_reasons_compiled) ? rtrim($row->inclusion_reasons_compiled, ' |') : '';
         $categoriesList   = !empty($row->categories_compiled) ? $row->categories_compiled : '';
 
+        // Budget Calculations
+        $totalAvailableBudget = (float)($row->total_available_budget ?? 0);
+        $totalGrantClaimed    = (float)($row->total_grant_claimed ?? 0);
+        $budgetRemaining      = $totalAvailableBudget - $totalGrantClaimed;
+
         return [
             $row->Grant_Number,
             $row->Claim_Number,
@@ -67,7 +72,9 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
             $inclusionAmount,
             $categoriesList,
             $inclusionReasons,
-            ($sendAmount + $inclusionAmount)
+            ($sendAmount + $inclusionAmount),
+            $totalAvailableBudget,
+            $budgetRemaining,
         ];
     }
 
@@ -89,12 +96,27 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
             ->selectRaw("GROUP_CONCAT(CONCAT(Inclusion_Category, ' - £', Inclusion_Amount, ' - ', COALESCE(Inclusion_Delivery, 'No delivery provided'), ' - No details given') SEPARATOR ' | ') as inclusion_reasons_compiled")
             ->groupBy('Claim_Key');
 
-        // 3. Construct main structural query tracking criteria rules
+        // 3. Total Available Budget from Fact_Grant_Allocation_Dft per Grant_Key
+        $allocationSubquery = DB::connection('mysql')->table('Fact_Grant_Allocation_Dft')
+            ->select('Grant_Key')
+            ->selectRaw("SUM(COALESCE(Grant_Send, 0) + COALESCE(Grant_Inclusion, 0)) as total_available_budget")
+            ->groupBy('Grant_Key');
+
+        // 4. Cumulative Claimed Total (Status 0 and 1) per Grant_Key
+        $claimsTotalsSubquery = DB::connection('mysql')->table('Fact_Grant_Claims')
+            ->select('Grant_Key')
+            ->selectRaw("SUM(COALESCE(Send_Claimable_Amount, 0) + COALESCE(Inclusion_Claimable_Amount, 0)) as total_grant_claimed")
+            ->whereIn('Status_Raw', [0, 1])
+            ->groupBy('Grant_Key');
+
+        // 5. Construct main query
         $query = DB::connection('mysql')->table('Fact_Grant_Claims as c')
             ->join('Dim_Grant as g', 'c.Grant_Key', '=', 'g.Grant_Key')
             ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->leftJoinSub($sendSubquery, 's_sub', 'c.Claim_Key', '=', 's_sub.Claim_Key')
             ->leftJoinSub($inclusionSubquery, 'i_sub', 'c.Claim_Key', '=', 'i_sub.Claim_Key')
+            ->leftJoinSub($allocationSubquery, 'alloc', 'c.Grant_Key', '=', 'alloc.Grant_Key')
+            ->leftJoinSub($claimsTotalsSubquery, 'clms', 'c.Grant_Key', '=', 'clms.Grant_Key')
             ->select([
                 'g.Grant_Number',
                 'c.Claim_Number',
@@ -103,7 +125,9 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
                 'c.Inclusion_Claimable_Amount',
                 's_sub.send_deliveries_compiled',
                 'i_sub.categories_compiled',
-                'i_sub.inclusion_reasons_compiled'
+                'i_sub.inclusion_reasons_compiled',
+                DB::raw("COALESCE(alloc.total_available_budget, 0) as total_available_budget"),
+                DB::raw("COALESCE(clms.total_grant_claimed, 0) as total_grant_claimed"),
             ])
             ->where('c.Status_Raw', 1);
 
