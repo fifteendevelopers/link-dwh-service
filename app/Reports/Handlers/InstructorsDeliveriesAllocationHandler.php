@@ -2,29 +2,24 @@
 
 namespace App\Reports\Handlers;
 
-use App\Reports\Contracts\ReportHandlerInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
-class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
+class InstructorsDeliveriesAllocationHandler extends AbstractStreamingReportHandler
 {
-    /**
-     * Define and validate optional runtime filters for this report.
-     */
     public function validate(array $parameters): array
     {
         return Validator::make($parameters, [
             'training_provider_id' => 'required|integer',
-            'year'                 => 'nullable|integer|digits:4',
+            'financial_year'       => 'nullable',
+            'start_date'           => 'nullable|string',
+            'end_date'             => 'nullable|string',
+            'year'                 => 'nullable|integer',
         ])->validate();
     }
 
-    /**
-     * Execute the Instructor Allocation Matrix query.
-     */
     public function execute(array $params): array
     {
-        // Allocate runtime performance extensions for DWH multi-table joins
         ini_set('memory_limit', '1024M');
         ini_set('max_execution_time', '300');
 
@@ -35,28 +30,37 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
-                'dh.Source_Delivery_Id as Delivery ID',
-                DB::raw("DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y') as Date_Delivery_Start"),
-                DB::raw("COALESCE(s.School_Name, 'N/A') as 'School Name'"),
-                DB::raw("COALESCE(o.Organisation_Name, 'N/A') as 'Organisation Name'"),
-                'i.Source_Instructor_Id as Instructor ID',
-                DB::raw("CONCAT(i.First_Name,' ',i.Last_Name) as 'Instructor Name'"),
-                'dh.Delivery_Status as Delivery Status'
+                'dh.Source_Delivery_Id as delivery_id',
+                DB::raw("DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y') as date_delivery_start"),
+                DB::raw("COALESCE(NULLIF(s.School_Name, ''), NULLIF(o.Organisation_Name, ''), 'N/A') as establishment_name"),
+                'i.Source_Instructor_Id as instructor_number',
+                'i.First_Name as first_name',
+                'i.Last_Name as last_name',
+                'dh.Delivery_Status as delivery_status'
             ])
             ->where('tp.Source_Provider_Id', (int) $params['training_provider_id']);
 
-        // --- Handle Year Constraint ---
-        // If an explicit override year is sent in parameters, use it. Otherwise, default strictly to Current Year
-        if (isset($params['year']) && $params['year'] !== '' && $params['year'] !== null) {
+        if (!empty($params['start_date']) && !empty($params['end_date'])) {
+            $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'], $params['end_date']]);
+        } elseif (!empty($params['year'])) {
             $query->whereRaw('YEAR(dh.Date_Delivery_Start) = ?', [$params['year']]);
-        } else {
-            $query->whereRaw('YEAR(dh.Date_Delivery_Start) = YEAR(CURDATE())');
         }
 
-        // Return sorted output listing instructors grouped by delivery tracks cleanly
-        return $query->orderBy('dh.Source_Delivery_Id')
-            ->orderBy('Instructor Name')
-            ->get()
-            ->toArray();
+        $query->orderBy('dh.Source_Delivery_Id')
+            ->orderBy('i.Last_Name')
+            ->orderBy('i.First_Name');
+
+        if (empty($this->callbackUrl)) {
+            return $query->get()->map(fn($row) => (array) $row)->toArray();
+        }
+
+        $query->chunk(500, function ($rows) {
+            $chunk = $rows->map(fn($row) => array_values((array) $row))->toArray();
+            $this->transmitBatch($chunk, false);
+        });
+
+        $this->transmitBatch([], true);
+
+        return ['status' => 'async_completed'];
     }
 }
