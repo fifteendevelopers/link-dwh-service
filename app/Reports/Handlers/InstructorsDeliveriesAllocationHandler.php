@@ -36,6 +36,7 @@ class InstructorsDeliveriesAllocationHandler implements ReportHandlerInterface
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
                 'dh.Source_Delivery_Id as Delivery ID',
+                'dh.Date_Delivery_Start as Delivery Start Date',
                 DB::raw("COALESCE(s.School_Name, 'N/A') as 'School Name'"),
                 DB::raw("COALESCE(o.Organisation_Name, 'N/A') as 'Organisation Name'"),
                 'i.Source_Instructor_Id as Instructor ID',
