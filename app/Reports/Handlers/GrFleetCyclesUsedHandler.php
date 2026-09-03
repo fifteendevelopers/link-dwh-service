@@ -16,8 +16,8 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
             'recipient_id' => 'nullable|integer',
             'provider_id'  => 'nullable|integer',
             'year'         => 'nullable|integer|digits:4',
-            'start_date'   => 'nullable|date_format:Y-m-d', // Maps from ExportsController routing boundaries
-            'end_date'     => 'nullable|date_format:Y-m-d',   // Maps from ExportsController routing boundaries
+            'start_date'   => 'nullable|date_format:Y-m-d',
+            'end_date'     => 'nullable|date_format:Y-m-d',  
         ])->validate();
     }
 
@@ -31,6 +31,28 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
 
         $query = $this->buildQuery($params);
 
+        $mapRecord = function ($row) {
+            $row = (array) $row;
+
+            // Check every possible variation of the key
+            $cycles = $row['total_fleet_cycles_used']
+                ?? $row['Total Fleet Cycles Used']
+                ?? $row[6]
+                ?? null;
+
+            $cycles = (int) ($cycles ?? 0);
+
+            return [
+                'GR Name'                 => (string) ($row['gr_name'] ?? $row['GR Name'] ?? $row[0] ?? 'Unlinked'),
+                'TP Name'                 => (string) ($row['tp_name'] ?? $row['TP Name'] ?? $row[1] ?? ''),
+                'TP Active?'              => (string) ($row['tp_active'] ?? $row['TP Active?'] ?? $row[2] ?? 'Inactive'),
+                'Delivery Month'          => (string) ($row['delivery_month'] ?? $row['Delivery Month'] ?? $row[3] ?? ''),
+                'Delivery Year'           => (string) ($row['delivery_year'] ?? $row['Delivery Year'] ?? $row[4] ?? ''),
+                'Delivery Count'          => (int) ($row['delivery_count'] ?? $row['Delivery Count'] ?? $row[5] ?? 0),
+                'Total Fleet Cycles Used' => (string) $cycles,
+            ];
+        };
+
         // Synchronous fallback loop if filters are present or no callback is set
         $isScopedFilter = !empty($params['recipient_id']) || !empty($params['provider_id']);
         if ($isScopedFilter || empty($this->callbackUrl)) {
@@ -41,13 +63,8 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
         $chunkSize = 1000;
 
         // Iterate through records in lightweight increments to bypass process RAM inflation
-        $query->chunk($chunkSize, function ($rows) {
-            $chunkArray = $rows->map(function ($row) {
-                $data = (array) $row;
-                $data['Total Fleet Cycles Used'] = (int) ($data['Total Fleet Cycles Used'] ?? 0);
-                return $data;
-            })->toArray();
-
+        $query->chunk($chunkSize, function ($rows) use ($mapRecord) {
+            $chunkArray = $rows->map($mapRecord)->toArray();
             $this->transmitBatch($chunkArray, false);
         });
 
@@ -67,13 +84,13 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
             ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->join('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
             ->select([
-                'gr.Recipient_Name as GR Name',
-                'tp.Provider_Name as TP Name',
-                DB::raw("CASE WHEN tp.Is_Active = 'Y' THEN 'Active' ELSE 'Inactive' END as 'TP Active?'"),
-                DB::raw("MONTHNAME(dh.Date_Delivery_Start) as 'Delivery Month'"),
-                DB::raw("YEAR(dh.Date_Delivery_Start) as 'Delivery Year'"),
-                DB::raw("COUNT(dh.Delivery_Key) as 'Delivery Count'"),
-                DB::raw("COALESCE(SUM(CAST(NULLIF(dh.fleet_cycles_used, '') AS SIGNED)), 0) as 'Total Fleet Cycles Used'")
+                'gr.Recipient_Name as gr_name',
+                'tp.Provider_Name as tp_name',
+                DB::raw("CASE WHEN tp.Is_Active = 'Y' THEN 'Active' ELSE 'Inactive' END as tp_active"),
+                DB::raw("MONTHNAME(dh.Date_Delivery_Start) as delivery_month"),
+                DB::raw("YEAR(dh.Date_Delivery_Start) as delivery_year"),
+                DB::raw("COUNT(dh.Delivery_Key) as delivery_count"),
+                DB::raw("CAST(COALESCE(SUM(CAST(NULLIF(dh.fleet_cycles_used, '') AS SIGNED)), 0) AS CHAR) as total_fleet_cycles_used")
             ])
             ->where('gr.Is_Current', 1)
             ->where('tp.Is_Current', 1);
