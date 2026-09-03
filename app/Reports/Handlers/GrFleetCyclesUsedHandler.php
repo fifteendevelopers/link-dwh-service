@@ -70,7 +70,7 @@ class GrFleetCyclesUsedHandler extends AbstractStreamingReportHandler
                 DB::raw("MONTHNAME(dh.Date_Delivery_Start) as 'Delivery Month'"),
                 DB::raw("YEAR(dh.Date_Delivery_Start) as 'Delivery Year'"),
                 DB::raw("COUNT(dh.Delivery_Key) as 'Delivery Count'"),
-                DB::raw("SUM(COALESCE(dh.fleet_cycles_used, 0)) as 'Total Fleet Cycles Used'")
+                DB::raw("COALESCE(SUM(CAST(NULLIF(dh.fleet_cycles_used, '') AS SIGNED)), 0) as 'Total Fleet Cycles Used'")
             ])
             ->where('gr.Is_Current', 1)
             ->where('tp.Is_Current', 1);
