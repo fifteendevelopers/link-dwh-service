@@ -3796,7 +3796,7 @@ class DataWarehouseSyncService
             1 => 'In Progress',
             2 => 'Completed',
             3 => 'Cancelled',
-            default => 'Unknown'
+            default => 'Draft'
         };
     }
 
@@ -4743,6 +4743,125 @@ class DataWarehouseSyncService
             // Fallback to false if the network blips or structural access is restricted
             return false;
         }
+    }
+
+    /**
+     * Purge soft-deleted deliveries from the DWH and cascade across all dependent facts.
+     */
+    public function purgeSoftDeletedDeliveries($command = null, int $chunkSize = 500, bool $dryRun = false): string
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Scanning source system for soft-deleted deliveries...");
+        }
+
+        // 1. Verify source table has soft delete support
+        if (!$this->sourceHasColumn('deliveries', 'deleted_at')) {
+            if ($command) {
+                $command->warn("Source table 'deliveries' has no 'deleted_at' column.");
+            }
+            return "Skipped: 'deliveries.deleted_at' column does not exist.";
+        }
+
+        // 2. Identify soft-deleted count in source system
+        $totalFoundOnSource = $this->source->table('deliveries')
+            ->whereNotNull('deleted_at')
+            ->count();
+
+        if ($totalFoundOnSource === 0) {
+            if ($command) {
+                $command->info("No soft-deleted deliveries found in source database.");
+            }
+            return "No soft-deleted deliveries found.";
+        }
+
+        if ($command) {
+            $modeNotice = $dryRun ? ' [DRY RUN]' : '';
+            $command->comment("Found {$totalFoundOnSource} soft-deleted deliveries on source{$modeNotice}. Verifying against DWH...");
+        }
+
+        // Initialize progress bar only during real execution
+        $bar = ($command && !$dryRun)
+            ? $command->getOutput()->createProgressBar($totalFoundOnSource)
+            : null;
+
+        if ($bar) {
+            $bar->start();
+        }
+
+        $purgedCount = 0;
+
+        // 3. Process source soft-deletes in chunks
+        $this->source->table('deliveries')
+            ->whereNotNull('deleted_at')
+            ->select('id')
+            ->orderBy('id', 'asc')
+            ->chunk($chunkSize, function ($sourceRows) use ($sourceSystemKey, &$purgedCount, $command, $dryRun, $bar) {
+                $deletedIds = $sourceRows->pluck('id')->toArray();
+                $batchSourceCount = count($deletedIds);
+
+                // Locate matching dimension records currently residing in the DWH
+                $dwhDeliveries = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->whereIn('Source_Delivery_Id', $deletedIds)
+                    ->select(['Delivery_Key', 'Source_Delivery_Id'])
+                    ->get();
+
+                if ($dwhDeliveries->isNotEmpty()) {
+                    $deliveryKeys = $dwhDeliveries->pluck('Delivery_Key')->toArray();
+                    $batchCount   = count($deliveryKeys);
+
+                    if ($dryRun) {
+                        if ($command) {
+                            $sampleKeys = implode(', ', array_slice($deliveryKeys, 0, 5));
+                            $command->warn("[DRY RUN] Would purge {$batchCount} deliveries in current chunk (Sample Keys: {$sampleKeys}...)");
+                        }
+                        $purgedCount += $batchCount;
+                    } else {
+                        // 4. Cascade delete across all linked facts and dimensions inside a transaction
+                        $this->dwh->transaction(function () use ($deliveryKeys) {
+                            // Dependent Fact Tables
+                            $this->dwh->table('Fact_Course_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Instructor_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Rider_Instructor_Feedback')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Rider_Activity_Outcome')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Course_Activity_Outcome_Summary')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Parent_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_HandsUp_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Fact_Follow_Up_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+
+                            // Linked Child Dimensions
+                            $this->dwh->table('Dim_Consent')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            $this->dwh->table('Dim_Course')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+
+                            // Master Header Dimension
+                            $this->dwh->table('Dim_Delivery_Header')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                        });
+
+                        $purgedCount += $batchCount;
+                    }
+                }
+
+                // Advance the progress bar by the number of source records scanned
+                if ($bar) {
+                    $bar->advance($batchSourceCount);
+                }
+            });
+
+        if ($bar) {
+            $bar->finish();
+            $command->newLine(2);
+        }
+
+        $action = $dryRun ? 'Identified' : 'Successfully purged';
+        $message = "{$action} {$purgedCount} ghost delivery records and their dependent facts from the DWH.";
+
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] {$message}");
+        }
+
+        return $message;
     }
 
 }
