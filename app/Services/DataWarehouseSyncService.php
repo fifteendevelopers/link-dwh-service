@@ -4488,6 +4488,7 @@ class DataWarehouseSyncService
                                 'Does_Not_Wish_To_Continue'  => (bool)($row->does_not_wish_to_continue ?? 0),
                                 'Overall_Progress'           => $row->overall_progress,
                                 'Has_Survey_Completed'       => (bool)($row->has_survey_completed ?? 0),
+                                'Source_Updated_At'          => $row->updated_at,
                                 'Updated_At'                 => now(),
                             ]
                         );

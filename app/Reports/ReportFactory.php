@@ -5,6 +5,9 @@ namespace App\Reports;
 use App\Reports\Contracts\ReportHandlerInterface;
 use App\Reports\Handlers\DeliveriesHandler;
 use App\Reports\Handlers\DeliveriesPerGrantRecipientHandler;
+use App\Reports\Handlers\GetCyclingAppDataDetailedHandler;
+use App\Reports\Handlers\GetCyclingAppDataHandler;
+use App\Reports\Handlers\GetCyclingAppDataTeacherTrainerHandler;
 use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
@@ -30,6 +33,9 @@ class ReportFactory
     protected static array $registry = [
         'deliveries'                        => DeliveriesHandler::class,
         'deliveries-per-grant-recipient'    => DeliveriesPerGrantRecipientHandler::class,
+        'get-cycling-app-data'                 => GetCyclingAppDataHandler::class,
+        'get-cycling-app-data-detailed'        => GetCyclingAppDataDetailedHandler::class,
+        'get-cycling-app-data-teacher-trainer' => GetCyclingAppDataTeacherTrainerHandler::class,
         'gr-fleet-cycles-used'              => GrFleetCyclesUsedHandler::class,
         'grant-claim-send-and-inclusion'    => GrantClaimSendAndInclusionHandler::class,
         'grant-funding-overview'            => Handlers\GrantFundingOverviewHandler::class,
