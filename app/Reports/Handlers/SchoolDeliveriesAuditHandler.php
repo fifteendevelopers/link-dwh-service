@@ -3,7 +3,6 @@
 namespace App\Reports\Handlers;
 
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
@@ -14,7 +13,7 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             'recipient_id'    => 'nullable|integer',
             'start_date'      => 'nullable|string',
             'end_date'        => 'nullable|string',
-            'deliveries_type' => 'nullable|string', // Fixed: now preserved in validated array
+            'deliveries_type' => 'nullable|string',
         ])->validate();
     }
 
@@ -25,12 +24,10 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
         $query = $this->buildQuery($params);
 
-        // If no async callback URL is set, return raw array (synchronous fallback)
         if (empty($this->callbackUrl)) {
             return $query->get()->map(fn($row) => (array)$row)->toArray();
         }
 
-        // Stream chunks back to Link webhook
         $chunkSize = 500;
 
         $query->chunk($chunkSize, function ($rows) {
@@ -38,7 +35,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             $this->transmitBatch($chunkArray, false);
         });
 
-        // Send final batch flag to tell Link the export is complete
         $this->transmitBatch([], true);
 
         return ['status' => 'async_completed'];
@@ -48,71 +44,135 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
     {
         $startDate = !empty($params['start_date']) ? $params['start_date'] : null;
         $endDate   = !empty($params['end_date']) ? $params['end_date'] : null;
+        $deliveriesType = $params['deliveries_type'] ?? null;
+        $recipientId = !empty($params['recipient_id']) ? (int) $params['recipient_id'] : null;
 
-        $query = DB::connection('mysql')->table('Dim_School as s')
-            // 1. Left join Fact_Course_Delivery
-            ->leftJoin('Fact_Course_Delivery as f', 'f.School_Key', '=', 's.School_Key')
+        // -------------------------------------------------------------------------
+        // Case A: Strictly Schools with NO Deliveries
+        // -------------------------------------------------------------------------
+        if ($deliveriesType === 'no_deliveries') {
+            $query = DB::connection('mysql')->table('Dim_School as s')
+                ->select([
+                    DB::raw("'N/A' as Grant_Number"),
+                    DB::raw("'N/A' as Grant_Source"),
+                    DB::raw("'Unlinked' as Recipient_Name"),
+                    's.School_Urn',
+                    's.School_Name',
+                    's.LA_Name',
+                    's.LA_Code',
+                    DB::raw("'' as Source_Delivery_Id"),
+                    DB::raw("'' as Provider_Name"),
+                    DB::raw("'No Deliveries Logged' as Delivery_Status"),
+                    DB::raw("'' as Date_Delivery_Start"),
+                    DB::raw("0 as Count_Booked"),
+                    DB::raw("0 as Count_Attended"),
+                ])
+                ->whereNotExists(function ($sub) use ($startDate, $endDate, $recipientId) {
+                    $sub->select(DB::raw(1))
+                        ->from('Dim_Delivery_Header as dh')
+                        ->join('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
+                        ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+                        ->whereColumn('dh.School_Key', 's.School_Key');
 
-            // 2. Left join Delivery Header with DATE filters moved INTO the JOIN condition
-            ->leftJoin('Dim_Delivery_Header as dh', function ($join) use ($startDate, $endDate) {
-                $join->on('f.Delivery_Key', '=', 'dh.Delivery_Key');
+                    if ($startDate && $endDate) {
+                        $sub->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
+                    } elseif ($startDate) {
+                        $sub->where('dh.Date_Delivery_Start', '>=', $startDate);
+                    } elseif ($endDate) {
+                        $sub->where('dh.Date_Delivery_Start', '<=', $endDate);
+                    }
 
-                if ($startDate && $endDate) {
-                    $join->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
-                } elseif ($startDate) {
-                    $join->where('dh.Date_Delivery_Start', '>=', $startDate);
-                } elseif ($endDate) {
-                    $join->where('dh.Date_Delivery_Start', '<=', $endDate);
-                }
-            })
+                    if ($recipientId) {
+                        $sub->where('gr.Source_Recipient_Id', $recipientId);
+                    }
+                });
 
-            // 3. Left join Course ensuring parent course exclusion stays scoped to deliveries
+            return $query->orderBy('s.School_Urn', 'asc');
+        }
+
+        // -------------------------------------------------------------------------
+        // Case B: Schools WITH Deliveries (or Combined All)
+        // -------------------------------------------------------------------------
+        // Pre-filter delivery headers strictly to the target window and recipient
+        $activeDeliveries = DB::connection('mysql')->table('Dim_Delivery_Header as dh')
+            ->join('Fact_Course_Delivery as f', 'dh.Delivery_Key', '=', 'f.Delivery_Key')
             ->leftJoin('Dim_Course as c', function ($join) {
                 $join->on('f.Course_Key', '=', 'c.Course_Key')
                     ->whereNull('c.Parent_Course_Key');
             })
-
-            // 4. Left join Grant & Recipient
-            ->leftJoin('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
+            ->leftJoin('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
-
-            // Left Join the Training Provider
             ->leftJoin('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
-
             ->select([
-                DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
-                DB::raw("IFNULL(g.Grant_Source, 'N/A') as Grant_Source"),
-                DB::raw("IFNULL(gr.Recipient_Name, 'Unlinked') as Recipient_Name"),
+                'dh.School_Key',
+                'dh.Source_Delivery_Id',
+                'dh.Delivery_Status',
+                'dh.Date_Delivery_Start',
+                'g.Grant_Number',
+                'g.Grant_Source',
+                'gr.Recipient_Name',
+                'gr.Source_Recipient_Id',
+                'tp.Provider_Name',
+                'f.Riders_Enrolled_Count',
+                'f.Riders_Completed_Count',
+            ]);
+
+        if ($startDate && $endDate) {
+            $activeDeliveries->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
+        } elseif ($startDate) {
+            $activeDeliveries->where('dh.Date_Delivery_Start', '>=', $startDate);
+        } elseif ($endDate) {
+            $activeDeliveries->where('dh.Date_Delivery_Start', '<=', $endDate);
+        }
+
+        if ($recipientId) {
+            $activeDeliveries->where('gr.Source_Recipient_Id', $recipientId);
+        }
+
+        if ($deliveriesType === 'with_deliveries') {
+            // Inner join active deliveries to schools
+            $query = DB::connection('mysql')->table('Dim_School as s')
+                ->joinSub($activeDeliveries, 'ad', 's.School_Key', '=', 'ad.School_Key')
+                ->select([
+                    DB::raw("IFNULL(ad.Grant_Number, 'N/A') as Grant_Number"),
+                    DB::raw("IFNULL(ad.Grant_Source, 'N/A') as Grant_Source"),
+                    DB::raw("IFNULL(ad.Recipient_Name, 'Unlinked') as Recipient_Name"),
+                    's.School_Urn',
+                    's.School_Name',
+                    's.LA_Name',
+                    's.LA_Code',
+                    'ad.Source_Delivery_Id',
+                    'ad.Provider_Name',
+                    'ad.Delivery_Status',
+                    DB::raw("DATE_FORMAT(ad.Date_Delivery_Start, '%d/%m/%Y') as Date_Delivery_Start"),
+                    DB::raw("IFNULL(ad.Riders_Enrolled_Count, 0) as Count_Booked"),
+                    DB::raw("IFNULL(ad.Riders_Completed_Count, 0) as Count_Attended"),
+                ]);
+
+            return $query->orderBy('s.School_Urn', 'asc')
+                ->orderBy('ad.Source_Delivery_Id', 'asc');
+        }
+
+        // Default / Combined: Left join active deliveries to schools
+        $query = DB::connection('mysql')->table('Dim_School as s')
+            ->leftJoinSub($activeDeliveries, 'ad', 's.School_Key', '=', 'ad.School_Key')
+            ->select([
+                DB::raw("IFNULL(ad.Grant_Number, 'N/A') as Grant_Number"),
+                DB::raw("IFNULL(ad.Grant_Source, 'N/A') as Grant_Source"),
+                DB::raw("IFNULL(ad.Recipient_Name, 'Unlinked') as Recipient_Name"),
                 's.School_Urn',
                 's.School_Name',
                 's.LA_Name',
                 's.LA_Code',
-                DB::raw("IFNULL(dh.Source_Delivery_Id, '') as Source_Delivery_Id"),
-                'tp.Provider_Name as Provider_Name',
-                DB::raw("IFNULL(dh.Delivery_Status, 'No Deliveries Logged') as Delivery_Status"),
-                DB::raw("IFNULL(DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y'), '') as Date_Delivery_Start"),
-                DB::raw("IFNULL(f.Riders_Enrolled_Count, 0) as Count_Booked"),
-                DB::raw("IFNULL(f.Riders_Completed_Count, 0) as Count_Attended"),
+                DB::raw("IFNULL(ad.Source_Delivery_Id, '') as Source_Delivery_Id"),
+                DB::raw("IFNULL(ad.Provider_Name, '') as Provider_Name"),
+                DB::raw("IFNULL(ad.Delivery_Status, 'No Deliveries Logged') as Delivery_Status"),
+                DB::raw("IFNULL(DATE_FORMAT(ad.Date_Delivery_Start, '%d/%m/%Y'), '') as Date_Delivery_Start"),
+                DB::raw("IFNULL(ad.Riders_Enrolled_Count, 0) as Count_Booked"),
+                DB::raw("IFNULL(ad.Riders_Completed_Count, 0) as Count_Attended"),
             ]);
 
-        // Recipient filtering: If filtered by recipient, include matching deliveries OR schools with no deliveries
-        if (!empty($params['recipient_id'])) {
-            $query->where(function ($sub) use ($params) {
-                $sub->where('gr.Source_Recipient_Id', $params['recipient_id'])
-                    ->orWhereNull('dh.Delivery_Key');
-            });
-        }
-
-        // Deliveries Type filter: safely operates after the conditional join
-        if (!empty($params['deliveries_type'])) {
-            if ($params['deliveries_type'] === 'with_deliveries') {
-                $query->whereNotNull('dh.Delivery_Key');
-            } elseif ($params['deliveries_type'] === 'no_deliveries') {
-                $query->whereNull('dh.Delivery_Key');
-            }
-        }
-
         return $query->orderBy('s.School_Urn', 'asc')
-            ->orderBy('dh.Source_Delivery_Id', 'asc');
+            ->orderBy('ad.Source_Delivery_Id', 'asc');
     }
 }
