@@ -41,7 +41,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
                 DB::raw("COALESCE(NULLIF(s.School_Name, ''), NULLIF(o.Organisation_Name, ''), 'N/A') as School_Name"),
                 'r.Source_Rider_Id as Rider_ID',
                 'dc.Year_Group',
-                'dh.Consent_Cutoff_Date',
+                DB::raw("DATE_FORMAT(dh.Consent_Cutoff_Date, '%d/%m/%Y') as 'Consent_Cutoff_Date'"),
 
                 // Direct Integer Evaluation
                 DB::raw("CASE dc.Pre_Freq_To_School
@@ -82,7 +82,10 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
                     WHEN 9 THEN 'One to three days a week'
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
-                END as Frequency_Other")
+                END as Frequency_Other"),
+                
+                's.Rural_Urban_Classification',
+                's.Imd_Decile'
             ]);
 
         if (isset($params['grant_id']) && $params['grant_id'] !== '' && $params['grant_id'] !== null) {

@@ -48,7 +48,7 @@ class PreCourseFrequencyHandler implements ReportHandlerInterface
                 DB::raw("COALESCE(s.School_Name, o.Organisation_Name, 'N/A') as School_Name"),
                 'r.Source_Rider_Id as Rider_ID',
                 'dc.Year_Group',
-                'dh.Consent_Cutoff_Date',
+                DB::raw("DATE_FORMAT(dh.Consent_Cutoff_Date, '%d/%m/%Y') as 'Consent_Cutoff_Date'"),
 
                 // Frequency: To/From School Mapping
                 DB::raw("CASE dc.Pre_Freq_To_School
