@@ -77,6 +77,8 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
             'q6_encouragement_factors' => $row->q6_encouragement_factors,
             'q7_conf_change'           => $row->q7_conf_change,
             'q8_physical_activity'     => $row->q8_physical_activity,
+            'Rural_Urban_Classification' => $row->Rural_Urban_Classification ?? 'N/A',
+            'Imd_Decile'          => $row->Imd_Decile ?? 'N/A'
         ];
     }
 
