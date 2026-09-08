@@ -4,6 +4,7 @@ namespace App\Reports\Handlers;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
 class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 {
@@ -14,6 +15,7 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             'start_date'      => 'nullable|string',
             'end_date'        => 'nullable|string',
             'deliveries_type' => 'nullable|string',
+            'year'            => 'nullable|integer',
         ])->validate();
     }
 
@@ -28,7 +30,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             return $query->get()->map(fn($row) => (array) $row)->toArray();
         }
 
-        // 2000 per chunk prevents 429 API rate-limit errors on Link
         $chunkSize = 2000;
 
         $query->chunk($chunkSize, function ($rows) {
@@ -43,31 +44,36 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
     protected function buildQuery(array $params)
     {
-        $startDate      = !empty($params['start_date']) ? $params['start_date'] : null;
-        $endDate        = !empty($params['end_date']) ? $params['end_date'] : null;
+        // 1. Resolve date boundaries
+        $startDate = !empty($params['start_date']) ? $params['start_date'] : null;
+        $endDate   = !empty($params['end_date']) ? $params['end_date'] : null;
+
+        if (!empty($params['year']) && (!$startDate || !$endDate)) {
+            $yr        = (int) $params['year'];
+            $startDate = "{$yr}-04-01 00:00:00";
+            $endDate   = ($yr + 1) . "-03-31 23:59:59";
+        } elseif ($startDate && $endDate) {
+            $startDate = Carbon::parse($startDate)->startOfDay()->toDateTimeString();
+            $endDate   = Carbon::parse($endDate)->endOfDay()->toDateTimeString();
+        }
+
         $deliveriesType = $params['deliveries_type'] ?? null;
         $recipientId    = !empty($params['recipient_id']) ? (int) $params['recipient_id'] : null;
 
-        // -------------------------------------------------------------------------
         // Mode 1: Strictly Schools with NO Deliveries
-        // -------------------------------------------------------------------------
         if ($deliveriesType === 'no_deliveries') {
             return $this->buildNoDeliveriesQuery($startDate, $endDate, $recipientId)
                 ->orderBy('School_Urn', 'asc');
         }
 
-        // -------------------------------------------------------------------------
         // Mode 2: Strictly Schools WITH Deliveries
-        // -------------------------------------------------------------------------
         if ($deliveriesType === 'with_deliveries') {
             return $this->buildWithDeliveriesQuery($startDate, $endDate, $recipientId)
                 ->orderBy('School_Urn', 'asc')
                 ->orderBy('Source_Delivery_Id', 'asc');
         }
 
-        // -------------------------------------------------------------------------
-        // Mode 3: Default / Combined (Both With and Without Deliveries)
-        // -------------------------------------------------------------------------
+        // Mode 3: Combined All Schools (With Deliveries UNION ALL Without Deliveries)
         $withDeliveries = $this->buildWithDeliveriesQuery($startDate, $endDate, $recipientId);
         $noDeliveries   = $this->buildNoDeliveriesQuery($startDate, $endDate, $recipientId);
 
@@ -76,9 +82,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             ->orderBy('Source_Delivery_Id', 'asc');
     }
 
-    /**
-     * Active deliveries query: Dim_Delivery_Header + Fact_Course_Delivery + Dim_School
-     */
     protected function buildWithDeliveriesQuery(?string $startDate, ?string $endDate, ?int $recipientId)
     {
         $query = DB::connection('mysql')->table('Dim_Delivery_Header as dh')
@@ -107,16 +110,10 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
                 DB::raw("IFNULL(f.Riders_Completed_Count, 0) as Count_Attended"),
             ]);
 
-        // Date Window Filter
         if ($startDate && $endDate) {
             $query->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
-        } elseif ($startDate) {
-            $query->where('dh.Date_Delivery_Start', '>=', $startDate);
-        } elseif ($endDate) {
-            $query->where('dh.Date_Delivery_Start', '<=', $endDate);
         }
 
-        // Recipient Filter (via Delivery Header -> Grant -> Grant Recipient)
         if ($recipientId) {
             $query->where('gr.Source_Recipient_Id', $recipientId);
         }
@@ -124,9 +121,6 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
         return $query;
     }
 
-    /**
-     * Schools with zero deliveries in the active scope (using NOT EXISTS on Dim_Delivery_Header)
-     */
     protected function buildNoDeliveriesQuery(?string $startDate, ?string $endDate, ?int $recipientId)
     {
         $query = DB::connection('mysql')->table('Dim_School as s')
@@ -152,13 +146,8 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
                 if ($startDate && $endDate) {
                     $sub->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
-                } elseif ($startDate) {
-                    $sub->where('dh.Date_Delivery_Start', '>=', $startDate);
-                } elseif ($endDate) {
-                    $sub->where('dh.Date_Delivery_Start', '<=', $endDate);
                 }
 
-                // If filtering by Recipient, only exclude schools that have deliveries under that specific recipient
                 if ($recipientId) {
                     $sub->join('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
                         ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
