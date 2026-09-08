@@ -83,7 +83,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
                     WHEN 10 THEN 'Four or more days a week'
                     ELSE 'Not Provided'
                 END as Frequency_Other"),
-                
+
                 's.Rural_Urban_Classification',
                 's.Imd_Decile'
             ]);
