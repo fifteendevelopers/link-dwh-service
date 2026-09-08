@@ -144,6 +144,8 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             'Frequency_Leisure'   => $row->Frequency_Leisure ?? 'Not Provided',
             'Frequency_Exercise'  => $row->Frequency_Exercise ?? 'Not Provided',
             'Frequency_Other'     => $row->Frequency_Other ?? 'Not Provided',
+            'Rural_Urban_Classification' => $row->Rural_Urban_Classification ?? 'N/A',
+            'Imd_Decile'          => $row->Imd_Decile ?? 'N/A'
         ];
     }
 }
