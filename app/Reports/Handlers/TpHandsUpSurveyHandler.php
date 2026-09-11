@@ -115,7 +115,9 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
         'o.Organisation_Name', 'c.Course_Level', 'dh.Date_Delivery_End', 'c.Source_Course_Id',
         'f.Exp_Enjoyed', 'f.Exp_Did_Not_Enjoy', 'f.Exp_Not_Sure', 'f.Exp_Absent',
         'f.Base_Yes', 'f.Base_No', 'f.Base_Not_Sure', 'f.Safe_More', 'f.Safe_Less',
-        'f.Safe_No_Diff', 'f.Safe_Not_Sure', 'f.Conf_More', 'f.Conf_Less', 'f.Conf_No_Diff', 'f.Conf_Not_Sure']);
+        'f.Safe_No_Diff', 'f.Safe_Not_Sure', 'f.Conf_More', 'f.Conf_Less', 'f.Conf_No_Diff', 'f.Conf_Not_Sure',
+            's.Rural_Urban_Classification',
+            's.Imd_Decile']);
 
         // Matches: ORDER BY tp.Provider_Name, dh.Source_Delivery_Id
         return $query->orderBy('tp.Provider_Name')
