@@ -26,7 +26,6 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
         ini_set('max_execution_time', '600');
 
         Log::info('--- DWH PreCourseCycleFrequencyHandler START ---');
-        Log::info('Executing handler file: ' . __FILE__ . ' at line ' . __LINE__);
         Log::info('Incoming parameters: ' . json_encode($params));
 
         $baseQuery = DB::connection('mysql')->table('Dim_Consent as dc')
@@ -50,15 +49,16 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             $baseQuery->where('tp.Source_Provider_Id', $params['provider_id']);
         }
 
+        // Filter based on delivery start date
         if (!empty($params['start_date'])) {
-            $baseQuery->where('dh.Consent_Cutoff_Date', '>=', $params['start_date'] . ' 00:00:00');
+            $baseQuery->where('dh.Date_Delivery_Start', '>=', $params['start_date'] . ' 00:00:00');
         }
 
         if (!empty($params['end_date'])) {
-            $baseQuery->where('dh.Consent_Cutoff_Date', '<=', $params['end_date'] . ' 23:59:59');
+            $baseQuery->where('dh.Date_Delivery_Start', '<=', $params['end_date'] . ' 23:59:59');
         }
 
-        // --- Safe Diagnostics Inspection (Does not collide with only_full_group_by) ---
+        // Diagnostic Counts
         $stats = (clone $baseQuery)
             ->select([
                 DB::raw('COUNT(*) as total_rows'),
@@ -69,9 +69,8 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             ])
             ->first();
 
-        Log::info('Pre-run Database Stats: ' . json_encode($stats));
+        Log::info('Pre-run Database Stats (Filtered by Date_Delivery_Start): ' . json_encode($stats));
 
-        // --- Build Production Extraction Query ---
         $query = $baseQuery->select([
             'dc.Consent_Key',
             DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
@@ -82,7 +81,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             DB::raw("COALESCE(NULLIF(s.School_Name, ''), NULLIF(o.Organisation_Name, ''), 'N/A') as School_Name"),
             'r.Source_Rider_Id as Rider_ID',
             'dc.Year_Group',
-            DB::raw("DATE_FORMAT(dh.Consent_Cutoff_Date, '%d/%m/%Y') as Consent_Cutoff_Date"),
+            DB::raw("DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y') as Delivery_Start_Date"),
 
             DB::raw("CASE dc.Pre_Freq_To_School
                 WHEN 5 THEN 'Not applicable: My child cannot yet cycle'
@@ -132,7 +131,6 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
 
         if (empty($this->callbackUrl)) {
             $rows = $query->get()->map(fn($row) => $this->mapRow($row))->toArray();
-            Log::info('Direct CLI run. First row: ' . json_encode($rows[0] ?? []));
             return $rows;
         }
 
@@ -157,6 +155,8 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
 
     protected function mapRow($row): array
     {
+        $isOrganisation = empty($row->School_Key);
+
         return [
             'Grant_Number'               => $row->Grant_Number ?? 'N/A',
             'Grant_Source'               => $row->Grant_Source ?? 'N/A',
@@ -166,13 +166,17 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             'School_Name'                => $row->School_Name ?? 'N/A',
             'Rider_ID'                   => $row->Rider_ID ?? '',
             'Year_Group'                 => $row->Year_Group ?? '',
-            'Consent_Cutoff_Date'        => $row->Consent_Cutoff_Date ?? '',
+            'Delivery_Start_Date'        => $row->Delivery_Start_Date ?? '',
             'Frequency_School'           => $row->Frequency_School ?? 'Not Provided',
             'Frequency_Leisure'          => $row->Frequency_Leisure ?? 'Not Provided',
             'Frequency_Exercise'         => $row->Frequency_Exercise ?? 'Not Provided',
             'Frequency_Other'            => $row->Frequency_Other ?? 'Not Provided',
-            'Rural_Urban_Classification' => $row->Rural_Urban_Classification ?? 'N/A',
-            'Imd_Decile'                 => $row->Imd_Decile ?? 'N/A',
+            'Rural_Urban_Classification' => !empty($row->Rural_Urban_Classification)
+                ? $row->Rural_Urban_Classification
+                : ($isOrganisation ? 'Not Applicable (Organisation)' : 'N/A'),
+            'Imd_Decile'                 => !empty($row->Imd_Decile)
+                ? $row->Imd_Decile
+                : ($isOrganisation ? 'Not Applicable (Organisation)' : 'N/A'),
         ];
     }
 }
