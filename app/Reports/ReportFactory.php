@@ -45,7 +45,7 @@ class ReportFactory
         'post-course-follow-up-survey'      => ParentFollowUpSurveyHandler::class,
         'post-course-survey'                => PostCourseSurveyHandler::class,
         'pre-course-cycle-frequency'        => PreCourseCycleFrequencyHandler::class,
-        'pre-course-frequency'              => PreCourseFrequencyHandler::class,
+//        'pre-course-frequency'              => PreCourseFrequencyHandler::class,
         'report-29.0'                       => PreCourseCycleFrequencyHandler::class, // e.g. Supports aliases
         'rider-activity-outcomes'           => RiderActivityOutcomesHandler::class,
         'rider-feedback-summary'            => InstructorFeedbackStatementSummaryHandler::class,

@@ -22,22 +22,25 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
     public function execute(array $params): array
     {
         ini_set('memory_limit', '1024M');
-        ini_set('max_execution_time', '300');
+        ini_set('max_execution_time', '600');
 
         $query = DB::connection('mysql')->table('Dim_Consent as dc')
             ->join('Dim_Rider as r', 'dc.Rider_Key', '=', 'r.Rider_Key')
             ->join('Dim_Delivery_Header as dh', 'dc.Delivery_Key', '=', 'dh.Delivery_Key')
-            ->join('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
-            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
-            ->join('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
-            ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
+            ->leftJoin('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
+            ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+            ->leftJoin('Dim_Training_Provider as tp', 'dh.Training_Provider_Key', '=', 'tp.Provider_Key')
+            ->leftJoin('Dim_School as s', function ($join) {
+                $join->on('dh.School_Key', '=', 's.School_Key');
+            })
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key')
             ->select([
-                'g.Grant_Number',
-                'g.Grant_Source',
-                'gr.Recipient_Name',
+                'dc.Consent_Key', // Primary key for deterministic chunking
+                DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
+                DB::raw("IFNULL(g.Grant_Source, 'N/A') as Grant_Source"),
+                DB::raw("IFNULL(gr.Recipient_Name, 'Unlinked') as Recipient_Name"),
                 'dh.Source_Delivery_Id as Delivery_ID',
-                'tp.Provider_Name as Training_Provider',
+                DB::raw("IFNULL(tp.Provider_Name, '') as Training_Provider"),
                 DB::raw("COALESCE(NULLIF(s.School_Name, ''), NULLIF(o.Organisation_Name, ''), 'N/A') as School_Name"),
                 'r.Source_Rider_Id as Rider_ID',
                 'dc.Year_Group',
@@ -84,8 +87,9 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
                     ELSE 'Not Provided'
                 END as Frequency_Other"),
 
-                's.Rural_Urban_Classification',
-                's.Imd_Decile'
+                // Return clean empty strings or N/A rather than NULL
+                DB::raw("COALESCE(NULLIF(s.Rural_Urban_Classification, ''), 'N/A') as Rural_Urban_Classification"),
+                DB::raw("COALESCE(NULLIF(s.Imd_Decile, ''), 'N/A') as Imd_Decile")
             ]);
 
         if (isset($params['grant_id']) && $params['grant_id'] !== '' && $params['grant_id'] !== null) {
@@ -108,21 +112,19 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             $query->where('dh.Consent_Cutoff_Date', '<=', $params['end_date']);
         }
 
-        $query->orderBy('g.Grant_Number')
-            ->orderBy('dh.Source_Delivery_Id');
+        // 🎯 Deterministic ordering prevents pagination slippage during chunk()
+        $query->orderBy('dc.Consent_Key', 'asc');
 
-        // Fallback for direct local calls (Tinker / synchronous CLI)
         if (empty($this->callbackUrl)) {
             return $query->get()->map(fn($row) => $this->mapRow($row))->toArray();
         }
 
-        // Stream chunk-by-chunk to the callback URL
-        $query->chunk(500, function ($rows) {
+        // Stream 2000 per chunk to reduce webhook HTTP requests
+        $query->chunk(2000, function ($rows) {
             $chunk = $rows->map(fn($row) => $this->mapRow($row))->toArray();
             $this->transmitBatch($chunk, false);
         });
 
-        // Transmit closing handshake EOF packet to trigger Link finalizer
         $this->transmitBatch([], true);
 
         return ['status' => 'async_completed'];
@@ -139,7 +141,7 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             'School_Name'         => $row->School_Name ?? 'N/A',
             'Rider_ID'            => $row->Rider_ID ?? '',
             'Year_Group'          => $row->Year_Group ?? '',
-            'Consent_Cutoff_Date' => $row->Consent_Cutoff_Date ?? null,
+            'Consent_Cutoff_Date' => $row->Consent_Cutoff_Date ?? '',
             'Frequency_School'    => $row->Frequency_School ?? 'Not Provided',
             'Frequency_Leisure'   => $row->Frequency_Leisure ?? 'Not Provided',
             'Frequency_Exercise'  => $row->Frequency_Exercise ?? 'Not Provided',
