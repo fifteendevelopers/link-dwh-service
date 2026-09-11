@@ -82,6 +82,7 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
                 DB::raw("IF(f.Feedback_Dont_See_Others_Like_Me = 1, 'Yes', 'No') as 'q3.6: Don’t see others like me'"),
                 DB::raw("IF(f.Feedback_On_Own = 1, 'Yes', 'No') as 'q3.7: Enjoy on my own'"),
                 DB::raw("IF(f.Feedback_Not_Enjoy = 1, 'Yes', 'No') as 'q3.8: Do not enjoy cycling'"),
+                DB::raw("IF(f.Feedback_None_Apply = 1, 'Yes', 'No') as 'q3.9: None of the above'"), // 👈 Add q3.9
                 'f.Feedback_None_Apply_Input as q3.10: Other Feedback',
 
                 // Confidence Likert Scale (q4)

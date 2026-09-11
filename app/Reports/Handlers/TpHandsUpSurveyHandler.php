@@ -46,7 +46,7 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
             ->select([
                 'g.Grant_Number as Grant number',
                 'g.Grant_Source as Grant funding source',
-                'g.Grant_Recipient_Key as Grant recipient',
+                'gr.Recipient_Name as Grant recipient',
                 'dh.Source_Delivery_Id as Delivery ID',
                 'tp.Provider_Name as Training provider',
 
@@ -110,7 +110,7 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
         }
 
         $query->groupBy([
-        'g.Grant_Number', 'g.Grant_Source', 'g.Grant_Recipient_Key', 'dh.Source_Delivery_Id',
+        'g.Grant_Number', 'g.Grant_Source', 'gr.Recipient_Name', 'dh.Source_Delivery_Id',
         'tp.Provider_Name', 'dh.School_Key', 's.School_Name', 'dh.Organisation_Key',
         'o.Organisation_Name', 'c.Course_Level', 'dh.Date_Delivery_End', 'c.Source_Course_Id',
         'f.Exp_Enjoyed', 'f.Exp_Did_Not_Enjoy', 'f.Exp_Not_Sure', 'f.Exp_Absent',
