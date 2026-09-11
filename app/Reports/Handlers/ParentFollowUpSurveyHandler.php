@@ -93,15 +93,16 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
             ->leftJoin('Dim_Grant as g', 'd.Grant_Key', '=', 'g.Grant_Key')
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->leftJoin('Dim_School as s', 'd.School_Key', '=', 's.School_Key')
+            ->leftJoin('Dim_Organisation as o', 'd.Organisation_Key', '=', 'o.Organisation_Key')
             ->leftJoin('Dim_Rider as r', 'pfu.Rider_Key', '=', 'r.Rider_Key')
             ->select([
-                'g.Grant_Number',
-                'g.Grant_Source',
-                'gr.Recipient_Name',
+                DB::raw("IFNULL(g.Grant_Number, 'N/A') as Grant_Number"),
+                DB::raw("IFNULL(g.Grant_Source, 'N/A') as Grant_Source"),
+                DB::raw("IFNULL(gr.Recipient_Name, 'Non Grant Delivery') as Recipient_Name"),
                 'd.Source_Delivery_Id',
                 'r.Source_Rider_Id',
                 'tp.Provider_Name',
-                's.School_Name',
+                DB::raw("COALESCE(NULLIF(s.School_Name, ''), NULLIF(o.Organisation_Name, ''), 'N/A') as School_Name"),
                 's.School_Urn',
                 'pfu.Course_Label_Raw',
                 'pfu.Source_Created_At as Survey_Created_At',
@@ -120,17 +121,24 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
                 'pfu.q8_physical_activity',
                 's.Rural_Urban_Classification',
                 's.Imd_Decile'
-            ])
-            ->where('g.Grant_Period_Start_Year', (int)$params['year'])
-            ->where('d.Digitisation_Booking', true);
+            ]);
 
-        if (!empty($params['recipient_id'])) {
-            $query->where('gr.Source_Recipient_Id', (int)$params['recipient_id']);
+        // Filter by the financial year the survey was completed (01/04/{year} to 31/03/{year+1})
+        if (!empty($params['year'])) {
+            $year     = (int) $params['year'];
+            $dateFrom = $year . '-04-01 00:00:00';
+            $dateTo   = ($year + 1) . '-03-31 23:59:59';
+
+            $query->whereBetween('pfu.Source_Created_At', [$dateFrom, $dateTo]);
         }
 
-//        if (!empty($params['provider_id'])) {
-//            $query->where('tp.Source_Provider_Id', (int)$params['provider_id']);
-//        }
+        if (!empty($params['recipient_id'])) {
+            $query->where('gr.Source_Recipient_Id', (int) $params['recipient_id']);
+        }
+
+        if (!empty($params['provider_id'])) {
+            $query->where('tp.Source_Provider_Id', (int) $params['provider_id']);
+        }
 
         return $query->orderBy('pfu.Source_Created_At', 'desc');
     }
