@@ -144,23 +144,36 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
      */
     protected function buildNoDeliveriesQuery(?string $startDate, ?string $endDate, ?int $recipientId)
     {
-        $query = DB::connection('mysql')->table('Dim_School as s')
-            ->select([
-                DB::raw("'N/A' as Grant_Number"),
-                DB::raw("'N/A' as Grant_Source"),
-                DB::raw("'Unlinked' as Recipient_Name"),
-                's.School_Urn',
-                's.School_Name',
-                's.LA_Name',
-                's.LA_Code',
-                DB::raw("'' as Source_Delivery_Id"),
-                DB::raw("'' as Course_Level"),
-                DB::raw("'' as Provider_Name"),
-                DB::raw("'No Deliveries Logged' as Delivery_Status"),
-                DB::raw("'' as Date_Delivery_Start"),
-                DB::raw("0 as Count_Booked"),
-                DB::raw("0 as Count_Attended"),
-            ])
+        $query = DB::connection('mysql')->table('Dim_School as s');
+
+        if ($recipientId) {
+            // Join Dim_Grant_Recipient using the LA link to constrain schools to the recipient's catchment area
+            $query->join('Dim_Grant_Recipient as gr', function ($join) use ($recipientId) {
+                $join->on('s.LA_Code', '=', 'gr.LA_Id')
+                    ->where('gr.Source_Recipient_Id', '=', $recipientId);
+            });
+
+            $recipientNameSelect = "IFNULL(gr.Recipient_Name, 'Unlinked') as Recipient_Name";
+        } else {
+            $recipientNameSelect = "'Unlinked' as Recipient_Name";
+        }
+
+        $query->select([
+            DB::raw("'N/A' as Grant_Number"),
+            DB::raw("'N/A' as Grant_Source"),
+            DB::raw($recipientNameSelect),
+            's.School_Urn',
+            's.School_Name',
+            's.LA_Name',
+            's.LA_Code',
+            DB::raw("'' as Source_Delivery_Id"),
+            DB::raw("'' as Course_Level"),
+            DB::raw("'' as Provider_Name"),
+            DB::raw("'No Deliveries Logged' as Delivery_Status"),
+            DB::raw("'' as Date_Delivery_Start"),
+            DB::raw("0 as Count_Booked"),
+            DB::raw("0 as Count_Attended"),
+        ])
             ->whereNotExists(function ($sub) use ($startDate, $endDate, $recipientId) {
                 $sub->select(DB::raw(1))
                     ->from('Dim_Delivery_Header as dh')
@@ -184,8 +197,8 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
 
                 if ($recipientId) {
                     $sub->join('Dim_Grant as g', 'dh.Grant_Key', '=', 'g.Grant_Key')
-                        ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
-                        ->where('gr.Source_Recipient_Id', $recipientId);
+                        ->join('Dim_Grant_Recipient as sub_gr', 'g.Grant_Recipient_Key', '=', 'sub_gr.Recipient_Key')
+                        ->where('sub_gr.Source_Recipient_Id', $recipientId);
                 }
             });
 
