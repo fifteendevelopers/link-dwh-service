@@ -122,7 +122,8 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
             ->where(function ($q) {
                 $q->whereNull('c.Parent_Course_Key')
                     ->orWhere('parent_c.Course_Level', '=', 'level_1_2');
-            });
+            })
+            ->whereNull('dh.Source_Deleted_At');
 
         if ($startDate && $endDate) {
             $query->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);
@@ -186,6 +187,8 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
                         $q->whereNull('c.Parent_Course_Key')
                             ->orWhere('parent_c.Course_Level', '=', 'level_1_2');
                     });
+
+                $sub->whereNull('dh.Source_Deleted_At');
 
                 if ($startDate && $endDate) {
                     $sub->whereBetween('dh.Date_Delivery_Start', [$startDate, $endDate]);

@@ -123,6 +123,8 @@ class ParentFollowUpSurveyHandler extends AbstractStreamingReportHandler impleme
                 's.Imd_Decile'
             ]);
 
+        $query->whereNull('d.Source_Deleted_At');
+
         // Filter by the financial year the survey was completed (01/04/{year} to 31/03/{year+1})
         if (!empty($params['year'])) {
             $year     = (int) $params['year'];

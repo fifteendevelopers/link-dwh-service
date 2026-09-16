@@ -85,6 +85,8 @@ class TpHandsUpSurveyHandler implements ReportHandlerInterface
                 's.Imd_Decile'
             ]);
 
+        $query->whereNull('dh.Source_Deleted_At');
+
         // --- Financial Year Date Range Calculator Layer ---
         if (isset($params['year']) && $params['year'] !== '' && $params['year'] !== null) {
             $startYear = (int) $params['year'];

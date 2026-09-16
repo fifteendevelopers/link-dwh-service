@@ -37,6 +37,9 @@ class PreCourseCycleFrequencyHandler extends AbstractStreamingReportHandler
             ->leftJoin('Dim_School as s', 'dh.School_Key', '=', 's.School_Key')
             ->leftJoin('Dim_Organisation as o', 'dh.Organisation_Key', '=', 'o.Organisation_Key');
 
+        $baseQuery->whereNull('dh.Source_Deleted_At')
+            ->whereNull('dc.Source_Deleted_At');
+
         if (!empty($params['grant_id'])) {
             $baseQuery->where('g.Source_Grant_Id', $params['grant_id']);
         }

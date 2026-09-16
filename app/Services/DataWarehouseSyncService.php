@@ -1044,10 +1044,12 @@ class DataWarehouseSyncService
                 'pref_join_bikeability_club', 'pref_further_research', 'pref_receive_news',
                 'has_bike', 'cycle_ability', 'is_fsm',
                 'is_SEND', 'send_details', 'has_medical_condition', 'medical_details',
-                'attended', 'year_group', 'gender', 'ethnicity', 'updated_at'
+                'attended', 'year_group', 'gender', 'ethnicity',
+                'created_at', 'updated_at', 'deleted_at', 'deleted_reason'
             ])
             ->where(function ($q) use ($watermark) {
                 $q->where('updated_at', '>', $watermark)
+                    ->orWhere('deleted_at', '>', $watermark)
                     ->orWhereNull('updated_at');
             })->orderBy('updated_at', 'asc');
 
@@ -1132,12 +1134,20 @@ class DataWarehouseSyncService
                         'Year_Group' => $consent->year_group,
                         'Gender' => $consent->gender,
                         'Ethnicity' => $consent->ethnicity,
+
+                        'Deleted_Reason'                 => $consent->deleted_reason ?? null,
+                        'Source_Created_At'              => $consent->created_at ?? null,
+                        'Source_Updated_At'              => $consent->updated_at ?? null,
+                        'Source_Deleted_At'              => $consent->deleted_at ?? null,
+                        'updated_at'                     => now(),
+
                     ])
                 );
 
                 // Update Watermark tracker
-                if ($consent->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $consent->updated_at;
+                $activeTimestamp = max($consent->updated_at ?? '1900-01-01', $consent->deleted_at ?? '1900-01-01');
+                if ($activeTimestamp > $highestTimestampSeen) {
+                    $highestTimestampSeen = $activeTimestamp;
                 }
 
                 if ($bar) $bar->advance();
