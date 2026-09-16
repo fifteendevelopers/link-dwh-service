@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('dim_delivery_header', function (Blueprint $table) {
+        Schema::table('Dim_Delivery_Header', function (Blueprint $table) {
             // Legacy & Alternative Grant Identifiers
             $table->string('Short_Description', 10)->nullable()->after('Delivery_Status');
             $table->unsignedInteger('Local_Funding')->default(0)->after('Delivery_Details');
@@ -40,7 +40,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('dim_delivery_header', function (Blueprint $table) {
+        Schema::table('Dim_Delivery_Header', function (Blueprint $table) {
             $table->dropColumn([
                 'Short_Description',
                 'Local_Funding',
