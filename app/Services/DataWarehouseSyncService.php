@@ -680,11 +680,20 @@ class DataWarehouseSyncService
         if ($bar) $bar->start();
 
         $this->source->table('deliveries')
-            ->select('id', 'grant_id', 'school_urn', 'training_provider_id',
-                'status', 'date_delivery_start', 'date_delivery_end', 'digitisation_booking', 'pref_alt_delivery_location','alt_delivery_location',
-                'notes','instructor_general_notes','teacher_notes','school_contacts','venue','provider_additional_questions',
-                'comms_start_date','date_completed','pref_link_managed_consent','include_tp_terms_in_consent','consent_src_characteristics',
-                'max_consents','waiting_list_enabled', 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date','updated_at','external_system_id')
+            ->select(
+                'id', 'grant_id', 'grant_old_id', 'school_urn', 'training_provider_id',
+                'status', 'date_delivery_start', 'date_delivery_end', 'short_description',
+                'digitisation_booking', 'pref_alt_delivery_location', 'alt_delivery_location',
+                'notes', 'instructor_general_notes', 'teacher_notes', 'school_contacts', 'venue',
+                'delivery_details', 'local_funding', 'legacy_delivery_id', 'legacy_delivery_method',
+                'provider_additional_questions', 'comms_start_date', 'date_completed',
+                'pref_link_managed_consent', 'include_tp_terms_in_consent', 'consent_src_characteristics',
+                'venue_notification_sent', 'survey_notifications_sent', 'confirm_booked_email_sent',
+                'confirm_booked_reminder_email_sent', 'max_consents', 'waiting_list_enabled',
+                'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date', 'rider_list_uploaded',
+                'url_code', 'housekeeping_selected', 'enable_school_management', 'external_system_id',
+                'created_at', 'updated_at', 'deleted_at'
+            )
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
@@ -757,7 +766,24 @@ class DataWarehouseSyncService
                             'Include_Tp_Terms_In_Consent' => $delivery->include_tp_terms_in_consent??0,
                             'Consent_Src_Characteristics' => $delivery->consent_src_characteristics??0,
                             'Max_Consents' => $delivery->max_consents,
-                            'Waiting_List_Enabled' => $delivery->waiting_list_enabled??0
+                            'Waiting_List_Enabled' => $delivery->waiting_list_enabled??0,
+
+                            'Short_Description'                  => $delivery->short_description ?? null,
+                            'Delivery_Details'                   => $delivery->delivery_details ?? null,
+                            'Local_Funding'                      => (int) ($delivery->local_funding ?? 0),
+                            'Legacy_Delivery_Id'                 => $delivery->legacy_delivery_id ?? null,
+                            'Legacy_Delivery_Method'             => $delivery->legacy_delivery_method ?? null,
+                            'Rider_List_Uploaded'                => (bool) ($delivery->rider_list_uploaded ?? false),
+                            'Url_Code'                           => $delivery->url_code ?? null,
+                            'Venue_Notification_Sent'            => (bool) ($delivery->venue_notification_sent ?? false),
+                            'Survey_Notifications_Sent'          => (bool) ($delivery->survey_notifications_sent ?? false),
+                            'Confirm_Booked_Email_Sent'          => $delivery->confirm_booked_email_sent ?? null,
+                            'Confirm_Booked_Reminder_Email_Sent' => $delivery->confirm_booked_reminder_email_sent ?? null,
+                            'Housekeeping_Selected'              => (bool) ($delivery->housekeeping_selected ?? false),
+                            'Enable_School_Management'           => (bool) ($delivery->enable_school_management ?? false),
+                            'Source_Created_At'                  => $delivery->created_at ?? null,
+                            'Source_Updated_At'                  => $delivery->updated_at ?? null,
+                            'Source_Deleted_At'                  => $delivery->deleted_at ?? null,
                         ]
                     );
 
