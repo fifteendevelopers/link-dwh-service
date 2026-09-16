@@ -769,7 +769,6 @@ class DataWarehouseSyncService
                             'Waiting_List_Enabled' => $delivery->waiting_list_enabled??0,
 
                             'Short_Description'                  => $delivery->short_description ?? null,
-                            'Delivery_Details'                   => $delivery->delivery_details ?? null,
                             'Local_Funding'                      => (int) ($delivery->local_funding ?? 0),
                             'Legacy_Delivery_Id'                 => $delivery->legacy_delivery_id ?? null,
                             'Legacy_Delivery_Method'             => $delivery->legacy_delivery_method ?? null,

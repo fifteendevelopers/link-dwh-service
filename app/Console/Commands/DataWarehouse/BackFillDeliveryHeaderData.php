@@ -53,7 +53,6 @@ class BackFillDeliveryHeaderData extends Command
                         ->where('Delivery_Key', $dwhDelivery->Delivery_Key)
                         ->update([
                             'Short_Description'                  => $source->short_description ?? null,
-                            'Delivery_Details'                   => $source->delivery_details ?? null,
                             'Local_Funding'                      => (int) ($source->local_funding ?? 0),
                             'Legacy_Delivery_Id'                 => $source->legacy_delivery_id ?? null,
                             'Legacy_Delivery_Method'             => $source->legacy_delivery_method ?? null,
