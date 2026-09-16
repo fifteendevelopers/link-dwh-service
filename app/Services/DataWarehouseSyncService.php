@@ -176,20 +176,75 @@ class DataWarehouseSyncService
         foreach ($sourceProviders as $provider) {
             // 1. Prepare the incoming data
             $incomingData = [
-                'Provider_Name' => $provider->provider_name,
-                'Provider_Number' => $provider->provider_number,
-                'Is_Active' => is_null($provider->deleted_at) ? 'Y' : 'N',
-                'Address_Line_1' => $provider->address_01,
-                'Address_Line_2' => $provider->address_02,
-                'City' => $provider->city,
-                'Postcode' => $provider->postcode,
-                'Website' => $provider->website,
-                'Telephone' => $provider->telephone,
-                'Public_Email' => $provider->public_email,
-                'Public_Telephone' => $provider->public_telephone,
-                'Provider_Type' => $provider->provider_type,
-                'Source_Created_At' => $provider->created_at,
-                'Source_Updated_At' => $provider->updated_at,
+                'Provider_Name'                           => $provider->provider_name,
+                'Provider_Number'                         => $provider->provider_number,
+                'Is_Active'                               => is_null($provider->deleted_at) ? 'Y' : 'N',
+                'Address_Line_1'                          => $provider->address_01,
+                'Address_Line_2'                          => $provider->address_02,
+                'City'                                    => $provider->city,
+                'Postcode'                                => $provider->postcode,
+                'Website'                                 => $provider->website,
+                'Telephone'                               => $provider->telephone,
+                'Public_Email'                            => $provider->public_email,
+                'Public_Telephone'                        => $provider->public_telephone,
+                'Provider_Type'                           => $provider->provider_type,
+                'Source_Created_At'                       => $provider->created_at,
+                'Source_Updated_At'                       => $provider->updated_at,
+
+                // New columns added
+                'Primary_Email'                           => $provider->primary_email ?? null,
+                'Secondary_Email'                         => $provider->secondary_email ?? null,
+                'Landline'                                => $provider->landline ?? null,
+
+                // Status & Lifecycle Dates
+                'Status'                                  => (int) ($provider->status ?? 0),
+                'Date_Inception'                          => $provider->date_inception ?? null,
+                'Date_Renewal'                            => $provider->date_renewal ?? null,
+                'Date_Deregistered'                       => $provider->date_deregistered ?? null,
+                'Deregistration_Reason'                   => $provider->deregistration_reason ?? null,
+                'Date_Eqa_Visit'                          => $provider->date_eqa_visit ?? null,
+                'Date_Insurance_Expiry'                   => $provider->date_insurance_expiry ?? null,
+                'Renewal_Blocked'                         => (bool) ($provider->renewal_blocked ?? false),
+
+                // Module Delivery Preferences
+                'Pref_Level_1'                            => (bool) ($provider->pref_level_1 ?? false),
+                'Pref_Level_2'                            => (bool) ($provider->pref_level_2 ?? false),
+                'Pref_Level_3'                            => (bool) ($provider->pref_level_3 ?? false),
+                'Pref_Plus_Balance'                       => (bool) ($provider->pref_plus_balance ?? false),
+                'Pref_Plus_Bus'                           => (bool) ($provider->pref_plus_bus ?? false),
+                'Pref_Plus_Fix'                           => (bool) ($provider->pref_plus_fix ?? false),
+                'Pref_Plus_Learn'                         => (bool) ($provider->pref_plus_learn ?? false),
+                'Pref_Plus_On_Show'                       => (bool) ($provider->pref_plus_on_show ?? false),
+                'Pref_Plus_Parents'                       => (bool) ($provider->pref_plus_parents ?? false),
+                'Pref_Plus_Promotion'                     => (bool) ($provider->pref_plus_promotion ?? false),
+                'Pref_Plus_Recycled'                      => (bool) ($provider->pref_plus_recycled ?? false),
+                'Pref_Plus_Ride'                          => (bool) ($provider->pref_plus_ride ?? false),
+                'Pref_Plus_Transition'                    => (bool) ($provider->pref_plus_transition ?? false),
+                'Pref_Plus_Family'                        => (bool) ($provider->pref_plus_family ?? false),
+                'Pref_Plus_Adult'                         => (bool) ($provider->pref_plus_adult ?? false),
+
+                // Operational Fields
+                'Legacy_Areas_Of_Operation'               => $provider->legacy_areas_of_operation ?? null,
+                'Delivery_Areas'                          => $provider->delivery_areas ?? null,
+                'Account_Notes'                           => $provider->account_notes ?? null,
+                'Terms_Url'                               => $provider->terms_url ?? null,
+
+                // Custom Booking Questions
+                'Booking_Question_1'                      => $provider->booking_question_1 ?? null,
+                'Booking_Question_2'                      => $provider->booking_question_2 ?? null,
+                'Booking_Question_3'                      => $provider->booking_question_3 ?? null,
+                'Booking_Question_4'                      => $provider->booking_question_4 ?? null,
+                'Booking_Question_5'                      => $provider->booking_question_5 ?? null,
+
+                // Digital & Consent Configurations
+                'Pref_Collect_Characteristics_In_Consent' => (bool) ($provider->pref_collect_characteristics_in_consent ?? false),
+                'Pref_Allow_Non_Riders'                   => (bool) ($provider->pref_allow_non_riders ?? false),
+                'Pref_Enable_Tp_Digi_Delivery_Access'     => (bool) ($provider->pref_enable_tp_digi_delivery_access ?? false),
+                'Pref_Enable_Tp_Digi_Consent_Upload'      => (bool) ($provider->pref_enable_tp_digi_consent_upload ?? false),
+                'Has_Fleet_Cycles'                        => (bool) ($provider->has_fleet_cycles ?? false),
+                'Provide_A_Cycle_Question_Optional'       => (bool) ($provider->provide_a_cycle_question_optional ?? false),
+                'External_System_Id'                      => !empty($provider->external_system_id) ? (int) $provider->external_system_id : null,
+                'Source_Deleted_At'                       => $provider->deleted_at ?? null,
             ];
 
             // 2. Fetch the current active version in DWH
