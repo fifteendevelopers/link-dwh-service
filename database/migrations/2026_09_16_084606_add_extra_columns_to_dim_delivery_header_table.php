@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('Dim_Delivery_Header', function (Blueprint $table) {
             // Legacy & Alternative Grant Identifiers
             $table->string('Short_Description', 10)->nullable()->after('Delivery_Status');
-            $table->unsignedInteger('Local_Funding')->default(0)->after('Delivery_Details');
+            $table->unsignedInteger('Local_Funding')->default(0)->after('Short_Description');
             $table->string('Legacy_Delivery_Id')->nullable()->after('Local_Funding');
             $table->string('Legacy_Delivery_Method')->nullable()->after('Legacy_Delivery_Id');
 
