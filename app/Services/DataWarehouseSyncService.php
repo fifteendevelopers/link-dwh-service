@@ -328,12 +328,13 @@ class DataWarehouseSyncService
         $this->source->table('vendor_edubase')
             ->select($selectFields)
             ->orderBy('id')
-            ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
+            ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar, $hasDeprivationIndex) {
                 foreach ($schools as $school) {
                     // Convert deprivation_index to clean integer IMD decile (1-10) or null
-                    $imdDecile = is_numeric($school->deprivation_index)
-                        ? (int) round((float) $school->deprivation_index)
-                        : null;
+                    $imdDecile = null;
+                    if ($hasDeprivationIndex && isset($school->deprivation_index) && is_numeric($school->deprivation_index)) {
+                        $imdDecile = (int) round((float) $school->deprivation_index);
+                    }
 
                     $this->dwh->table('Dim_School')->updateOrInsert(
                         [
