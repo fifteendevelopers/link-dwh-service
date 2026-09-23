@@ -875,11 +875,6 @@ class DataWarehouseSyncService
 
             // Guard: If delivery header doesn't exist or is soft-deleted, skip this course
             if (!$delivery || !empty($delivery->Source_Deleted_At)) {
-                // Clean up any previously inserted row in Dim_Course if it now has an invalid delivery
-                $this->dwh->table('Dim_Course')
-                    ->where('Source_Course_Id', $course->id)
-                    ->where('Source_System_Key', $sourceSystemKey)
-                    ->delete();
 
                 $skippedCount++;
                 if ($bar) $bar->advance();
@@ -946,7 +941,8 @@ class DataWarehouseSyncService
             $bar->finish();
             $command->newLine();
         }
-        return "Course Dimension synced with Delivery links and hierarchy.";
+        $skipNotice = $skippedCount > 0 ? " (Skipped {$skippedCount} courses with missing or deleted deliveries)" : "";
+        return "Course Dimension synced with Delivery links and hierarchy.{$skipNotice}";
     }
 
     public function syncRiders($command = null)
