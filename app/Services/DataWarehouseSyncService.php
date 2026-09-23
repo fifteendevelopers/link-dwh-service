@@ -862,6 +862,8 @@ class DataWarehouseSyncService
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
+        $skippedCount = 0;
+
         // Upsert Basic Info & Delivery Link
         foreach ($sourceCourses as $course) {
             // Find active Delivery_Key from the Header dimension
