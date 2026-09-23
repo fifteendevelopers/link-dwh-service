@@ -818,11 +818,29 @@ class DataWarehouseSyncService
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
         $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
 
+        $hasCourseSoftDeletes   = $this->sourceHasColumn('courses', 'deleted_at');
+        $hasDeliverySoftDeletes = $this->sourceHasColumn('deliveries', 'deleted_at');
+
         $query = $this->source->table('courses')
-            ->where(function ($q) use ($watermark) {
+            ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
+            ->where(function ($q) use ($watermark, $hasCourseSoftDeletes) {
                 $q->where('courses.updated_at', '>', $watermark)
                     ->orWhereNull('courses.updated_at');
+
+                if ($hasCourseSoftDeletes) {
+                    $q->orWhere('courses.deleted_at', '>', $watermark);
+                }
             });
+
+        // 1. Exclude courses belonging to soft-deleted deliveries
+        if ($hasDeliverySoftDeletes) {
+            $query->whereNull('deliveries.deleted_at');
+        }
+
+        // 2. Exclude soft-deleted courses themselves
+        if ($hasCourseSoftDeletes) {
+            $query->whereNull('courses.deleted_at');
+        }
 
         $total = $query->count();
 
@@ -846,11 +864,27 @@ class DataWarehouseSyncService
 
         // Upsert Basic Info & Delivery Link
         foreach ($sourceCourses as $course) {
-            // Find the Delivery_Key from the Header dimension
-            $deliveryKey = $this->dwh->table('Dim_Delivery_Header')
+            // Find active Delivery_Key from the Header dimension
+            $delivery = $this->dwh->table('Dim_Delivery_Header')
                 ->where('Source_Delivery_Id', $course->delivery_id)
                 ->where('Source_System_Key', $sourceSystemKey)
-                ->value('Delivery_Key');
+                ->select(['Delivery_Key', 'Source_Deleted_At'])
+                ->first();
+
+            // Guard: If delivery header doesn't exist or is soft-deleted, skip this course
+            if (!$delivery || !empty($delivery->Source_Deleted_At)) {
+                // Clean up any previously inserted row in Dim_Course if it now has an invalid delivery
+                $this->dwh->table('Dim_Course')
+                    ->where('Source_Course_Id', $course->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->delete();
+
+                $skippedCount++;
+                if ($bar) $bar->advance();
+                continue;
+            }
+
+            $deliveryKey = $delivery->Delivery_Key;
 
             $this->dwh->table('Dim_Course')->updateOrInsert(
                 [
