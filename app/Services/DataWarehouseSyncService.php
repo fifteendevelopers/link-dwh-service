@@ -307,19 +307,26 @@ class DataWarehouseSyncService
         $highestTimestampSeen = $watermark;
         $syncCount = 0;
 
+        $hasDeprivationIndex = $this->sourceHasColumn('vendor_edubase', 'deprivation_index');
+
+        $selectFields = [
+            'id',
+            'urn',
+            'establishment_name',
+            'la_code',
+            'la_name',
+            'urban_rural_code',
+            'urban_rural_name',
+            'updated_at',
+        ];
+
+        if ($hasDeprivationIndex) {
+            $selectFields[] = 'deprivation_index';
+        }
+
         // 2. Chunked processing with deprivation and rural attributes
         $this->source->table('vendor_edubase')
-            ->select([
-                'id',
-                'urn',
-                'establishment_name',
-                'la_code',
-                'la_name',
-                'urban_rural_code',
-                'urban_rural_name',
-                'deprivation_index',
-                'updated_at',
-            ])
+            ->select($selectFields)
             ->orderBy('id')
             ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
                 foreach ($schools as $school) {
