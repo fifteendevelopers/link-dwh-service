@@ -860,7 +860,30 @@ class DataWarehouseSyncService
 
         // Fetch courses with their delivery relationship
         $sourceCourses = $this->source->table('courses')
-            ->select('id', 'course_id', 'parent_course_id', 'delivery_id', 'status', 'start_date', 'date_complete', 'year_group', 'updated_at')
+            ->select([
+                'id',
+                'course_id',
+                'parent_course_id',
+                'delivery_id',
+                'status',
+                'start_date',
+                'date_complete',
+                'year_group',
+                'is_cancelled',
+                'cancellation_reason',
+                'has_confirmed_booked',
+                'confirmed_by',
+                'confirmed_by_email',
+                'confirmed_at',
+                'provisional_booked',
+                'booked',
+                'adults',
+                'children',
+                'attendees_overridden_metadata',
+                'attendees_overridden_by',
+                'attendees_overridden_at',
+                'updated_at',
+            ])
             ->where(function ($q) use ($watermark) {
                 $q->where('courses.updated_at', '>', $watermark)
                     ->orWhereNull('courses.updated_at');
@@ -897,12 +920,25 @@ class DataWarehouseSyncService
                     'Source_System_Key' => $sourceSystemKey
                 ],
                 [
-                    'Delivery_Key' => $deliveryKey,
-                    'Course_Level' => $course->course_id,
-                    'Status' => $course->status,
-                    'Start_Date' => $course->start_date,
-                    'Date_Complete' => $course->date_complete,
-                    'Year_Group' => $course->year_group,
+                    'Delivery_Key'                  => $deliveryKey,
+                    'Course_Level'                  => $course->course_id,
+                    'Status'                        => $course->status,
+                    'Start_Date'                    => $course->start_date,
+                    'Date_Complete'                 => $course->date_complete,
+                    'Year_Group'                    => $course->year_group,
+                    'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
+                    'Cancellation_Reason'           => $course->cancellation_reason ?? null,
+                    'Has_Confirmed_Booked'          => (bool) ($course->has_confirmed_booked ?? false),
+                    'Confirmed_By'                  => $course->confirmed_by ?? null,
+                    'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
+                    'Confirmed_At'                  => $course->confirmed_at ?? null,
+                    'Provisional_Booked'            => $course->provisional_booked ?? null,
+                    'Booked'                        => $course->booked ?? null,
+                    'Adults'                        => $course->adults ?? null,
+                    'Children'                      => $course->children ?? null,
+                    'Attendees_Overridden_Metadata' => $course->attendees_overridden_metadata ?? null,
+                    'Attendees_Overridden_By'       => $course->attendees_overridden_by ?? null,
+                    'Attendees_Overridden_At'       => $course->attendees_overridden_at ?? null,
                 ]
             );
 
