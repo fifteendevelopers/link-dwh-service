@@ -1634,64 +1634,98 @@ class DataWarehouseSyncService
             ->where('Table_Name', 'Fact_Course_Delivery')
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
 
-        // Drive from deliveries as the root to capture non-digitised records!
-        $query = $this->source->table('deliveries')
+        // 1. Identify distinct candidate Delivery IDs modified across deliveries, courses, or rider links
+        $candidateDeliveryIds = $this->source->table('deliveries')
             ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
-            ->select([
-                'deliveries.id as delivery_id',
-                'deliveries.date_delivery_start',
-                'deliveries.consent_src_characteristics',
-                'deliveries.updated_at as delivery_updated',
-                'courses.id as course_id',
-                'courses.start_date as course_start',
-                'courses.updated_at as course_updated'
-            ]);
+            ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+            ->where(function ($q) use ($watermark) {
+                $q->where('deliveries.updated_at', '>', $watermark)
+                    ->orWhere('courses.updated_at', '>', $watermark)
+                    ->orWhere('jrc.updated_at', '>', $watermark)
+                    ->orWhereNull('deliveries.updated_at');
+            })
+            ->distinct()
+            ->pluck('deliveries.id')
+            ->toArray();
 
-        if ($useLegacy) {
-            $query->addSelect('deliveries.delivery_details');
+        $total = count($candidateDeliveryIds);
+        if ($total === 0) {
+            return "Fact table is up to date.";
         }
-
-        if ($useLegacyCourseCharacteristics) {
-            $query->addSelect('courses.characteristics');
-        }
-
-        // Track adjustments on both sides of the relational bridge line
-        $query->where(function ($q) use ($watermark) {
-            $q->where('deliveries.updated_at', '>', $watermark)
-                ->orWhere('courses.updated_at', '>', $watermark)
-                ->orWhereNull('deliveries.updated_at');
-        })
-            ->orderBy('deliveries.updated_at', 'asc');
-
-        $total = $query->count();
-        if ($total === 0) return "Fact table is up to date.";
 
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
         $highestTimestampSeen = $watermark;
 
-        // Process in chunks to maintain low memory footprints
-        $query->chunk(500, function ($records) use ($sourceSystemKey, $bar, &$highestTimestampSeen, $useLegacy, $useLegacyCourseCharacteristics) {
-            foreach ($records as $record) {
+        // 2. Process fixed batches of delivery IDs (avoids offset drift and runaway loops)
+        collect($candidateDeliveryIds)->chunk(200)->each(function ($deliveryIdChunk) use (
+            $sourceSystemKey,
+            $useLegacy,
+            $useLegacyCourseCharacteristics,
+            $bar,
+            &$highestTimestampSeen
+        ) {
+            // Query courses and deliveries for this fixed batch of IDs
+            $recordsQuery = $this->source->table('deliveries')
+                ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
+                ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+                ->whereIn('deliveries.id', $deliveryIdChunk)
+                ->select([
+                    'deliveries.id as delivery_id',
+                    'deliveries.date_delivery_start',
+                    'deliveries.consent_src_characteristics',
+                    'deliveries.updated_at as delivery_updated',
+                    'courses.id as course_id',
+                    'courses.start_date as course_start',
+                    'courses.updated_at as course_updated',
+                    DB::raw('MAX(jrc.updated_at) as rider_course_updated'),
+                ])
+                ->groupBy([
+                    'deliveries.id',
+                    'deliveries.date_delivery_start',
+                    'deliveries.consent_src_characteristics',
+                    'deliveries.updated_at',
+                    'courses.id',
+                    'courses.start_date',
+                    'courses.updated_at',
+                ]);
 
-                // Track the highest modified timestamp across both tables
-                $activeTimestamp = $record->course_updated > $record->delivery_updated ? $record->course_updated : $record->delivery_updated;
+            if ($useLegacy) {
+                $recordsQuery->addSelect('deliveries.delivery_details');
+                $recordsQuery->groupBy('deliveries.delivery_details');
+            }
+
+            if ($useLegacyCourseCharacteristics) {
+                $recordsQuery->addSelect('courses.characteristics');
+                $recordsQuery->groupBy('courses.characteristics');
+            }
+
+            $records = $recordsQuery->get();
+
+            foreach ($records as $record) {
+                // Track highest timestamp across all entities
+                $activeTimestamp = max(
+                    $record->delivery_updated ?? '1900-01-01 00:00:00',
+                    $record->course_updated ?? '1900-01-01 00:00:00',
+                    $record->rider_course_updated ?? '1900-01-01 00:00:00'
+                );
+
                 if ($activeTimestamp > $highestTimestampSeen) {
                     $highestTimestampSeen = $activeTimestamp;
                 }
 
-                // Resolve target dimension parent entry - safely skips if missing
+                // Resolve target dimension parent entry
                 $delivery = $this->dwh->table('Dim_Delivery_Header')
                     ->where('Source_Delivery_Id', $record->delivery_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
                     ->first();
 
                 if (!$delivery) {
-                    if ($bar) $bar->advance();
                     continue;
                 }
 
-                // ARRANGE METRICS FIRST TO CAPTURE EXTRACTED LEVEL STRINGS
+                // Arrange metrics
                 $mockCourse = (object)[
                     'id'               => $record->course_id,
                     'delivery_id'      => $record->delivery_id,
@@ -1699,32 +1733,31 @@ class DataWarehouseSyncService
                 ];
                 $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
 
-                // Extract and explicitly pull the course level variable out of the fact payload array
                 $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
-                $yearGroupString = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
+                $yearGroupString   = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
                 unset($deliveryDetailMetrics['Extracted_Course_Level']);
                 unset($deliveryDetailMetrics['Extracted_Year_Group']);
 
-                // Resolve or Provision the Dim_Course Row
+                // Resolve or provision Dim_Course
                 $courseKey = null;
                 if (!is_null($record->course_id)) {
                     $courseKey = $this->dwh->table('Dim_Course')
                         ->where('Source_Course_Id', $record->course_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
                         ->value('Course_Key');
                 } elseif (!empty($courseLevelString)) {
-                    // Non-Digitised Track: Provision virtual dimension record on the fly
                     $this->dwh->table('Dim_Course')->updateOrInsert(
                         [
-                            'Delivery_Key' => $delivery->Delivery_Key,
-                            'Course_Level' => $courseLevelString,
-                            'Source_Course_Id' => null
+                            'Delivery_Key'      => $delivery->Delivery_Key,
+                            'Course_Level'      => $courseLevelString,
+                            'Source_Course_Id'  => null,
+                            'Source_System_Key' => $sourceSystemKey,
                         ],
                         [
-                            'Source_System_Key' => $sourceSystemKey,
-                            'Status'            => 1,
-                            'Start_Date'        => $record->course_start ?: $record->date_delivery_start,
-                            'Date_Complete'     => $record->course_start ?: $record->date_delivery_start,
-                            'Year_Group'        => $yearGroupString,
+                            'Status'        => 1,
+                            'Start_Date'    => $record->course_start ?: $record->date_delivery_start,
+                            'Date_Complete' => $record->course_start ?: $record->date_delivery_start,
+                            'Year_Group'    => $yearGroupString,
                         ]
                     );
 
@@ -1732,16 +1765,31 @@ class DataWarehouseSyncService
                         ->where('Delivery_Key', $delivery->Delivery_Key)
                         ->where('Course_Level', $courseLevelString)
                         ->whereNull('Source_Course_Id')
+                        ->where('Source_System_Key', $sourceSystemKey)
                         ->value('Course_Key');
                 }
 
-                // Enforce our integrity guard; skip if no dimension row can be assigned
                 if (is_null($courseKey)) {
-                    if ($bar) $bar->advance();
                     continue;
                 }
 
-                // Resolve Rider counts cleanly (Automatically skips for course-less records)
+                // Attendance fallback for digitised deliveries
+                $isDigitised = ((int)($delivery->Digitisation_Booking ?? 0) === 1) || !is_null($record->course_id);
+                $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
+
+                if ($currentAttended === 0 && $isDigitised && !is_null($record->course_id)) {
+                    $actualAttended = $this->dwh->table('Fact_Rider_Course')
+                        ->where('Source_Course_Id', $record->course_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->where('Attended', 1)
+                        ->count();
+
+                    if ($actualAttended > 0) {
+                        $deliveryDetailMetrics['Count_Attended_Confirmed'] = $actualAttended;
+                    }
+                }
+
+                // Resolve Rider counts
                 $enrolledCount = 0;
                 $completedCount = 0;
                 if (!is_null($record->course_id)) {
@@ -1755,16 +1803,14 @@ class DataWarehouseSyncService
                         ->count();
                 }
 
-                // Isolate demographic extraction routes
+                // Demographics
                 if ($record->consent_src_characteristics == 1) {
                     $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
                 } else {
                     if ($useLegacyCourseCharacteristics) {
-                        if(!empty($record->characteristics)){
-                            $metrics = $this->aggregateFromLegacyCharacteristics($record->characteristics);
-                        } else {
-                            $metrics = $this->initializeExtendedMetricArray();
-                        }
+                        $metrics = !empty($record->characteristics)
+                            ? $this->aggregateFromLegacyCharacteristics($record->characteristics)
+                            : $this->initializeExtendedMetricArray();
                     } elseif (!is_null($record->course_id)) {
                         $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
                     } else {
@@ -1772,12 +1818,12 @@ class DataWarehouseSyncService
                     }
                 }
 
-                // Select date grouping factor fallback
                 $fact_date = $record->course_start ?: $record->date_delivery_start;
 
-                // Composite Upsert targeting BOTH key tracks safely (without leaking virtual dimension columns)
-                if ($useLegacy) {
-                    $finalPayload = array_merge($deliveryDetailMetrics, [
+                $finalPayload = array_merge(
+                    $useLegacy ? [] : $metrics,
+                    $deliveryDetailMetrics,
+                    [
                         'Riders_Enrolled_Count'  => $enrolledCount,
                         'Riders_Completed_Count' => $completedCount,
                         'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
@@ -1785,39 +1831,38 @@ class DataWarehouseSyncService
                         'Organisation_Key'       => $delivery->Organisation_Key,
                         'Provider_Key'           => $delivery->Training_Provider_Key,
                         'Grant_Key'              => $delivery->Grant_Key,
-                    ]);
-                } else {
-                    $finalPayload = array_merge($metrics, $deliveryDetailMetrics, [
-                        'Riders_Enrolled_Count'  => $enrolledCount,
-                        'Riders_Completed_Count' => $completedCount,
-                        'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
-                        'School_Key'             => $delivery->School_Key,
-                        'Organisation_Key'       => $delivery->Organisation_Key,
-                        'Provider_Key'           => $delivery->Training_Provider_Key,
-                        'Grant_Key'              => $delivery->Grant_Key,
-                    ]);
-                }
+                    ]
+                );
 
                 $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                     [
                         'Delivery_Key' => $delivery->Delivery_Key,
-                        'Course_Key'   => $courseKey
+                        'Course_Key'   => $courseKey,
                     ],
                     $finalPayload
                 );
+            }
 
-                if ($bar) $bar->advance();
+            if ($bar) {
+                $bar->advance(count($deliveryIdChunk));
             }
         });
 
-        // Commit the final high-watermark checkpoint back down to the ledger
-        $this->dwh->table('Sync_Log')->updateOrInsert(['Table_Name' => 'Fact_Course_Delivery'], ['Last_Synced_At' => $highestTimestampSeen]);
+        // Commit watermark
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Fact_Course_Delivery'],
+            [
+                'Last_Synced_At'    => $highestTimestampSeen,
+                'Records_Processed' => $total,
+            ]
+        );
 
         if ($bar) {
             $bar->finish();
-            $command->newLine();
+            $command?->newLine();
         }
-        return "Fact_Course_Delivery synced.";
+
+        return "Fact_Course_Delivery synced. ({$total} deliveries processed)";
     }
 
     private function getCourseDeliveryMetrics($course, $useLegacy)
@@ -2079,7 +2124,7 @@ class DataWarehouseSyncService
             if ($sub === 'female') $m['Count_Female'] += (int)$val;
             elseif ($sub === 'male') $m['Count_Male'] += (int)$val;
         }
-
+        $booked = $block['booked'] ?? $block;
         // 2. Map Age Range Totals
         $ages = $booked['age_range'] ?? [];
         foreach ($ages as $sub => $val) {

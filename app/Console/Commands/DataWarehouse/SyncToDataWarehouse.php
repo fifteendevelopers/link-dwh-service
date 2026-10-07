@@ -207,17 +207,6 @@ class SyncToDataWarehouse extends Command
 
         /* Now Sync the FACTS */
 
-        if ($table === 'all' || $table === 'fact_course_delivery') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Course Deliveries...");
-
-            try {
-                $result = $syncService->syncFactCourseDelivery($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Deliveries: " . $e->getMessage());
-            }
-        }
-
         if ($table === 'all' || $table === 'fact_rider_course') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Courses...");
 
@@ -226,6 +215,17 @@ class SyncToDataWarehouse extends Command
                 $this->info($result);
             } catch (\Exception $e) {
                 $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Facts: " . $e->getMessage());
+            }
+        }
+
+        if ($table === 'all' || $table === 'fact_course_delivery') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Course Deliveries...");
+
+            try {
+                $result = $syncService->syncFactCourseDelivery($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Deliveries: " . $e->getMessage());
             }
         }
 
