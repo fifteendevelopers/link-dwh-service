@@ -58,7 +58,7 @@ class RiderActivityOutcomesHandler extends AbstractStreamingReportHandler implem
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->select([
                 'dh.Source_Delivery_Id as delivery_id',
-                DB::raw("IFNULL(s.School_Urn, '') as school_id"),
+                DB::raw("IFNULL(s.School_Urn, '') as school_urn"),
                 DB::raw("IFNULL(s.School_Name, 'N/A') as school_name"),
                 DB::raw("IFNULL(s.La_Name, '') as la_name"),
                 'tp.Provider_Name as tp_name',
@@ -69,6 +69,7 @@ class RiderActivityOutcomesHandler extends AbstractStreamingReportHandler implem
                 DB::raw("IFNULL(fcd.Count_Pupil_Premium, 0) as pupil_premium_count"),
                 DB::raw("IFNULL(dh.Fleet_Cycles_Used, 0) as fleet_cycles_used"),
                 DB::raw("IFNULL(c.Course_Level, s_out.Course_Code) as course_level"),
+                DB::raw("IFNULL(c.Year_Group, '') as year_group"),
                 's_out.l1_ac2_on_own', 's_out.l1_ac2_practice', 's_out.l1_ac2_assistance', 's_out.l1_ac2_not_seen',
                 's_out.l1_ac3_on_own', 's_out.l1_ac3_practice', 's_out.l1_ac3_assistance', 's_out.l1_ac3_not_seen',
                 's_out.l1_ac4_on_own', 's_out.l1_ac4_practice', 's_out.l1_ac4_assistance', 's_out.l1_ac4_not_seen',
