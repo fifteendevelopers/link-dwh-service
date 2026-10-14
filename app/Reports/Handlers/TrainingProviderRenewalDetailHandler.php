@@ -11,6 +11,7 @@ class TrainingProviderRenewalDetailHandler extends AbstractStreamingReportHandle
     {
         return Validator::make($parameters, [
             'financial_year' => 'required|integer',
+            'provider_id'    => 'nullable|integer',
         ])->validate();
     }
 
@@ -21,135 +22,30 @@ class TrainingProviderRenewalDetailHandler extends AbstractStreamingReportHandle
 
         $query = $this->buildQuery($params);
 
+        // Fallback to synchronous array return when callbackUrl is empty (e.g. testing)
         if (empty($this->callbackUrl)) {
             return $query->get()->map(fn($row) => (array)$row)->toArray();
         }
 
+        // Asynchronous CSV Chunk Streaming
         $chunkSize = 500;
 
         $query->chunk($chunkSize, function ($rows) {
-            $chunkArray = $rows->map(function ($row) {
-                return [
-                    $row->id,
-                    $row->provider_number,
-                    $row->provider_name,
-                    $row->address_01,
-                    $row->address_02,
-                    $row->city,
-                    $row->postcode,
-                    $row->website,
-                    $row->telephone,
-                    $row->primary_email,
-                    $row->secondary_email,
-                    $row->public_email,
-                    $row->public_telephone,
-                    $row->provider_type,
-                    $row->status,
-                    $row->date_inception,
-                    $row->date_renewal,
-                    $row->date_deregistered,
-                    $row->date_eqa_visit,
-                    $row->date_insurance_expiry,
-                    $row->pref_level_1,
-                    $row->pref_level_2,
-                    $row->pref_level_3,
-                    $row->pref_plus_balance,
-                    $row->pref_plus_bus,
-                    $row->pref_plus_fix,
-                    $row->pref_plus_learn,
-                    $row->pref_plus_on_show,
-                    $row->pref_plus_parents,
-                    $row->pref_plus_promotion,
-                    $row->pref_plus_recycled,
-                    $row->pref_plus_ride,
-                    $row->pref_plus_transition,
-                    $row->pref_plus_family,
-                    $row->pref_plus_adult,
-                    $row->legacy_areas_of_operation,
-                    $row->account_notes,
-                    $row->tp_created_at,
-                    $row->tp_updated_at,
-                    $row->tp_deleted_at,
-                    $row->renewal_id,
-                    $row->training_provider_id,
-                    $row->renewal_status,
-                    $row->renewal_year,
-                    $row->date_due,
-                    $row->date_completed,
-                    $row->date_approved,
-                    $row->flag_reminder_warning,
-                    $row->flag_overdue_warning,
-                    $row->q_organisation_category,
-                    $row->q_confirm_details,
-                    $row->q_contracted_deliveries,
-                    $row->q_delivered_places,
-                    $row->q_instructor_types_breakdown,
-                    $row->q_confirm_instructor_dbcert,
-                    $row->q_confirm_instructor_safetypolicies,
-                    $row->q_delivery_amount_level_1,
-                    $row->q_delivery_amount_level_1_2,
-                    $row->q_delivery_amount_level_2,
-                    $row->q_delivery_amount_level_3,
-                    $row->q_delivery_amount_plus_balance,
-                    $row->q_delivery_amount_plus_bus,
-                    $row->q_delivery_amount_plus_fix,
-                    $row->q_delivery_amount_plus_learn,
-                    $row->q_delivery_amount_plus_on_show,
-                    $row->q_delivery_amount_plus_parents,
-                    $row->q_delivery_amount_plus_promotion,
-                    $row->q_delivery_amount_plus_recycled,
-                    $row->q_delivery_amount_plus_ride,
-                    $row->q_delivery_amount_plus_transition,
-                    $row->q_delivery_model,
-                    $row->q_confirm_guidelines_commitment,
-                    $row->q_confirm_risk_assessment,
-                    $row->q_confirm_policy_review,
-                    $row->q_confirm_valid_insurance,
-                    $row->q_confirm_iqa_plan,
-                    $row->IQA_Strength,
-                    $row->IQA_Goal,
-                    $row->IQA_Actions,
-                    $row->q_priority_1,
-                    $row->q_action_plan_1,
-                    $row->q_priority_2,
-                    $row->q_action_plan_2,
-                    $row->q_priority_3,
-                    $row->q_action_plan_3,
-                    $row->tpr_created_at,
-                    $row->tpr_updated_at,
-                    $row->q_children,
-                    $row->q_adults,
-                    $row->q_families,
-                    $row->q_confirm_incidents,
-                    $row->q_stage_1_complaints,
-                    $row->q_serious_complaints,
-                    $row->q_confirm_assurance_one,
-                    $row->q_confirm_assurance_two,
-                    $row->q_confirm_assurance_three,
-                    $row->q_improvements, // Kept raw for local processing unpacking
-                    $row->q_confirm_final_one,
-                    $row->q_confirm_final_two,
-                    $row->instructor_count,
-                    $row->confirm_instructors,
-                    $row->all_instructors_have_dbs,
-                    $row->all_instructors_completed_essential_training,
-                    $row->q_confirm_access,
-                    $row->q_safeguarding_lead,
-                    $row->q_health_and_safety_lead,
-                    $row->q_iqa_lead,
-                    $row->q_iqa_organisation,
-                    $row->q_adult_training_only,
-                    $row->q_expected_delivery_empty,
-                    $row->q_expected_delivery,
-                    $row->q_confirm_final_three,
-                    $row->q_name,
-                    $row->q_safeguarding // Kept raw for local processing unpacking
-                ];
-            })->toArray();
+            $memBuffer = fopen('php://temp', 'r+');
 
-            $this->transmitBatch($chunkArray, false);
+            foreach ($rows as $row) {
+                fputcsv($memBuffer, (array)$row);
+            }
+
+            rewind($memBuffer);
+            $csvStringChunk = stream_get_contents($memBuffer);
+            fclose($memBuffer);
+
+            // Transmit the CSV packet downstream
+            $this->transmitBatch([$csvStringChunk], false);
         });
 
+        // Closing EOF packet
         $this->transmitBatch([], true);
 
         return ['status' => 'async_completed'];
@@ -157,39 +53,147 @@ class TrainingProviderRenewalDetailHandler extends AbstractStreamingReportHandle
 
     protected function buildQuery(array $params)
     {
-        return DB::connection('mysql')->table('training_providers as tp')
-            ->join('training_provider_renewals as tpr', 'tpr.training_provider_id', '=', 'tp.id')
-            ->leftJoin('join_instructors_training_providers as ji', 'ji.training_provider_id', '=', 'tpr.training_provider_id')
-            ->where('tpr.renewal_year', (int)$params['financial_year'])
-            ->groupBy('tp.id', 'tpr.id')
+        $query = DB::connection('mysql')->table('Fact_Training_Provider_Renewal as fpr')
+            ->join('Dim_Training_Provider as tp', 'fpr.Provider_Key', '=', 'tp.Provider_Key')
             ->select([
-                'tp.id', 'tp.provider_number', 'tp.provider_name', 'tp.address_01', 'tp.address_02', 'tp.city', 'tp.postcode',
-                'tp.website', 'tp.telephone', 'tp.primary_email', 'tp.secondary_email', 'tp.public_email', 'tp.public_telephone',
-                'tp.provider_type', 'tp.status', 'tp.date_inception', 'tp.date_renewal', 'tp.date_deregistered', 'tp.date_eqa_visit', 'tp.date_insurance_expiry',
-                'tp.pref_level_1', 'tp.pref_level_2', 'tp.pref_level_3', 'tp.pref_plus_balance', 'tp.pref_plus_bus', 'tp.pref_plus_fix', 'tp.pref_plus_learn',
-                'tp.pref_plus_on_show', 'tp.pref_plus_parents', 'tp.pref_plus_promotion', 'tp.pref_plus_recycled', 'tp.pref_plus_ride', 'tp.pref_plus_transition', 'tp.pref_plus_family', 'tp.pref_plus_adult',
-                'tp.legacy_areas_of_operation', 'tp.account_notes', 'tp.created_at as tp_created_at', 'tp.updated_at as tp_updated_at', 'tp.deleted_at as tp_deleted_at',
-                'tpr.id as renewal_id', 'tpr.training_provider_id',
-                DB::raw("CASE WHEN tpr.status = 0 THEN 'In-Progress' WHEN tpr.status = 1 THEN 'Requires Approval' WHEN tpr.status = 2 THEN 'Approved' WHEN tpr.status = 3 THEN 'Failed' ELSE 'Unknown' END AS renewal_status"),
-                'tpr.renewal_year', 'tpr.date_due', 'tpr.date_completed', 'tpr.date_approved', 'tpr.flag_reminder_warning', 'tpr.flag_overdue_warning',
-                'tpr.q_organisation_category', 'tpr.q_confirm_details', 'tpr.q_contracted_deliveries', 'tpr.q_delivered_places', 'tpr.q_instructor_types_breakdown',
-                'tpr.q_confirm_instructor_dbcert', 'tpr.q_confirm_instructor_safetypolicies',
-                'tpr.q_delivery_amount_level_1', 'tpr.q_delivery_amount_level_1_2', 'tpr.q_delivery_amount_level_2', 'tpr.q_delivery_amount_level_3',
-                'tpr.q_delivery_amount_plus_balance', 'tpr.q_delivery_amount_plus_bus', 'tpr.q_delivery_amount_plus_fix', 'tpr.q_delivery_amount_plus_learn',
-                'tpr.q_delivery_amount_plus_on_show', 'tpr.q_delivery_amount_plus_parents', 'tpr.q_delivery_amount_plus_promotion', 'tpr.q_delivery_amount_plus_recycled',
-                'tpr.q_delivery_amount_plus_ride', 'tpr.q_delivery_amount_plus_transition', 'tpr.q_delivery_model', 'tpr.q_confirm_guidelines_commitment',
-                'tpr.q_confirm_risk_assessment', 'tpr.q_confirm_policy_review', 'tpr.q_confirm_valid_insurance', 'tpr.q_confirm_iqa_plan',
-                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(tpr.q_strengths, '$[0].strength')) as IQA_Strength"),
-                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(tpr.q_improvements, '$[0].goal')) as IQA_Goal"),
-                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(tpr.q_improvements, '$[0].actions')) as IQA_Actions"),
-                'tpr.q_priority_1', 'tpr.q_action_plan_1', 'tpr.q_priority_2', 'tpr.q_action_plan_2', 'tpr.q_priority_3', 'tpr.q_action_plan_3',
-                'tpr.created_at as tpr_created_at', 'tpr.updated_at as tpr_updated_at', 'tpr.q_children', 'tpr.q_adults', 'tpr.q_families',
-                'tpr.q_confirm_incidents', 'tpr.q_stage_1_complaints', 'tpr.q_serious_complaints', 'tpr.q_confirm_assurance_one', 'tpr.q_confirm_assurance_two', 'tpr.q_confirm_assurance_three',
-                'tpr.q_improvements', 'tpr.q_confirm_final_one', 'tpr.q_confirm_final_two',
-                DB::raw("COUNT(ji.instructor_id) as instructor_count"),
-                'tpr.q_associated_instructors', 'tpr.q_associated_instructors_two', 'tpr.q_associated_instructors_three', 'tpr.q_confirm_access',
-                'tpr.q_safeguarding_lead', 'tpr.q_health_and_safety_lead', 'tpr.q_iqa_lead', 'tpr.q_iqa_organisation', 'tpr.q_adult_training_only',
-                'tpr.q_expected_delivery_empty', 'tpr.q_expected_delivery', 'tpr.q_confirm_final_three', 'tpr.q_name', 'tpr.q_safeguarding'
-            ]);
+                // Training Provider Dimension Attributes
+                'tp.Source_Provider_Id as id',
+                'tp.Provider_Number as provider_number',
+                'tp.Provider_Name as provider_name',
+                'tp.Address_Line_1 as address_01',
+                'tp.Address_Line_2 as address_02',
+                'tp.City as city',
+                'tp.Postcode as postcode',
+                'tp.Website as website',
+                'tp.Telephone as telephone',
+                'tp.Primary_Email as primary_email',
+                'tp.Secondary_Email as secondary_email',
+                'tp.Public_Email as public_email',
+                'tp.Public_Telephone as public_telephone',
+                'tp.Provider_Type as provider_type',
+                'tp.Status as status',
+                'tp.Date_Inception as date_inception',
+                'tp.Date_Renewal as date_renewal',
+                'tp.Date_Deregistered as date_deregistered',
+                'tp.Date_Eqa_Visit as date_eqa_visit',
+                'tp.Date_Insurance_Expiry as date_insurance_expiry',
+                'tp.Pref_Level_1 as pref_level_1',
+                'tp.Pref_Level_2 as pref_level_2',
+                'tp.Pref_Level_3 as pref_level_3',
+                'tp.Pref_Plus_Balance as pref_plus_balance',
+                'tp.Pref_Plus_Bus as pref_plus_bus',
+                'tp.Pref_Plus_Fix as pref_plus_fix',
+                'tp.Pref_Plus_Learn as pref_plus_learn',
+                'tp.Pref_Plus_On_Show as pref_plus_on_show',
+                'tp.Pref_Plus_Parents as pref_plus_parents',
+                'tp.Pref_Plus_Promotion as pref_plus_promotion',
+                'tp.Pref_Plus_Recycled as pref_plus_recycled',
+                'tp.Pref_Plus_Ride as pref_plus_ride',
+                'tp.Pref_Plus_Transition as pref_plus_transition',
+                'tp.Pref_Plus_Family as pref_plus_family',
+                'tp.Pref_Plus_Adult as pref_plus_adult',
+//                'tp.Legacy_Areas_Of_Operation as legacy_areas_of_operation',
+                'tp.Account_Notes as account_notes',
+                'tp.Source_Created_At as tp_created_at',
+                'tp.Source_Updated_At as tp_updated_at',
+                'tp.Source_Deleted_At as tp_deleted_at',
+
+                // Renewal Fact Attributes
+                'fpr.Source_Renewal_Id as renewal_id',
+                'tp.Source_Provider_Id as training_provider_id',
+                DB::raw("CASE
+                    WHEN fpr.Status = 0 THEN 'In-Progress'
+                    WHEN fpr.Status = 1 THEN 'Requires Approval'
+                    WHEN fpr.Status = 2 THEN 'Approved'
+                    WHEN fpr.Status = 3 THEN 'Failed'
+                    ELSE 'Unknown'
+                END AS renewal_status"),
+                'fpr.Renewal_Year as renewal_year',
+                'fpr.Date_Due as date_due',
+                'fpr.Date_Completed as date_completed',
+                'fpr.Date_Approved as date_approved',
+                'fpr.Flag_Reminder_Warning as flag_reminder_warning',
+                'fpr.Flag_Overdue_Warning as flag_overdue_warning',
+                'fpr.Q_Organisation_Category as q_organisation_category',
+                'fpr.Q_Confirm_Details as q_confirm_details',
+//                'fpr.Q_Contracted_Deliveries as q_contracted_deliveries',
+//                'fpr.Q_Delivered_Places as q_delivered_places',
+//                'fpr.Q_Instructor_Types_Breakdown as q_instructor_types_breakdown',
+//                'fpr.Q_Confirm_Instructor_Dbscert as q_confirm_instructor_dbscert',
+//                'fpr.Q_Confirm_Instructor_Safetypolicies as q_confirm_instructor_safetypolicies',
+//                'fpr.Q_Delivery_Amount_Level_1 as q_delivery_amount_level_1',
+//                'fpr.Q_Delivery_Amount_Level_1_2 as q_delivery_amount_level_1_2',
+//                'fpr.Q_Delivery_Amount_Level_2 as q_delivery_amount_level_2',
+//                'fpr.Q_Delivery_Amount_Level_3 as q_delivery_amount_level_3',
+//                'fpr.Q_Delivery_Amount_Plus_Balance as q_delivery_amount_plus_balance',
+//                'fpr.Q_Delivery_Amount_Plus_Bus as q_delivery_amount_plus_bus',
+//                'fpr.Q_Delivery_Amount_Plus_Fix as q_delivery_amount_plus_fix',
+//                'fpr.Q_Delivery_Amount_Plus_Learn as q_delivery_amount_plus_learn',
+//                'fpr.Q_Delivery_Amount_Plus_On_Show as q_delivery_amount_plus_on_show',
+//                'fpr.Q_Delivery_Amount_Plus_Parents as q_delivery_amount_plus_parents',
+//                'fpr.Q_Delivery_Amount_Plus_Promotion as q_delivery_amount_plus_promotion',
+//                'fpr.Q_Delivery_Amount_Plus_Recycled as q_delivery_amount_plus_recycled',
+//                'fpr.Q_Delivery_Amount_Plus_Ride as q_delivery_amount_plus_ride',
+//                'fpr.Q_Delivery_Amount_Plus_Transition as q_delivery_amount_plus_transition',
+//                'fpr.Q_Delivery_Model as q_delivery_model',
+//                'fpr.Q_Confirm_Guidelines_Commitment as q_confirm_guidelines_commitment',
+//                'fpr.Q_Confirm_Risk_Assessment as q_confirm_risk_assessment',
+//                'fpr.Q_Confirm_Policy_Review as q_confirm_policy_review',
+//                'fpr.Q_Confirm_Valid_Insurance as q_confirm_valid_insurance',
+//                'fpr.Q_Confirm_Iqa_Plan as q_confirm_iqa_plan',
+                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(fpr.Q_Strengths, '$[0].strength')) as IQA_Strength"),
+                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(fpr.Q_Improvements, '$[0].goal')) as IQA_Goal"),
+                DB::raw("JSON_UNQUOTE(JSON_EXTRACT(fpr.Q_Improvements, '$[0].actions')) as IQA_Actions"),
+                'fpr.Q_Priority_1 as q_priority_1',
+                'fpr.Q_Action_Plan_1 as q_action_plan_1',
+                'fpr.Q_Priority_2 as q_priority_2',
+                'fpr.Q_Action_Plan_2 as q_action_plan_2',
+                'fpr.Q_Priority_3 as q_priority_3',
+                'fpr.Q_Action_Plan_3 as q_action_plan_3',
+                'fpr.Source_Created_At as tpr_created_at',
+                'fpr.Source_Updated_At as tpr_updated_at',
+                'fpr.Q_Children as q_children',
+                'fpr.Q_Adults as q_adults',
+                'fpr.Q_Families as q_families',
+                'fpr.Q_Confirm_Incidents as q_confirm_incidents',
+                'fpr.Q_Stage_1_Complaints as q_stage_1_complaints',
+                'fpr.Q_Serious_Complaints as q_serious_complaints',
+                'fpr.Q_Confirm_Assurance_One as q_confirm_assurance_one',
+                'fpr.Q_Confirm_Assurance_Two as q_confirm_assurance_two',
+                'fpr.Q_Confirm_Assurance_Three as q_confirm_assurance_three',
+                'fpr.Q_Improvements as q_improvements',
+                'fpr.Q_Confirm_Final_One as q_confirm_final_one',
+                'fpr.Q_Confirm_Final_Two as q_confirm_final_two',
+
+                // Read directly from Fact column if persisted; otherwise use a non-locking scalar subquery
+                DB::raw("(
+                    SELECT COUNT(*)
+                    FROM Fact_Instructor_Training_Provider fitp
+                    WHERE fitp.Provider_Key = fpr.Provider_Key
+                ) as instructor_count"),
+
+                'fpr.Q_Associated_Instructors as confirm_instructors',
+                'fpr.Q_Associated_Instructors_Two as all_instructors_have_dbs',
+                'fpr.Q_Associated_Instructors_Three as all_instructors_completed_essential_training',
+                'fpr.Q_Confirm_Access as q_confirm_access',
+                'fpr.Q_Safeguarding_Lead as q_safeguarding_lead',
+                'fpr.Q_Health_And_Safety_Lead as q_health_and_safety_lead',
+                'fpr.Q_Iqa_Lead as q_iqa_lead',
+                'fpr.Q_Iqa_Organisation as q_iqa_organisation',
+                'fpr.Q_Adult_Training_Only as q_adult_training_only',
+                'fpr.Q_Expected_Delivery_Empty as q_expected_delivery_empty',
+                'fpr.Q_Expected_Delivery as q_expected_delivery',
+                'fpr.Q_Confirm_Final_Three as q_confirm_final_three',
+                'fpr.Q_Name as q_name',
+                'fpr.Q_Safeguarding as q_safeguarding',
+            ])
+            ->where('fpr.Renewal_Year', (int)$params['financial_year'])
+            ->where('tp.Is_Current', 1);
+
+        if (!empty($params['provider_id'])) {
+            $query->where('tp.Source_Provider_Id', (int)$params['provider_id']);
+        }
+
+        return $query->orderBy('tp.Source_Provider_Id', 'asc');
     }
 }

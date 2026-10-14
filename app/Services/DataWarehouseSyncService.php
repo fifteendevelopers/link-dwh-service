@@ -676,6 +676,7 @@ class DataWarehouseSyncService
         if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Successfully synced {$syncCount} Instructors.");
     }
 
+
     public function syncDeliveryHeaders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -2248,6 +2249,99 @@ class DataWarehouseSyncService
             }
         }
         return $m;
+    }
+
+
+    public function syncInstructorTrainingProviders($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+
+        //  Fetch active dimension lookups to avoid per-row DWH queries
+        $providerMap = $this->dwh->table('Dim_Training_Provider')
+            ->where('Source_System_Key', $sourceSystemKey)
+            ->where('Is_Current', 1)
+            ->pluck('Provider_Key', 'Source_Provider_Id')
+            ->toArray();
+
+        $instructorMap = $this->dwh->table('Dim_Instructor')
+            ->where('Source_System_Key', $sourceSystemKey)
+            ->pluck('Instructor_Key', 'Source_Instructor_Id')
+            ->toArray();
+
+        // 2. Fetch active relationship rows from source
+        $sourceLinks = $this->source->table('join_instructors_training_providers')
+            ->select([
+                'instructor_id',
+                'training_provider_id',
+                'dbs_certification_date',
+                'deleted_at'
+            ])
+            ->get();
+
+        $total = $sourceLinks->count();
+
+        if ($total === 0) {
+            $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
+            return "No active instructor-provider linkages found. Table cleared.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        if ($bar) $bar->start();
+
+        // Build insert records by mapping surrogate keys
+        $insertBuffer = [];
+        $skippedCount = 0;
+
+        foreach ($sourceLinks as $link) {
+            $instructorKey = $instructorMap[$link->instructor_id] ?? null;
+            $providerKey   = $providerMap[$link->training_provider_id] ?? null;
+
+            // Skip if either dimension record does not exist or has been deleted
+            if (!$instructorKey || !$providerKey) {
+                $skippedCount++;
+                if ($bar) $bar->advance();
+                continue;
+            }
+
+            $insertBuffer[] = [
+                'Instructor_Key'         => $instructorKey,
+                'Provider_Key'           => $providerKey,
+                'Source_Instructor_Id'   => $link->instructor_id,
+                'Source_Provider_Id'     => $link->training_provider_id,
+                'Source_System_Key'      => $sourceSystemKey,
+                'Dbs_Certification_Date' => $link->dbs_certification_date ?: null,
+                'Source_Deleted_At'      => $link->deleted_at,
+            ];
+
+            if ($bar) $bar->advance();
+        }
+
+        // Truncate and bulk-insert in chunks of 1,000 rows
+        // Disable foreign key checks momentarily if truncating with FK constraints enabled
+        $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
+        $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
+        $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
+
+        foreach (array_chunk($insertBuffer, 1000) as $batch) {
+            $this->dwh->table('Fact_Instructor_Training_Provider')->insert($batch);
+        }
+
+        // Update Sync_Log ledger
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => 'Fact_Instructor_Training_Provider'],
+            [
+                'Last_Synced_At'    => now()->toDateTimeString(),
+                'Records_Processed' => count($insertBuffer),
+            ]
+        );
+
+        if ($bar) {
+            $bar->finish();
+            $command?->newLine();
+        }
+
+        $skipNotice = $skippedCount > 0 ? " (Skipped {$skippedCount} unmapped linkages)" : "";
+        return "Fact_Instructor_Training_Provider refreshed with " . count($insertBuffer) . " records.{$skipNotice}";
     }
 
     /**

@@ -24,6 +24,7 @@ use App\Reports\Handlers\SchoolDeliveriesHandler;
 use App\Reports\Handlers\TeacherTrainerDeliveriesDetailedHandler;
 use App\Reports\Handlers\TeacherTrainerDeliveriesSimpleHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
+use App\Reports\Handlers\TrainingProviderRenewalDetailHandler;
 
 class ReportFactory
 {
@@ -54,6 +55,7 @@ class ReportFactory
         'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,
         'teacher-trainer-deliveries-simple'   => TeacherTrainerDeliveriesSimpleHandler::class,
         'teacher-trainer-deliveries-detailed' => TeacherTrainerDeliveriesDetailedHandler::class,
+        'training-provider-renewal-detail' => TrainingProviderRenewalDetailHandler::class,
     ];
 
     /**

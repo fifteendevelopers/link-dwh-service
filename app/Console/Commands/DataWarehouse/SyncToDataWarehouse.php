@@ -206,6 +206,16 @@ class SyncToDataWarehouse extends Command
         }
 
         /* Now Sync the FACTS */
+        if ($table === 'all' || $table === 'instructors_training_providers') {
+            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Fact Instructor Training Providers ...");
+
+            try {
+                $result = $syncService->syncInstructorTrainingProviders($this);
+                $this->info($result);
+            } catch (\Exception $e) {
+                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Fact Instructor Training Providers: " . $e->getMessage());
+            }
+        }
 
         if ($table === 'all' || $table === 'fact_rider_course') {
             $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Courses...");
