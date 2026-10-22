@@ -460,7 +460,7 @@ class SyncToDataWarehouse extends Command
         $tableRows = [];
 
         foreach ($auditResults as $entity => $data) {
-            $status = $data['match'] ? '✅ MATCH' : '⚠️ MISMATCH';
+            $status = $data['match'] ? '<fg=green>MATCH</>' : '<fg=red>MISMATCH</>';
             if (!$data['match']) {
                 $hasFailures = true;
             }
