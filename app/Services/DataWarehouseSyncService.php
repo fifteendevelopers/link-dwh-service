@@ -565,92 +565,85 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructors Sync...");
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Full Instructors Sync (All records)...");
+        }
 
-        // 1. Resolve Watermark tracking
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_Instructor')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        if ($command) $command->comment("Watermark: $watermark");
-
-        // 2. Query Source delta (including rows where updated_at might be missing)
-        $query = $this->source->table('instructors')
-            ->where(function ($q) use ($watermark) {
-                $q->where('updated_at', '>', $watermark)
-                    ->orWhereNull('updated_at');
-            });
+        // 1. Target all records without watermark constraints
+        $query = $this->source->table('instructors');
 
         $total = $query->count();
 
         if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructors are already up to date.");
+            if ($command) {
+                $command->info("[" . now()->format('Y-m-d H:i:s') . "] No instructor records found on source.");
+            }
             return;
         }
 
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
-        $highestTimestampSeen = $watermark;
         $syncCount = 0;
+        $highestTimestampSeen = '1900-01-01 00:00:00';
 
-        // 3. Process records via stable chunks
-        $query->orderBy('updated_at', 'asc')->chunk(500, function ($instructors) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
+        // 2. Process records chunked deterministically by primary key
+        $query->orderBy('id', 'asc')->chunk(500, function ($instructors) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
             foreach ($instructors as $instructor) {
 
                 $this->dwh->table('Dim_Instructor')->updateOrInsert(
                     [
                         'Source_Instructor_Id' => $instructor->id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_System_Key'    => $sourceSystemKey,
                     ],
                     [
                         'Instructor_Number' => $instructor->instructor_number,
-                        'Instructor_Type' => $instructor->instructor_type,
-                        'First_Name' => $instructor->first_name,
-                        'Last_Name' => $instructor->last_name,
-                        'Email' => $instructor->email,
-                        'Telephone' => $instructor->telephone,
-                        'Landline' => $instructor->landline,
+                        'Instructor_Type'   => $instructor->instructor_type,
+                        'First_Name'        => $instructor->first_name,
+                        'Last_Name'         => $instructor->last_name,
+                        'Email'             => $instructor->email,
+                        'Telephone'         => $instructor->telephone,
+                        'Landline'          => $instructor->landline,
 
                         'Age_Range_Id' => $instructor->age_range_id,
                         'Ethnicity_Id' => $instructor->ethnicity_id,
-                        'Gender_Id' => $instructor->gender_id,
-                        'Title_Id' => $instructor->title_id,
+                        'Gender_Id'    => $instructor->gender_id,
+                        'Title_Id'     => $instructor->title_id,
 
                         'Address_01' => $instructor->address_01,
                         'Address_02' => $instructor->address_02,
-                        'City' => $instructor->city,
-                        'Postcode' => $instructor->postcode,
+                        'City'       => $instructor->city,
+                        'Postcode'   => $instructor->postcode,
 
-                        'Status_Raw' => $instructor->status,
-                        'Is_Pending' => (bool)$instructor->is_pending,
-                        'Flag_Nsi_Migrated' => (bool)$instructor->flag_nsi_migrated,
+                        'Status_Raw'        => $instructor->status,
+                        'Is_Pending'        => (bool) $instructor->is_pending,
+                        'Flag_Nsi_Migrated' => (bool) $instructor->flag_nsi_migrated,
 
-                        'Pref_Receive_News' => (bool)$instructor->pref_receive_news,
-                        'Pref_Delivering_Bikeability' => (bool)$instructor->pref_delivering_bikeability,
-                        'Pref_Delivering_Other' => (bool)$instructor->pref_delivering_other,
-                        'Pref_Bursary_Eligibility' => (bool)$instructor->pref_bursary_eligibility,
-                        'Has_Received_Bursary' => (bool)$instructor->has_received_bursary,
+                        'Pref_Receive_News'          => (bool) $instructor->pref_receive_news,
+                        'Pref_Delivering_Bikeability'=> (bool) $instructor->pref_delivering_bikeability,
+                        'Pref_Delivering_Other'      => (bool) $instructor->pref_delivering_other,
+                        'Pref_Bursary_Eligibility'   => (bool) $instructor->pref_bursary_eligibility,
+                        'Has_Received_Bursary'       => (bool) $instructor->has_received_bursary,
 
-                        'Date_Registered' => $instructor->date_registered,
-                        'Date_Renewal' => $instructor->date_renewal,
-                        'Date_Deregistered' => $instructor->date_deregistered,
-                        'Deregistration_Reason' => $instructor->deregistration_reason,
+                        'Date_Registered'      => $instructor->date_registered,
+                        'Date_Renewal'         => $instructor->date_renewal,
+                        'Date_Deregistered'    => $instructor->date_deregistered,
+                        'Deregistration_Reason'=> $instructor->deregistration_reason,
 
-                        'First_Aid_Training_Complete_Date' => $instructor->first_aid_training_complete_date,
-                        'Safeguarding_Training_Complete_Date' => $instructor->safeguarding_training_complete_date,
-                        'Send_Training_Complete_Date' => $instructor->send_training_complete_date,
-                        'Send_Training_Overridden' => (bool)$instructor->send_training_overridden,
-                        'Send_Training_Certificate_Download_Date' => $instructor->send_training_certificate_download_date,
+                        'First_Aid_Training_Complete_Date'       => $instructor->first_aid_training_complete_date,
+                        'Safeguarding_Training_Complete_Date'    => $instructor->safeguarding_training_complete_date,
+                        'Send_Training_Complete_Date'            => $instructor->send_training_complete_date,
+                        'Send_Training_Overridden'               => (bool) $instructor->send_training_overridden,
+                        'Send_Training_Certificate_Download_Date'=> $instructor->send_training_certificate_download_date,
 
-                        'Account_Notes' => $instructor->account_notes,
+                        'Account_Notes'     => $instructor->account_notes,
                         'Source_Created_At' => $instructor->created_at,
                         'Source_Updated_At' => $instructor->updated_at,
-                        'updated_at' => now()
+                        'updated_at'        => now(),
                     ]
                 );
 
-                if ($instructor->updated_at > $highestTimestampSeen) {
+                if ($instructor->updated_at && $instructor->updated_at > $highestTimestampSeen) {
                     $highestTimestampSeen = $instructor->updated_at;
                 }
 
@@ -659,21 +652,23 @@ class DataWarehouseSyncService
             }
         });
 
-        // 4. Record the final Watermark state
+        // 3. Keep the sync ledger updated with total records and completion time
         $this->dwh->table('Sync_Log')->updateOrInsert(
             ['Table_Name' => 'Dim_Instructor'],
             [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $syncCount
+                'Last_Synced_At'    => now()->toDateTimeString(),
+                'Records_Processed' => $syncCount,
             ]
         );
 
         if ($bar) {
             $bar->finish();
-            $command->newLine();
+            $command?->newLine();
         }
 
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Successfully synced {$syncCount} Instructors.");
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Successfully synced {$syncCount} Instructors (Full Scan).");
+        }
     }
 
 
@@ -2256,7 +2251,11 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
-        //  Fetch active dimension lookups to avoid per-row DWH queries
+        if ($command) {
+            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing all Instructor - Training Provider links (including soft deletes)...");
+        }
+
+        // 1. Fetch active dimension surrogate lookups
         $providerMap = $this->dwh->table('Dim_Training_Provider')
             ->where('Source_System_Key', $sourceSystemKey)
             ->where('Is_Current', 1)
@@ -2268,27 +2267,29 @@ class DataWarehouseSyncService
             ->pluck('Instructor_Key', 'Source_Instructor_Id')
             ->toArray();
 
-        // 2. Fetch active relationship rows from source
+        // 2. Fetch all pairings from source (no whereNull('deleted_at'))
         $sourceLinks = $this->source->table('join_instructors_training_providers')
             ->select([
                 'instructor_id',
                 'training_provider_id',
                 'dbs_certification_date',
-                'deleted_at'
+                'deleted_at',
             ])
             ->get();
 
         $total = $sourceLinks->count();
 
         if ($total === 0) {
+            $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
             $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
-            return "No active instructor-provider linkages found. Table cleared.";
+            $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
+            return "No instructor-provider linkages found. Table cleared.";
         }
 
         $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
         if ($bar) $bar->start();
 
-        // Build insert records by mapping surrogate keys
+        // 3. Map surrogate keys and build batch insert array
         $insertBuffer = [];
         $skippedCount = 0;
 
@@ -2296,7 +2297,6 @@ class DataWarehouseSyncService
             $instructorKey = $instructorMap[$link->instructor_id] ?? null;
             $providerKey   = $providerMap[$link->training_provider_id] ?? null;
 
-            // Skip if either dimension record does not exist or has been deleted
             if (!$instructorKey || !$providerKey) {
                 $skippedCount++;
                 if ($bar) $bar->advance();
@@ -2310,14 +2310,13 @@ class DataWarehouseSyncService
                 'Source_Provider_Id'     => $link->training_provider_id,
                 'Source_System_Key'      => $sourceSystemKey,
                 'Dbs_Certification_Date' => $link->dbs_certification_date ?: null,
-                'Source_Deleted_At'      => $link->deleted_at,
+                'Source_Deleted_At'      => $link->deleted_at ?: null,
             ];
 
             if ($bar) $bar->advance();
         }
 
-        // Truncate and bulk-insert in chunks of 1,000 rows
-        // Disable foreign key checks momentarily if truncating with FK constraints enabled
+        // 4. Truncate and batch insert
         $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
         $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
         $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
@@ -2326,7 +2325,7 @@ class DataWarehouseSyncService
             $this->dwh->table('Fact_Instructor_Training_Provider')->insert($batch);
         }
 
-        // Update Sync_Log ledger
+        // 5. Update ledger
         $this->dwh->table('Sync_Log')->updateOrInsert(
             ['Table_Name' => 'Fact_Instructor_Training_Provider'],
             [

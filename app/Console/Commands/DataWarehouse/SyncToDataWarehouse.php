@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\DataWarehouse;
 
+use App\Services\DataWarehouseQualityService;
 use App\Services\DataWarehouseSyncService;
 use Illuminate\Console\Command;
 
@@ -12,7 +13,7 @@ class SyncToDataWarehouse extends Command
 
     protected $description = 'Syncs production data into the Data Warehouse';
 
-    public function handle(DataWarehouseSyncService $syncService)
+    public function handle(DataWarehouseSyncService $syncService, DataWarehouseQualityService $qualityService)
     {
         $table = $this->option('table');
 
@@ -448,6 +449,45 @@ class SyncToDataWarehouse extends Command
             }
         }
 
+        $this->newLine(2);
+        $this->info('===========================================================');
+        $this->info('           RUNNING POST-SYNC QUALITY AUDIT                 ');
+        $this->info('===========================================================');
+
+        $auditResults = $qualityService->auditAll($this->output, 5);
+
+        $hasFailures = false;
+        $tableRows = [];
+
+        foreach ($auditResults as $entity => $data) {
+            $status = $data['match'] ? '✅ MATCH' : '⚠️ MISMATCH';
+            if (!$data['match']) {
+                $hasFailures = true;
+            }
+
+            $missingSummary = $data['missing_count'] > 0
+                ? "{$data['missing_count']} missing (e.g. " . implode(', ', $data['missing_ids']) . ")"
+                : '0';
+
+            $tableRows[] = [
+                $entity,
+                number_format($data['source_count']),
+                number_format($data['dwh_count']),
+                $status,
+                $missingSummary,
+            ];
+        }
+
+        $this->table(
+            ['Entity', 'Source Rows', 'DWH Rows', 'Status', 'Missing Sample'],
+            $tableRows
+        );
+
+        if ($hasFailures) {
+            $this->warn('Quality audit detected discrepancies between Source and DWH.');
+        } else {
+            $this->info('All audited tables show 100% parity.');
+        }
 
         $this->info("[".now()->format('Y-m-d H:i:s')."] Sync Process Completed.");
     }
