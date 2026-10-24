@@ -4,451 +4,201 @@ namespace App\Console\Commands\DataWarehouse;
 
 use App\Services\DataWarehouseQualityService;
 use App\Services\DataWarehouseSyncService;
+use App\Services\SlackAlertService;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 
 class SyncToDataWarehouse extends Command
 {
-    // The name of the command you'll type in terminal
     protected $signature = 'dwh:sync {--table=all}';
 
     protected $description = 'Syncs production data into the Data Warehouse';
 
-    public function handle(DataWarehouseSyncService $syncService, DataWarehouseQualityService $qualityService)
-    {
+    public function handle(
+        DataWarehouseSyncService $syncService,
+        DataWarehouseQualityService $qualityService,
+        SlackAlertService $slack
+    ): int {
+        $startTime = microtime(true);
+        $startedAt = Carbon::now();
         $table = $this->option('table');
+        $syncErrors = [];
 
-        $this->info("[".now()->format('Y-m-d H:i:s')."] Starting Data Warehouse Sync...");
+        $this->info("[{$startedAt->format('Y-m-d H:i:s')}] Starting Data Warehouse Sync (Target: {$table})...");
+
+        // Helper closure to dry up the try/catches and collect errors
+        $runSyncStep = function (string $stepName, callable $callback) use (&$syncErrors) {
+            $this->comment("[" . now()->format('Y-m-d H:i:s') . "] Syncing {$stepName}...");
+            try {
+                $result = $callback();
+                $this->info($result);
+            } catch (\Throwable $e) {
+                $msg = $e->getMessage();
+                $this->error("[" . now()->format('Y-m-d H:i:s') . "] Failed to sync {$stepName}: {$msg}");
+                $syncErrors[$stepName] = $msg;
+            }
+        };
 
         if ($table === 'all' || $table === 'external_systems') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing External Systems...");
-
-            try {
-                $result = $syncService->syncExternalSystems($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync External Systems: " . $e->getMessage());
-            }
+            $runSyncStep('External Systems', fn() => $syncService->syncExternalSystems($this));
         }
 
         if ($table === 'all' || $table === 'course_activities_lookup') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Course Activities lookup...");
-
-            try {
-                $result = $syncService->syncCourseActivities($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Activities lookup: " . $e->getMessage());
-            }
+            $runSyncStep('Course Activities lookup', fn() => $syncService->syncCourseActivities($this));
         }
 
         if ($table === 'all' || $table === 'instructor_feedback_lookup') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Instructor Feedback lookup...");
-
-            try {
-                $result = $syncService->syncInstructorFeedbackLookups($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Feedback lookup: " . $e->getMessage());
-            }
+            $runSyncStep('Instructor Feedback lookup', fn() => $syncService->syncInstructorFeedbackLookups($this));
         }
 
         if ($table === 'all' || $table === 'providers') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Training Providers...");
-
-            try {
-                $result = $syncService->syncTrainingProviders($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Providers: " . $e->getMessage());
-            }
+            $runSyncStep('Training Providers', fn() => $syncService->syncTrainingProviders($this));
         }
 
         if ($table === 'all' || $table === 'riders') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Riders...");
-
-            try {
-                $result = $syncService->syncRiders($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders: " . $e->getMessage());
-            }
+            $runSyncStep('Riders', fn() => $syncService->syncRiders($this));
         }
 
         if ($table === 'all' || $table === 'schools') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Schools...");
-
-            try {
-                $result = $syncService->syncSchools($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Schools: " . $e->getMessage());
-            }
+            $runSyncStep('Schools', fn() => $syncService->syncSchools($this));
         }
 
         if ($table === 'all' || $table === 'organisations') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Organisations...");
-
-            try {
-                $result = $syncService->syncOrganisations($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Organisations: " . $e->getMessage());
-            }
+            $runSyncStep('Organisations', fn() => $syncService->syncOrganisations($this));
         }
 
         if ($table === 'all' || $table === 'grant_recipients') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Grant Recipients...");
-
-            try {
-                $result = $syncService->syncGrantRecipients($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Recipients: " . $e->getMessage());
-            }
+            $runSyncStep('Grant Recipients', fn() => $syncService->syncGrantRecipients($this));
         }
 
         if ($table === 'all' || $table === 'grants') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing grants...");
-
-            try {
-                $result = $syncService->syncGrants($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync grants: " . $e->getMessage());
-            }
+            $runSyncStep('Grants', fn() => $syncService->syncGrants($this));
         }
 
         if ($table === 'all' || $table === 'instructors') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Instructors...");
-
-            try {
-                $result = $syncService->syncInstructors($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructors: " . $e->getMessage());
-            }
+            $runSyncStep('Instructors', fn() => $syncService->syncInstructors($this));
         }
 
         if ($table === 'all' || $table === 'deliveries') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing deliveries...");
-
-            try {
-                $result = $syncService->syncDeliveryHeaders($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync delivery headers: " . $e->getMessage());
-            }
+            $runSyncStep('Deliveries', fn() => $syncService->syncDeliveryHeaders($this));
         }
 
         if ($table === 'all' || $table === 'courses') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing courses...");
-
-            try {
-                $result = $syncService->syncCourses($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync courses: " . $e->getMessage());
-            }
+            $runSyncStep('Courses', fn() => $syncService->syncCourses($this));
         }
 
         if ($table === 'all' || $table === 'consents') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Consents...");
-
-            try {
-                $result = $syncService->syncConsents($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Consents: " . $e->getMessage());
-            }
+            $runSyncStep('Consents', fn() => $syncService->syncConsents($this));
         }
 
         if ($table === 'all' || $table === 'teacher_trainers') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Teacher Trainers...");
-
-            try {
-                $result = $syncService->syncTeacherTrainers($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Teacher Trainers: " . $e->getMessage());
-            }
+            $runSyncStep('Teacher Trainers', fn() => $syncService->syncTeacherTrainers($this));
         }
 
         if ($table === 'all' || $table === 'get_cycling_courses') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Courses...");
-
-            try {
-                $result = $syncService->syncGetCyclingCourses($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Courses: " . $e->getMessage());
-            }
+            $runSyncStep('Get Cycling Courses', fn() => $syncService->syncGetCyclingCourses($this));
         }
 
         if ($table === 'all' || $table === 'get_cycling_riders') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Riders...");
-
-            try {
-                $result = $syncService->syncGetCyclingRiders($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Riders: " . $e->getMessage());
-            }
+            $runSyncStep('Get Cycling Riders', fn() => $syncService->syncGetCyclingRiders($this));
         }
 
         if ($table === 'all' || $table === 'get_cycling_rider_notes') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling Rider Notes...");
-
-            try {
-                $result = $syncService->syncGetCyclingRiderNotes($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling Rider Notes: " . $e->getMessage());
-            }
+            $runSyncStep('Get Cycling Rider Notes', fn() => $syncService->syncGetCyclingRiderNotes($this));
         }
 
-        /* Now Sync the FACTS */
+        /* Fact tables */
         if ($table === 'all' || $table === 'instructors_training_providers') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Fact Instructor Training Providers ...");
-
-            try {
-                $result = $syncService->syncInstructorTrainingProviders($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Fact Instructor Training Providers: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Instructor Training Providers', fn() => $syncService->syncInstructorTrainingProviders($this));
         }
 
         if ($table === 'all' || $table === 'fact_rider_course') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Courses...");
-
-            try {
-                $result = $syncService->syncFactRiderCourse($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Rider Course', fn() => $syncService->syncFactRiderCourse($this));
         }
 
         if ($table === 'all' || $table === 'fact_course_delivery') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Course Deliveries...");
-
-            try {
-                $result = $syncService->syncFactCourseDelivery($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Course Deliveries: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Course Delivery', fn() => $syncService->syncFactCourseDelivery($this));
         }
 
         if ($table === 'all' || $table === 'fact_rider_activity_outcome') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Course Activity outcomes...");
-
-            try {
-                $result = $syncService->syncFactRiderActivityOutcomes($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Course Activity outcomes: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Rider Activity Outcomes', fn() => $syncService->syncFactRiderActivityOutcomes($this));
         }
 
         if ($table === 'all' || $table === 'fact_rider_instructor_feedback') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Instructor Feedback...");
-
-            try {
-                $result = $syncService->syncFactRiderInstructorFeedback($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Instructor Feedback: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Rider Instructor Feedback', fn() => $syncService->syncFactRiderInstructorFeedback($this));
         }
 
         if ($table === 'all' || $table === 'fact_rider_activity_outcome_summary') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Riders Activity Outcome Summary...");
-
-            try {
-                $result = $syncService->syncFactActivityOutcomeSummary($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Riders Activity Outcome Summary: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Activity Outcome Summary', fn() => $syncService->syncFactActivityOutcomeSummary($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_financials') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Format DFT (Financials)...");
-
-            try {
-                $result = $syncService->syncFactGrantFinancials($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Format DFT (Financials): " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Financials', fn() => $syncService->syncFactGrantFinancials($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_reallocations') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Reallocations...");
-
-            try {
-                $result = $syncService->syncFactGrantReallocations($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Reallocations: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Reallocations', fn() => $syncService->syncFactGrantReallocations($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_amendments') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Amendments...");
-
-            try {
-                $result = $syncService->syncFactGrantAmendments($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Amendments: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Amendments', fn() => $syncService->syncFactGrantAmendments($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_claims') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Claims...");
-
-            try {
-                $result = $syncService->syncFactGrantClaims($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Claims: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Claims', fn() => $syncService->syncFactGrantClaims($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_format_dft') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Format DFT...");
-
-            try {
-                $result = $syncService->syncFactGrantFormatDft($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Format DFT: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Format DFT', fn() => $syncService->syncFactGrantFormatDft($this));
         }
 
         if ($table === 'all' || $table === 'fact_instructor_course') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Courses...");
-
-            try {
-                $result = $syncService->syncFactInstructorCourse($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Course: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Instructor Course', fn() => $syncService->syncFactInstructorCourse($this));
         }
 
         if ($table === 'all' || $table === 'fact_instructor_delivery') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor / Deliveries...");
-
-            try {
-                $result = $syncService->syncFactInstructorDeliveries($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Deliveries: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Instructor Delivery', fn() => $syncService->syncFactInstructorDeliveries($this));
         }
 
         if ($table === 'all' || $table === 'fact_parent_survey') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Parent Survey...");
-
-            try {
-                $result = $syncService->syncFactParentSurvey($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Parent Survey facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Parent Survey', fn() => $syncService->syncFactParentSurvey($this));
         }
 
         if ($table === 'all' || $table === 'fact_hands_up_survey') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Hands Up Survey...");
-
-            try {
-                $result = $syncService->syncFactHandsupSurvey($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Hands Up Survey facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Hands Up Survey', fn() => $syncService->syncFactHandsupSurvey($this));
         }
 
         if ($table === 'all' || $table === 'fact_parent_follow_up_survey') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Parent Follow Up Survey...");
-
-            try {
-                $result = $syncService->syncFactParentFollowUpSurveys($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Parent Follow Up Survey facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Parent Follow Up Survey', fn() => $syncService->syncFactParentFollowUpSurveys($this));
         }
 
         if ($table === 'all' || $table === 'fact_grant_recipient_renewals') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Grant Recipient Renewals...");
-
-            try {
-                $result = $syncService->syncFactGrantRecipientRenewals($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Grant Recipient Renewals facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Grant Recipient Renewals', fn() => $syncService->syncFactGrantRecipientRenewals($this));
         }
 
         if ($table === 'all' || $table === 'fact_instructor_renewals') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Instructor Renewals...");
-
-            try {
-                $result = $syncService->syncFactInstructorRenewals($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Instructor Renewals facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Instructor Renewals', fn() => $syncService->syncFactInstructorRenewals($this));
         }
 
         if ($table === 'all' || $table === 'fact_training_provider_renewals') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Facts from Training Provider Renewals...");
-
-            try {
-                $result = $syncService->syncFactTrainingProviderRenewals($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Training Provider Renewals facts: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Training Provider Renewals', fn() => $syncService->syncFactTrainingProviderRenewals($this));
         }
 
         if ($table === 'all' || $table === 'fact_teacher_trainer_deliveries') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Teacher Trainer deliveries...");
-
-            try {
-                $result = $syncService->syncFactTeacherTrainerDeliveries($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Teacher Trainer deliveries: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Teacher Trainer Deliveries', fn() => $syncService->syncFactTeacherTrainerDeliveries($this));
         }
 
         if ($table === 'all' || $table === 'fact_get_cycling_rider_courses') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling rider courses...");
-
-            try {
-                $result = $syncService->syncGetCyclingRiderCourses($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling rider courses: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Get Cycling Rider Courses', fn() => $syncService->syncGetCyclingRiderCourses($this));
         }
 
         if ($table === 'all' || $table === 'fact_get_cycling_survey_courses') {
-            $this->comment("[".now()->format('Y-m-d H:i:s')."] Syncing Get Cycling survey courses...");
-
-            try {
-                $result = $syncService->syncGetCyclingSurveys($this);
-                $this->info($result);
-            } catch (\Exception $e) {
-                $this->error("[".now()->format('Y-m-d H:i:s')."] Failed to sync Get Cycling survey courses: " . $e->getMessage());
-            }
+            $runSyncStep('Fact Get Cycling Survey Courses', fn() => $syncService->syncGetCyclingSurveys($this));
         }
 
+        // =========================================================
+        // POST-SYNC QUALITY AUDIT
+        // =========================================================
         $this->newLine(2);
         $this->info('===========================================================');
         $this->info('           RUNNING POST-SYNC QUALITY AUDIT                 ');
@@ -456,17 +206,20 @@ class SyncToDataWarehouse extends Command
 
         $auditResults = $qualityService->auditAll($this->output, 5);
 
-        $hasFailures = false;
+        $auditMismatches = [];
         $tableRows = [];
 
         foreach ($auditResults as $entity => $data) {
-            $status = $data['match'] ? '<fg=green>MATCH</>' : '<fg=red>MISMATCH</>';
+            $status = $data['match'] ? '✅ MATCH' : '⚠️ MISMATCH';
             if (!$data['match']) {
-                $hasFailures = true;
+                $auditMismatches[$entity] = $data['missing_count'];
             }
 
+            $missingList = $data['missing_ids'] ?? [];
             $missingSummary = $data['missing_count'] > 0
-                ? "{$data['missing_count']} missing (e.g. " . implode(', ', $data['missing_ids']) . ")"
+                ? (!empty($missingList)
+                    ? "{$data['missing_count']} missing (e.g. " . implode(', ', array_slice($missingList, 0, 5)) . ")"
+                    : "{$data['missing_count']} missing")
                 : '0';
 
             $tableRows[] = [
@@ -483,12 +236,92 @@ class SyncToDataWarehouse extends Command
             $tableRows
         );
 
-        if ($hasFailures) {
-            $this->warn('Quality audit detected discrepancies between Source and DWH.');
+        // =========================================================
+        // FINAL EXECUTION STATUS & NOTIFICATION
+        // =========================================================
+        $durationSeconds = round(microtime(true) - $startTime, 2);
+        $minutes = floor($durationSeconds / 60);
+        $seconds = round(fmod($durationSeconds, 60), 1);
+        $durationText = ($minutes > 0 ? "{$minutes}m " : "") . "{$seconds}s";
+
+        $hasSyncCrashes = !empty($syncErrors);
+        $hasAuditMismatches = !empty($auditMismatches);
+
+        $this->newLine();
+        $this->line('===========================================================');
+
+        if ($hasSyncCrashes) {
+            // Red banner (white text on red background)
+            $this->line(" <error> FAILURE </error> <fg=red;options=bold>DWH Sync finished WITH ERRORS</> in {$durationText}");
+        } elseif ($hasAuditMismatches) {
+            // Yellow/Amber banner (black text on yellow background)
+            $this->line(" <bg=yellow;fg=black;options=bold> WARNING </bg=yellow;fg=black;options=bold> <fg=yellow;options=bold>DWH Sync completed with AUDIT MISMATCHES</> in {$durationText}");
         } else {
-            $this->info('All audited tables show 100% parity.');
+            // Green banner (white/black text on green background)
+            $this->line(" <bg=green;fg=black;options=bold> SUCCESS </bg=green;fg=black;options=bold> <fg=green;options=bold>DWH Sync completed SUCCESSFULLY</> in {$durationText}");
         }
 
-        $this->info("[".now()->format('Y-m-d H:i:s')."] Sync Process Completed.");
+        $this->line('===========================================================');
+
+        // Send end-of-sync notification to Slack
+        $this->sendSlackStatusNotification(
+            $slack,
+            $table,
+            $durationText,
+            $syncErrors,
+            $auditMismatches
+        );
+
+        return ($hasSyncCrashes || $hasAuditMismatches) ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * Dispatch the final run status to Slack.
+     */
+    protected function sendSlackStatusNotification(
+        SlackAlertService $slack,
+        string $targetTable,
+        string $duration,
+        array $syncErrors,
+        array $auditMismatches
+    ): void {
+        $hasErrors = !empty($syncErrors);
+        $hasMismatches = !empty($auditMismatches);
+
+        if ($hasErrors) {
+            $header      = "DWH Sync Finished: ERRORS DETECTED";
+            $statusColor = "#A30200"; // Crimson Red ('danger')
+            $statusText  = "CRITICAL ERRORS";
+        } elseif ($hasMismatches) {
+            $header      = "DWH Sync Finished: AUDIT WARNINGS";
+            $statusColor = "#DAA038"; // Amber / Gold ('warning')
+            $statusText  = "AUDIT WARNINGS";
+        } else {
+            $header      = "DWH Sync Finished: SUCCESS";
+            $statusColor = "#2EB886"; // Emerald Green ('good')
+            $statusText  = "SUCCESS";
+        }
+
+        $message = "*Status:* `{$statusText}` | Finished in *{$duration}* (Target: `{$targetTable}`)\n";
+
+        if ($hasErrors) {
+            $message .= "\n*Failed Steps (" . count($syncErrors) . "):*\n";
+            foreach ($syncErrors as $step => $err) {
+                $message .= "• *{$step}:* `{$err}`\n";
+            }
+        }
+
+        if ($hasMismatches) {
+            $message .= "\n*Audit Mismatches (" . count($auditMismatches) . "):*\n";
+            foreach ($auditMismatches as $entity => $count) {
+                $message .= "• *{$entity}:* {$count} records missing\n";
+            }
+        }
+
+        if (!$hasErrors && !$hasMismatches) {
+            $message .= "\nAll tables synced and 100% parity verified.";
+        }
+
+        $slack->sendSyncStatus($header, $message, $statusColor);
     }
 }

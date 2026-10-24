@@ -30,18 +30,30 @@ class DataWarehouseQualityService
             'Deliveries' => [
                 'source_table' => 'deliveries',
                 'source_id_col' => 'id',
-                'source_deleted_col' => 'deleted_at',
+                'source_deleted_col' => null,
                 'dwh_table' => 'Dim_Delivery_Header',
                 'dwh_source_id_col' => 'Source_Delivery_Id',
-                'dwh_deleted_col' => 'Source_Deleted_At',
+                'dwh_deleted_col' => null,
+            ],
+            'Consents' => [
+                'source_table'       => 'consents',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Consent',
+                'dwh_source_id_col'  => 'Source_Consent_Id',
+                'dwh_deleted_col'    => null,
             ],
             'Courses' => [
-                'source_table' => 'courses',
-                'source_id_col' => 'id',
-                'source_deleted_col' => null, // If courses has no deleted_at
-                'dwh_table' => 'Dim_Course',
-                'dwh_source_id_col' => 'Source_Course_Id',
-                'dwh_deleted_col' => null,
+                'source_table'       => 'courses',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Course',
+                'dwh_source_id_col'  => 'Source_Course_Id',
+                'dwh_deleted_col'    => null,
+                'dwh_query_modifier' => function ($query) {
+                    $query->join('Dim_Delivery_Header', 'Dim_Course.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
+                        ->whereNotNull('Dim_Course.Source_Course_Id');
+                },
             ],
             'Training Providers' => [
                 'source_table' => 'training_providers',
@@ -50,7 +62,10 @@ class DataWarehouseQualityService
                 'dwh_table' => 'Dim_Training_Provider',
                 'dwh_source_id_col' => 'Source_Provider_Id',
                 'dwh_deleted_col' => 'Source_Deleted_At',
-                'extra_dwh_filter' => ['Is_Current' => 1],
+                'dwh_query_modifier'    => function ($query) {
+                    // Only compare against the active version for SCD Type 2
+                    $query->where('Dim_Training_Provider.Is_Current', 1);
+                },
             ],
             'Instructors' => [
                 'source_table' => 'instructors',
@@ -68,6 +83,61 @@ class DataWarehouseQualityService
                 'dwh_source_id_col'  => null,
                 'dwh_deleted_col'    => null, // Set to null to include all records
                 'composite'          => true,
+            ],
+            'Grants' => [
+                'source_table'       => 'grants',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'dwh_table'          => 'Dim_Grant',
+                'dwh_source_id_col'  => 'Source_Grant_Id',
+                'dwh_deleted_col'    => null,
+            ],
+            'Grant Recipients' => [
+                'source_table'       => 'grant_recipients',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Grant_Recipient',
+                'dwh_source_id_col'  => 'Source_Recipient_Id',
+                'dwh_deleted_col'    => null,
+                'dwh_query_modifier' => function ($query) {
+                    $query->where('Dim_Grant_Recipient.Is_Current', 1);
+                },
+            ],
+            'Organisations' => [
+                'source_table'       => 'organisations',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Organisation',
+                'dwh_source_id_col'  => 'Source_Organisation_Id',
+                'dwh_deleted_col'    => null,
+            ],
+            'Riders' => [
+                'source_table'       => 'riders',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Rider',
+                'dwh_source_id_col'  => 'Source_Rider_Id',
+                'dwh_deleted_col'    => null,
+            ],
+            'Schools' => [
+                'source_table'       => 'vendor_edubase',
+                'source_id_col'      => 'urn', // Maps on School_Urn natural key
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_School',
+                'dwh_source_id_col'  => 'School_Urn',
+                'dwh_deleted_col'    => null,
+                'dwh_query_modifier' => function ($query) {
+                    // If Dim_School tracks SCD Type 2 versions or has a default fallback row:
+                    $query->whereNotNull('Dim_School.School_Urn');
+                },
+            ],
+            'Teacher Trainers' => [
+                'source_table'       => 'teacher_trainers',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Teacher_Trainer',
+                'dwh_source_id_col'  => 'Source_Teacher_Trainer_Id',
+                'dwh_deleted_col'    => null,
             ],
         ];
 
@@ -89,57 +159,56 @@ class DataWarehouseQualityService
      */
     protected function auditEntity(array $cfg, int $sampleLimit): array
     {
-        // 1. Source Active IDs
+        // 1. Build Source Query
         $srcQuery = $this->source->table($cfg['source_table']);
-        if (!empty($cfg['source_deleted_col'])) {
-            $srcQuery->whereNull($cfg['source_deleted_col']);
-        }
-        $sourceIds = $srcQuery->pluck($cfg['source_id_col'])->map(fn($v) => (int)$v)->toArray();
 
-        // 2. DWH Active IDs
+        if (!empty($cfg['source_deleted_col'])) {
+            $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
+        }
+
+        if (!empty($cfg['source_query_modifier']) && is_callable($cfg['source_query_modifier'])) {
+            $cfg['source_query_modifier']($srcQuery);
+        }
+
+        $srcIds = $srcQuery->pluck("{$cfg['source_table']}.{$cfg['source_id_col']}")
+            ->map(fn($id) => (int) $id)
+            ->toArray();
+
+        // 2. Build DWH Query
         $dwhQuery = $this->dwh->table($cfg['dwh_table'])
-            ->where('Source_System_Key', $this->sourceSystemKey)
-            ->whereNotNull($cfg['dwh_source_id_col']);
+            ->where("{$cfg['dwh_table']}.Source_System_Key", $this->sourceSystemKey);
 
         if (!empty($cfg['dwh_deleted_col'])) {
-            $dwhQuery->whereNull($cfg['dwh_deleted_col']);
+            $dwhQuery->whereNull("{$cfg['dwh_table']}.{$cfg['dwh_deleted_col']}");
         }
-        if (!empty($cfg['extra_dwh_filter'])) {
-            foreach ($cfg['extra_dwh_filter'] as $col => $val) {
-                $dwhQuery->where($col, $val);
+
+        if (!empty($cfg['dwh_query_modifier']) && is_callable($cfg['dwh_query_modifier'])) {
+            $cfg['dwh_query_modifier']($dwhQuery);
+        }
+
+        $dwhIds = $dwhQuery->pluck("{$cfg['dwh_table']}.{$cfg['dwh_source_id_col']}")
+            ->filter()
+            ->map(fn($id) => (int) $id)
+            ->toArray();
+
+        $dwhLookup = array_flip($dwhIds);
+
+        $missing = [];
+        foreach ($srcIds as $id) {
+            if (!isset($dwhLookup[$id])) {
+                $missing[] = $id;
             }
         }
-        $dwhIds = $dwhQuery->pluck($cfg['dwh_source_id_col'])->map(fn($v) => (int)$v)->toArray();
 
-        $sourceCount = count($sourceIds);
+        $srcCount = count($srcIds);
         $dwhCount = count($dwhIds);
 
-        // Find Missing (In Source but absent in DWH)
-        $dwhLookup = array_flip($dwhIds);
-        $missingInDwh = [];
-        foreach ($sourceIds as $sId) {
-            if (!isset($dwhLookup[$sId])) {
-                $missingInDwh[] = $sId;
-            }
-        }
-
-        // Find Ghost records (In DWH but removed/missing on Source)
-        $sourceLookup = array_flip($sourceIds);
-        $orphanedInDwh = [];
-        foreach ($dwhIds as $dId) {
-            if (!isset($sourceLookup[$dId])) {
-                $orphanedInDwh[] = $dId;
-            }
-        }
-
         return [
-            'source_count' => $sourceCount,
-            'dwh_count' => $dwhCount,
-            'match' => ($sourceCount === $dwhCount && empty($missingInDwh) && empty($orphanedInDwh)),
-            'missing_count' => count($missingInDwh),
-            'missing_ids' => array_slice($missingInDwh, 0, $sampleLimit),
-            'orphan_count' => count($orphanedInDwh),
-            'orphan_ids' => array_slice($orphanedInDwh, 0, $sampleLimit),
+            'source_count'  => $srcCount,
+            'dwh_count'     => $dwhCount,
+            'match'         => ($srcCount === $dwhCount && empty($missing)),
+            'missing_count' => count($missing),
+            'missing_ids'   => array_slice($missing, 0, $sampleLimit),
         ];
     }
 

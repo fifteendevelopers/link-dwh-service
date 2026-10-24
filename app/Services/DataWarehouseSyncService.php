@@ -3,108 +3,198 @@
 namespace App\Services;
 
 use App\Models\Rider;
-use Illuminate\Support\Facades\DB;
+use App\Services\SlackAlertService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Throwable;
 
 class DataWarehouseSyncService
 {
     protected $dwh;
     protected $source;
+    protected SlackAlertService $slack;
 
-    public function __construct()
+    public function __construct(SlackAlertService $slack)
     {
-        $this->dwh = DB::connection('mysql');
+        $this->dwh    = DB::connection('mysql');
         $this->source = DB::connection('mysql_src');
+        $this->slack  = $slack;
     }
+
+    /**
+     * Unified orchestration runner for table syncs.
+     * Manages progress bar lifecycle, isolates row failures, and dispatches Slack notifications.
+     */
+    protected function executeSyncRunner(
+        string $tableName,
+               $command,
+               $queryOrCollection,
+        callable $processRow,
+        ?callable $onComplete = null
+    ): string {
+        $startTime = microtime(true);
+        $bar = null;
+        $failedRecords = [];
+        $processedCount = 0;
+
+        try {
+            // Determine if input is a builder or an already-resolved collection
+            $isBuilder = $queryOrCollection instanceof \Illuminate\Database\Query\Builder
+                || $queryOrCollection instanceof \Illuminate\Database\Eloquent\Builder;
+
+            $total = $isBuilder ? $queryOrCollection->count() : count($queryOrCollection);
+
+            if ($total === 0) {
+                if ($command) {
+                    $command->comment("No new or modified records found for {$tableName}.");
+                }
+                return "{$tableName} is already up to date.";
+            }
+
+            $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+            if ($bar) {
+                $bar->start();
+            }
+
+            $state = (object) ['new' => 0, 'updated' => 0, 'highestTimestamp' => null];
+
+            if ($isBuilder) {
+                $queryOrCollection->chunk(500, function ($rows) use (&$processedCount, &$failedRecords, $bar, $processRow, $state) {
+                    foreach ($rows as $row) {
+                        try {
+                            $processRow($row, $state);
+                            $processedCount++;
+                        } catch (Throwable $rowError) {
+                            $rowId = $row->id ?? $row->Source_Instructor_Id ?? $row->Source_Provider_Id ?? 'N/A';
+                            $failedRecords[] = [
+                                'id'     => $rowId,
+                                'reason' => $rowError->getMessage(),
+                            ];
+                        } finally {
+                            if ($bar) $bar->advance();
+                        }
+                    }
+                });
+            } else {
+                foreach ($queryOrCollection as $row) {
+                    try {
+                        $processRow($row, $state);
+                        $processedCount++;
+                    } catch (Throwable $rowError) {
+                        $rowId = $row->id ?? $row->Source_Instructor_Id ?? $row->Source_Provider_Id ?? 'N/A';
+                        $failedRecords[] = [
+                            'id'     => $rowId,
+                            'reason' => $rowError->getMessage(),
+                        ];
+                    } finally {
+                        if ($bar) $bar->advance();
+                    }
+                }
+            }
+
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            // Execute post-loop actions (such as committing the watermark)
+            if ($onComplete) {
+                $onComplete($state, $processedCount);
+            }
+
+            $duration = round(microtime(true) - $startTime, 2);
+
+            // Report row-level anomalies to Slack if any occurred
+            if (!empty($failedRecords)) {
+                $this->slack->sendSyncError(
+                    $tableName,
+                    "Completed with " . count($failedRecords) . " row error(s) out of {$total} total.",
+                    $failedRecords
+                );
+                if ($command) {
+                    $command->warn("⚠️  {$tableName} finished with " . count($failedRecords) . " skipped row(s). Sent details to Slack.");
+                }
+            }
+
+            return "Successfully synced {$processedCount} records into {$tableName} in {$duration}s. (Failed: " . count($failedRecords) . ")";
+
+        } catch (Throwable $fatalException) {
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            $this->slack->sendSyncError(
+                "{$tableName} (FATAL)",
+                $fatalException->getMessage(),
+                $failedRecords,
+                $fatalException->getTraceAsString()
+            );
+
+            throw $fatalException;
+        }
+    }
+
+    // =========================================================================
+    // DIMENSIONS
+    // =========================================================================
 
     public function syncExternalSystems($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
         $sourceExtSystems = $this->source->table('external_systems')->get();
 
-        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceExtSystems)) : null;
-        if ($bar) $bar->start();
-
-        foreach ($sourceExtSystems as $sys) {
-            // Prepare the incoming data
-            $incomingData = [
-                'Username' => $sys->username,
-                'Name' => $sys->name,
-                'Pref_Link_Managed_Consent' => $sys->pref_link_managed_consent,
-                'Pref_Use_Instructor_App' => $sys->pref_use_instructor_app,
-                'Pref_Link_Managed_Comms' => $sys->pref_link_managed_comms,
-                'created_at' => $sys->created_at ?? now(),
-                'updated_at' => $sys->updated_at ?? now(),
-            ];
-
-            $this->dwh->table('Dim_External_Systems')->updateOrInsert(
-                [
-                    'Source_External_System_Id' => $sys->id,
-                    'Source_System_Key' => $sourceSystemKey
-                ],
-                $incomingData
-            );
-
-            if ($bar) $bar->advance();
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced External Systems.";
+        return $this->executeSyncRunner(
+            'Dim_External_Systems',
+            $command,
+            $sourceExtSystems,
+            function ($sys) use ($sourceSystemKey) {
+                $this->dwh->table('Dim_External_Systems')->updateOrInsert(
+                    [
+                        'Source_External_System_Id' => $sys->id,
+                        'Source_System_Key'         => $sourceSystemKey,
+                    ],
+                    [
+                        'Username'                  => $sys->username,
+                        'Name'                      => $sys->name,
+                        'Pref_Link_Managed_Consent' => $sys->pref_link_managed_consent,
+                        'Pref_Use_Instructor_App'   => $sys->pref_use_instructor_app,
+                        'Pref_Link_Managed_Comms'   => $sys->pref_link_managed_comms,
+                        'created_at'                => $sys->created_at ?? now(),
+                        'updated_at'                => $sys->updated_at ?? now(),
+                    ]
+                );
+            }
+        );
     }
 
     public function syncCourseActivities($command = null)
     {
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Course Activities Dimension Sync...");
-
         $sourceActivities = $this->source->table('course_activities_LOOKUP')->get();
 
-        $total = count($sourceActivities);
-        if ($total === 0) {
-            if ($command) $command->info("No course activities found in source system.");
-            return "No course activities found.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $syncCount = 0;
-
-        foreach ($sourceActivities as $activity) {
-            $this->dwh->table('Dim_Course_Activity')->updateOrInsert(
-                [
-                    'Source_Activity_Id' => $activity->id
-                ],
-                [
-                    'Course_Code'          => $activity->course_id,
-                    'Activity_Code'        => $activity->activity_id,
-                    'Activity_Label'       => $activity->activity_label,
-                    'Activity_Description' => $activity->activity_description,
-                    'Outcomes_Lookup_Id'   => $activity->outcomes_lookup_id ?? null,
-                    'updated_at'           => now(),
-                ]
-            );
-
-            if ($bar) $bar->advance();
-            $syncCount++;
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} Course Activities into Dim_Course_Activity.";
+        return $this->executeSyncRunner(
+            'Dim_Course_Activity',
+            $command,
+            $sourceActivities,
+            function ($activity) {
+                $this->dwh->table('Dim_Course_Activity')->updateOrInsert(
+                    ['Source_Activity_Id' => $activity->id],
+                    [
+                        'Course_Code'          => $activity->course_id,
+                        'Activity_Code'        => $activity->activity_id,
+                        'Activity_Label'       => $activity->activity_label,
+                        'Activity_Description' => $activity->activity_description,
+                        'Outcomes_Lookup_Id'   => $activity->outcomes_lookup_id ?? null,
+                        'updated_at'           => now(),
+                    ]
+                );
+            }
+        );
     }
 
     public function syncInstructorFeedbackLookups($command = null)
     {
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor Feedback Lookups Sync (Exact ID Mapping)...");
-
         $sourceLookups = $this->source->table('instructor_feedback_LOOKUP as ifl')
             ->leftJoin('general_LOOKUP as gl', function ($join) {
                 $join->on('ifl.category_id', '=', 'gl.id')
@@ -121,586 +211,374 @@ class DataWarehouseSyncService
             ])
             ->get();
 
-        $total = count($sourceLookups);
-        if ($total === 0) {
-            if ($command) $command->info("No feedback lookups found in source system.");
-            return "No feedback lookups found.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $syncCount = 0;
-
-        foreach ($sourceLookups as $row) {
-            $this->dwh->table('Dim_Instructor_Feedback_Lookup')->updateOrInsert(
-                [
-                    // Exact 1:1 ID alignment
-                    'Feedback_Lookup_Key' => (int) $row->source_feedback_id
-                ],
-                [
-                    'Category_Id'     => $row->category_id,
-                    'Course_Code'     => $row->course_code,
-                    'Category_Label'  => $row->category_label ?? 'General',
-                    'Short_Text'      => $row->short_text,
-                    'Long_Text'       => $row->long_text,
-                    'Links_Lookup'    => $row->links_lookup,
-                    'updated_at'      => now(),
-                ]
-            );
-
-            if ($bar) $bar->advance();
-            $syncCount++;
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} Instructor Feedback Lookups with exact source IDs.";
+        return $this->executeSyncRunner(
+            'Dim_Instructor_Feedback_Lookup',
+            $command,
+            $sourceLookups,
+            function ($row) {
+                $this->dwh->table('Dim_Instructor_Feedback_Lookup')->updateOrInsert(
+                    ['Feedback_Lookup_Key' => (int) $row->source_feedback_id],
+                    [
+                        'Category_Id'    => $row->category_id,
+                        'Course_Code'    => $row->course_code,
+                        'Category_Label' => $row->category_label ?? 'General',
+                        'Short_Text'     => $row->short_text,
+                        'Long_Text'      => $row->long_text,
+                        'Links_Lookup'   => $row->links_lookup,
+                        'updated_at'     => now(),
+                    ]
+                );
+            }
+        );
     }
 
     public function syncTrainingProviders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
         $sourceProviders = $this->source->table('training_providers')->get();
-
-        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceProviders)) : null;
-        if ($bar) $bar->start();
-
         $today = Carbon::now()->toDateString();
-        $newRecords = 0;
-        $updatedVersions = 0;
 
-        foreach ($sourceProviders as $provider) {
-            // 1. Prepare the incoming data
-            $incomingData = [
-                'Provider_Name'                           => $provider->provider_name,
-                'Provider_Number'                         => $provider->provider_number,
-                'Is_Active'                               => is_null($provider->deleted_at) ? 'Y' : 'N',
-                'Address_Line_1'                          => $provider->address_01,
-                'Address_Line_2'                          => $provider->address_02,
-                'City'                                    => $provider->city,
-                'Postcode'                                => $provider->postcode,
-                'Website'                                 => $provider->website,
-                'Telephone'                               => $provider->telephone,
-                'Public_Email'                            => $provider->public_email,
-                'Public_Telephone'                        => $provider->public_telephone,
-                'Provider_Type'                           => $provider->provider_type,
-                'Source_Created_At'                       => $provider->created_at,
-                'Source_Updated_At'                       => $provider->updated_at,
+        return $this->executeSyncRunner(
+            'Dim_Training_Provider',
+            $command,
+            $sourceProviders,
+            function ($provider, $state) use ($sourceSystemKey, $today) {
+                $incomingData = [
+                    'Provider_Name'                           => $provider->provider_name,
+                    'Provider_Number'                         => $provider->provider_number,
+                    'Is_Active'                               => is_null($provider->deleted_at) ? 'Y' : 'N',
+                    'Address_Line_1'                          => $provider->address_01,
+                    'Address_Line_2'                          => $provider->address_02,
+                    'City'                                    => $provider->city,
+                    'Postcode'                                => $provider->postcode,
+                    'Website'                                 => $provider->website,
+                    'Telephone'                               => $provider->telephone,
+                    'Public_Email'                            => $provider->public_email,
+                    'Public_Telephone'                        => $provider->public_telephone,
+                    'Provider_Type'                           => $provider->provider_type,
+                    'Source_Created_At'                       => $provider->created_at,
+                    'Source_Updated_At'                       => $provider->updated_at,
+                    'Primary_Email'                           => $provider->primary_email ?? null,
+                    'Secondary_Email'                         => $provider->secondary_email ?? null,
+                    'Landline'                                => $provider->landline ?? null,
+                    'Status'                                  => (int) ($provider->status ?? 0),
+                    'Date_Inception'                          => $provider->date_inception ?? null,
+                    'Date_Renewal'                            => $provider->date_renewal ?? null,
+                    'Date_Deregistered'                       => $provider->date_deregistered ?? null,
+                    'Deregistration_Reason'                   => $provider->deregistration_reason ?? null,
+                    'Date_Eqa_Visit'                          => $provider->date_eqa_visit ?? null,
+                    'Date_Insurance_Expiry'                   => $provider->date_insurance_expiry ?? null,
+                    'Renewal_Blocked'                         => (bool) ($provider->renewal_blocked ?? false),
+                    'Pref_Level_1'                            => (bool) ($provider->pref_level_1 ?? false),
+                    'Pref_Level_2'                            => (bool) ($provider->pref_level_2 ?? false),
+                    'Pref_Level_3'                            => (bool) ($provider->pref_level_3 ?? false),
+                    'Pref_Plus_Balance'                       => (bool) ($provider->pref_plus_balance ?? false),
+                    'Pref_Plus_Bus'                           => (bool) ($provider->pref_plus_bus ?? false),
+                    'Pref_Plus_Fix'                           => (bool) ($provider->pref_plus_fix ?? false),
+                    'Pref_Plus_Learn'                         => (bool) ($provider->pref_plus_learn ?? false),
+                    'Pref_Plus_On_Show'                       => (bool) ($provider->pref_plus_on_show ?? false),
+                    'Pref_Plus_Parents'                       => (bool) ($provider->pref_plus_parents ?? false),
+                    'Pref_Plus_Promotion'                     => (bool) ($provider->pref_plus_promotion ?? false),
+                    'Pref_Plus_Recycled'                      => (bool) ($provider->pref_plus_recycled ?? false),
+                    'Pref_Plus_Ride'                          => (bool) ($provider->pref_plus_ride ?? false),
+                    'Pref_Plus_Transition'                    => (bool) ($provider->pref_plus_transition ?? false),
+                    'Pref_Plus_Family'                        => (bool) ($provider->pref_plus_family ?? false),
+                    'Pref_Plus_Adult'                         => (bool) ($provider->pref_plus_adult ?? false),
+                    'Legacy_Areas_Of_Operation'               => $provider->legacy_areas_of_operation ?? null,
+                    'Delivery_Areas'                          => $provider->delivery_areas ?? null,
+                    'Account_Notes'                           => $provider->account_notes ?? null,
+                    'Terms_Url'                               => $provider->terms_url ?? null,
+                    'Booking_Question_1'                      => $provider->booking_question_1 ?? null,
+                    'Booking_Question_2'                      => $provider->booking_question_2 ?? null,
+                    'Booking_Question_3'                      => $provider->booking_question_3 ?? null,
+                    'Booking_Question_4'                      => $provider->booking_question_4 ?? null,
+                    'Booking_Question_5'                      => $provider->booking_question_5 ?? null,
+                    'Pref_Collect_Characteristics_In_Consent' => (bool) ($provider->pref_collect_characteristics_in_consent ?? false),
+                    'Pref_Allow_Non_Riders'                   => (bool) ($provider->pref_allow_non_riders ?? false),
+                    'Pref_Enable_Tp_Digi_Delivery_Access'     => (bool) ($provider->pref_enable_tp_digi_delivery_access ?? false),
+                    'Pref_Enable_Tp_Digi_Consent_Upload'      => (bool) ($provider->pref_enable_tp_digi_consent_upload ?? false),
+                    'Has_Fleet_Cycles'                        => (bool) ($provider->has_fleet_cycles ?? false),
+                    'Provide_A_Cycle_Question_Optional'       => (bool) ($provider->provide_a_cycle_question_optional ?? false),
+                    'External_System_Id'                      => !empty($provider->external_system_id) ? (int) $provider->external_system_id : null,
+                    'Source_Deleted_At'                       => $provider->deleted_at ?? null,
+                ];
 
-                // New columns added
-                'Primary_Email'                           => $provider->primary_email ?? null,
-                'Secondary_Email'                         => $provider->secondary_email ?? null,
-                'Landline'                                => $provider->landline ?? null,
+                $current = $this->dwh->table('Dim_Training_Provider')
+                    ->where('Source_Provider_Id', $provider->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->where('Is_Current', 1)
+                    ->first();
 
-                // Status & Lifecycle Dates
-                'Status'                                  => (int) ($provider->status ?? 0),
-                'Date_Inception'                          => $provider->date_inception ?? null,
-                'Date_Renewal'                            => $provider->date_renewal ?? null,
-                'Date_Deregistered'                       => $provider->date_deregistered ?? null,
-                'Deregistration_Reason'                   => $provider->deregistration_reason ?? null,
-                'Date_Eqa_Visit'                          => $provider->date_eqa_visit ?? null,
-                'Date_Insurance_Expiry'                   => $provider->date_insurance_expiry ?? null,
-                'Renewal_Blocked'                         => (bool) ($provider->renewal_blocked ?? false),
+                if (!$current) {
+                    $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
+                    $state->new++;
+                } elseif ($this->hasChanged($current, $incomingData)) {
+                    $this->dwh->table('Dim_Training_Provider')
+                        ->where('Provider_Key', $current->Provider_Key)
+                        ->update(['Is_Current' => 0, 'Valid_To_Date' => $today]);
 
-                // Module Delivery Preferences
-                'Pref_Level_1'                            => (bool) ($provider->pref_level_1 ?? false),
-                'Pref_Level_2'                            => (bool) ($provider->pref_level_2 ?? false),
-                'Pref_Level_3'                            => (bool) ($provider->pref_level_3 ?? false),
-                'Pref_Plus_Balance'                       => (bool) ($provider->pref_plus_balance ?? false),
-                'Pref_Plus_Bus'                           => (bool) ($provider->pref_plus_bus ?? false),
-                'Pref_Plus_Fix'                           => (bool) ($provider->pref_plus_fix ?? false),
-                'Pref_Plus_Learn'                         => (bool) ($provider->pref_plus_learn ?? false),
-                'Pref_Plus_On_Show'                       => (bool) ($provider->pref_plus_on_show ?? false),
-                'Pref_Plus_Parents'                       => (bool) ($provider->pref_plus_parents ?? false),
-                'Pref_Plus_Promotion'                     => (bool) ($provider->pref_plus_promotion ?? false),
-                'Pref_Plus_Recycled'                      => (bool) ($provider->pref_plus_recycled ?? false),
-                'Pref_Plus_Ride'                          => (bool) ($provider->pref_plus_ride ?? false),
-                'Pref_Plus_Transition'                    => (bool) ($provider->pref_plus_transition ?? false),
-                'Pref_Plus_Family'                        => (bool) ($provider->pref_plus_family ?? false),
-                'Pref_Plus_Adult'                         => (bool) ($provider->pref_plus_adult ?? false),
-
-                // Operational Fields
-                'Legacy_Areas_Of_Operation'               => $provider->legacy_areas_of_operation ?? null,
-                'Delivery_Areas'                          => $provider->delivery_areas ?? null,
-                'Account_Notes'                           => $provider->account_notes ?? null,
-                'Terms_Url'                               => $provider->terms_url ?? null,
-
-                // Custom Booking Questions
-                'Booking_Question_1'                      => $provider->booking_question_1 ?? null,
-                'Booking_Question_2'                      => $provider->booking_question_2 ?? null,
-                'Booking_Question_3'                      => $provider->booking_question_3 ?? null,
-                'Booking_Question_4'                      => $provider->booking_question_4 ?? null,
-                'Booking_Question_5'                      => $provider->booking_question_5 ?? null,
-
-                // Digital & Consent Configurations
-                'Pref_Collect_Characteristics_In_Consent' => (bool) ($provider->pref_collect_characteristics_in_consent ?? false),
-                'Pref_Allow_Non_Riders'                   => (bool) ($provider->pref_allow_non_riders ?? false),
-                'Pref_Enable_Tp_Digi_Delivery_Access'     => (bool) ($provider->pref_enable_tp_digi_delivery_access ?? false),
-                'Pref_Enable_Tp_Digi_Consent_Upload'      => (bool) ($provider->pref_enable_tp_digi_consent_upload ?? false),
-                'Has_Fleet_Cycles'                        => (bool) ($provider->has_fleet_cycles ?? false),
-                'Provide_A_Cycle_Question_Optional'       => (bool) ($provider->provide_a_cycle_question_optional ?? false),
-                'External_System_Id'                      => !empty($provider->external_system_id) ? (int) $provider->external_system_id : null,
-                'Source_Deleted_At'                       => $provider->deleted_at ?? null,
-            ];
-
-            // 2. Fetch the current active version in DWH
-            $current = $this->dwh->table('Dim_Training_Provider')
-                ->where('Source_Provider_Id', $provider->id)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->where('Is_Current', 1)
-                ->first();
-
-            if (!$current) {
-                // New record: Create first version
-                $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
-                $newRecords++;
-            } elseif ($this->hasChanged($current, $incomingData)) {
-                // Change detected: Close current version and create new one
-                $this->dwh->table('Dim_Training_Provider')
-                    ->where('Provider_Key', $current->Provider_Key)
-                    ->update([
-                        'Is_Current' => 0,
-                        'Valid_To_Date' => $today
-                    ]);
-
-                $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
-                $updatedVersions++;
+                    $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
+                    $state->updated++;
+                }
             }
-
-            if ($bar) $bar->advance();
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced Training Providers. (New: $newRecords, Updated: $updatedVersions)";
+        );
     }
 
     public function syncSchools($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_School')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        // 1. Count only new or changed schools
-        $query = $this->source->table('vendor_edubase')
-            ->where('updated_at', '>', $watermark);
-
-        $total = $query->count();
-
-        if ($total === 0) {
-            if ($command) $command->info("Schools are already up to date.");
-            return "Schools are already up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestampSeen = $watermark;
-        $syncCount = 0;
+        $watermark = $this->getWatermark('Dim_School');
 
         $hasDeprivationIndex = $this->sourceHasColumn('vendor_edubase', 'deprivation_index');
 
         $selectFields = [
-            'id',
-            'urn',
-            'establishment_name',
-            'la_code',
-            'la_name',
-            'postcode',
-            'lsoa_code',
-            'lsoa_name',
-            'msoa_code',
-            'msoa_name',
-            'parliamentary_constituency_code',
-            'parliamentary_constituency_name',
-            'status',
-            'urban_rural_code',
-            'urban_rural_name',
-            'updated_at',
+            'id', 'urn', 'establishment_name', 'la_code', 'la_name', 'postcode',
+            'lsoa_code', 'lsoa_name', 'msoa_code', 'msoa_name',
+            'parliamentary_constituency_code', 'parliamentary_constituency_name',
+            'status', 'urban_rural_code', 'urban_rural_name', 'updated_at',
         ];
 
         if ($hasDeprivationIndex) {
             $selectFields[] = 'deprivation_index';
         }
 
-        // 2. Chunked processing with deprivation and rural attributes
-        $this->source->table('vendor_edubase')
+        $query = $this->source->table('vendor_edubase')
             ->select($selectFields)
-            ->orderBy('id')
-            ->chunk(1000, function ($schools) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar, $hasDeprivationIndex) {
-                foreach ($schools as $school) {
-                    // Convert deprivation_index to clean integer IMD decile (1-10) or null
-                    $imdDecile = null;
-                    if ($hasDeprivationIndex && isset($school->deprivation_index) && is_numeric($school->deprivation_index)) {
-                        $imdDecile = (int) round((float) $school->deprivation_index);
-                    }
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc');
 
-                    $this->dwh->table('Dim_School')->updateOrInsert(
-                        [
-                            'Source_School_Id' => $school->id,
-                            'Source_System_Key' => $sourceSystemKey,
-                        ],
-                        [
-                            'School_Urn'                  => $school->urn,
-                            'School_Name'                 => $school->establishment_name,
-                            'La_Code'                     => $school->la_code,
-                            'La_Name'                     => $school->la_name,
-                            'Postcode'                    => $school->postcode,
-                            'Lsoa_Code'                   => $school->lsoa_code,
-                            'Lsoa_Name'                   => $school->lsoa_name,
-                            'Msoa_Code'                   => $school->msoa_code,
-                            'Msoa_Name'                   => $school->msoa_name,
-                            'Parliamentary_Constituency_Code' => $school->parliamentary_constituency_code,
-                            'Parliamentary_Constituency_Name' => $school->parliamentary_constituency_name,
-                            'Status'                      => $school->status,
-                            'Urban_Rural_Code'            => $school->urban_rural_code,
-                            'Rural_Urban_Classification'  => $school->urban_rural_name,
-                            'Imd_Decile'                  => $imdDecile,
-                        ]
-                    );
-
-                    if ($school->updated_at > $highestTimestampSeen) {
-                        $highestTimestampSeen = $school->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
-                    $syncCount++;
+        return $this->executeSyncRunner(
+            'Dim_School',
+            $command,
+            $query,
+            function ($school, $state) use ($sourceSystemKey, $hasDeprivationIndex) {
+                $imdDecile = null;
+                if ($hasDeprivationIndex && isset($school->deprivation_index) && is_numeric($school->deprivation_index)) {
+                    $imdDecile = (int) round((float) $school->deprivation_index);
                 }
-            });
 
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_School'],
-            [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total,
-            ]
+                $this->dwh->table('Dim_School')->updateOrInsert(
+                    [
+                        'Source_School_Id'  => $school->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'School_Urn'                      => $school->urn,
+                        'School_Name'                     => $school->establishment_name,
+                        'La_Code'                         => $school->la_code,
+                        'La_Name'                         => $school->la_name,
+                        'Postcode'                        => $school->postcode,
+                        'Lsoa_Code'                       => $school->lsoa_code,
+                        'Lsoa_Name'                       => $school->lsoa_name,
+                        'Msoa_Code'                       => $school->msoa_code,
+                        'Msoa_Name'                       => $school->msoa_name,
+                        'Parliamentary_Constituency_Code' => $school->parliamentary_constituency_code,
+                        'Parliamentary_Constituency_Name' => $school->parliamentary_constituency_name,
+                        'Status'                          => $school->status,
+                        'Urban_Rural_Code'                => $school->urban_rural_code,
+                        'Rural_Urban_Classification'      => $school->urban_rural_name,
+                        'Imd_Decile'                      => $imdDecile,
+                    ]
+                );
+
+                if ($school->updated_at && (!$state->highestTimestamp || $school->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $school->updated_at;
+                }
+            },
+            function ($state, $count) use ($watermark) {
+                if ($state->highestTimestamp && $state->highestTimestamp > $watermark) {
+                    $this->updateWatermark('Dim_School', $state->highestTimestamp, $count);
+                }
+            }
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} Schools.";
     }
 
     public function syncOrganisations($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        // Fetch all organisations
         $sourceOrgs = $this->source->table('organisations')
             ->select('id', 'training_provider_id', 'name')
             ->get();
 
-        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceOrgs)) : null;
-        if ($bar) $bar->start();
+        return $this->executeSyncRunner(
+            'Dim_Organisation',
+            $command,
+            $sourceOrgs,
+            function ($org) use ($sourceSystemKey) {
+                $providerKey = $this->dwh->table('Dim_Training_Provider')
+                    ->where('Source_Provider_Id', $org->training_provider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Provider_Key');
 
-        $syncCount = 0;
-
-        foreach ($sourceOrgs as $org) {
-            $providerKey = $this->dwh->table('Dim_Training_Provider')
-                ->where('Source_Provider_Id', $org->training_provider_id)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->value('Provider_Key');
-
-            $this->dwh->table('Dim_Organisation')->updateOrInsert(
-                [
-                    'Source_Organisation_Id' => $org->id,
-                    'Source_System_Key' => $sourceSystemKey
-                ],
-                [
-                    'Provider_Key' => $providerKey,
-                    'Organisation_Name' => $org->name,
-                ]
-            );
-
-            if ($bar) $bar->advance();
-            $syncCount++;
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Successfully synced {$syncCount} Organisations.";
+                $this->dwh->table('Dim_Organisation')->updateOrInsert(
+                    [
+                        'Source_Organisation_Id' => $org->id,
+                        'Source_System_Key'      => $sourceSystemKey,
+                    ],
+                    [
+                        'Provider_Key'      => $providerKey,
+                        'Organisation_Name' => $org->name,
+                    ]
+                );
+            }
+        );
     }
 
     public function syncGrantRecipients($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
         $sourceRecipients = $this->source->table('grant_recipients')->get();
-
-        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceRecipients)) : null;
-        if ($bar) $bar->start();
-
         $today = Carbon::now()->toDateString();
-        $newRecords = 0;
-        $updatedVersions = 0;
 
-        foreach ($sourceRecipients as $recipient) {
-            $incomingData = [
-                'Recipient_Name' => $recipient->recipient_name,
-                'Recipient_Number' => $recipient->recipient_number,
-                'LA_Id' => $recipient->local_authority_id,
-                'Is_Active' => is_null($recipient->deleted_at) ? 'Y' : 'N',
-                'Address_Line_1' => $recipient->address_01,
-                'Address_Line_2' => $recipient->address_02,
-                'City' => $recipient->city,
-                'Postcode' => $recipient->postcode,
-                'Website' => $recipient->website,
+        return $this->executeSyncRunner(
+            'Dim_Grant_Recipient',
+            $command,
+            $sourceRecipients,
+            function ($recipient, $state) use ($sourceSystemKey, $today) {
+                $incomingData = [
+                    'Recipient_Name'    => $recipient->recipient_name,
+                    'Recipient_Number'  => $recipient->recipient_number,
+                    'LA_Id'             => $recipient->local_authority_id,
+                    'Is_Active'         => is_null($recipient->deleted_at) ? 'Y' : 'N',
+                    'Address_Line_1'    => $recipient->address_01,
+                    'Address_Line_2'    => $recipient->address_02,
+                    'City'              => $recipient->city,
+                    'Postcode'          => $recipient->postcode,
+                    'Website'           => $recipient->website,
+                    'Inception_Date'    => $recipient->date_inception,
+                    'Renewal_Date'      => $recipient->date_renewal,
+                    'Deregistered_Date' => $recipient->date_deregistered,
+                    'Is_SGO'            => ($recipient->pref_sgoh == 1) ? 1 : 0,
+                    'Source_Created_At' => $recipient->created_at,
+                    'Source_Updated_At' => $recipient->updated_at,
+                ];
 
-                // Dates
-                'Inception_Date' => $recipient->date_inception,
-                'Renewal_Date' => $recipient->date_renewal,
-                'Deregistered_Date' => $recipient->date_deregistered,
+                $current = $this->dwh->table('Dim_Grant_Recipient')
+                    ->where('Source_Recipient_Id', $recipient->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->where('Is_Current', 1)
+                    ->first();
 
-                // Derived Field: Is_SGO
-                'Is_SGO' => ($recipient->pref_sgoh == 1) ? 1 : 0,
+                if (!$current) {
+                    $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
+                    $state->new++;
+                } elseif ($this->hasChanged($current, $incomingData)) {
+                    $this->dwh->table('Dim_Grant_Recipient')
+                        ->where('Recipient_Key', $current->Recipient_Key)
+                        ->update(['Is_Current' => 0, 'Valid_To_Date' => $today]);
 
-                // Source Metadata
-                'Source_Created_At' => $recipient->created_at,
-                'Source_Updated_At' => $recipient->updated_at,
-            ];
-
-            $current = $this->dwh->table('Dim_Grant_Recipient')
-                ->where('Source_Recipient_Id', $recipient->id)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->where('Is_Current', 1)
-                ->first();
-
-            if (!$current) {
-                $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
-                $newRecords++;
-            } elseif ($this->hasChanged($current, $incomingData)) {
-                $this->dwh->table('Dim_Grant_Recipient')
-                    ->where('Recipient_Key', $current->Recipient_Key)
-                    ->update([
-                        'Is_Current' => 0,
-                        'Valid_To_Date' => $today
-                    ]);
-
-                $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
-                $updatedVersions++;
+                    $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
+                    $state->updated++;
+                }
             }
-
-            if ($bar) $bar->advance();
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced Grant Recipients. (New: $newRecords, Updated: $updatedVersions)";
+        );
     }
 
     public function syncGrants($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        // Fetch the source grants
         $sourceGrants = $this->source->table('grants')->get();
 
-        $bar = $command ? $command->getOutput()->createProgressBar(count($sourceGrants)) : null;
-        if ($bar) $bar->start();
+        return $this->executeSyncRunner(
+            'Dim_Grant',
+            $command,
+            $sourceGrants,
+            function ($grant) use ($sourceSystemKey) {
+                $recipientKey = $this->dwh->table('Dim_Grant_Recipient')
+                    ->where('Source_Recipient_Id', $grant->grant_recipient_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->where('Is_Current', 1)
+                    ->value('Recipient_Key');
 
-        $syncCount = 0;
-        $errorCount = 0;
+                if (!$recipientKey) {
+                    throw new \RuntimeException("Recipient ID {$grant->grant_recipient_id} not found in Dim_Grant_Recipient for Grant {$grant->id}");
+                }
 
-        foreach ($sourceGrants as $grant) {
-            // Lookup the Recipient_Key - this is the DWH "Key" value
-            // ensuring we find the current active version of this recipient
-            $recipientKey = $this->dwh->table('Dim_Grant_Recipient')
-                ->where('Source_Recipient_Id', $grant->grant_recipient_id)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->where('Is_Current', 1)
-                ->value('Recipient_Key');
-
-            if (!$recipientKey) {
-                // Log an error or handle "Orphaned" grants
-                if ($command) $command->error("Recipient ID {$grant->grant_recipient_id} not found for Grant ID {$grant->id}");
-                $errorCount++;
-                continue;
+                $this->dwh->table('Dim_Grant')->updateOrInsert(
+                    [
+                        'Source_Grant_Id'   => $grant->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'Grant_Recipient_Key'     => $recipientKey,
+                        'Grant_Number'            => $grant->grant_number,
+                        'Grant_Label'             => $grant->grant_label,
+                        'Grant_Period_Start_Year' => $grant->grant_period_start_year,
+                        'Grant_Source'            => $grant->grant_source,
+                    ]
+                );
             }
-
-            // 3. Perform SCD Type 1 Sync for the Grant itself
-            // (Grants are typically unique by their Source ID)
-            $this->dwh->table('Dim_Grant')->updateOrInsert(
-                [
-                    'Source_Grant_Id' => $grant->id,
-                    'Source_System_Key' => $sourceSystemKey
-                ],
-                [
-                    'Grant_Recipient_Key' => $recipientKey,
-                    'Grant_Number' => $grant->grant_number,
-                    'Grant_Label' => $grant->grant_label,
-                    'Grant_Period_Start_Year' => $grant->grant_period_start_year,
-                    'Grant_Source' => $grant->grant_source,
-                ]
-            );
-
-            if ($bar) $bar->advance();
-            $syncCount++;
-        }
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} Grants. ({$errorCount} orphans skipped).";
+        );
     }
 
     public function syncInstructors($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+        $query = $this->source->table('instructors')->orderBy('id', 'asc');
 
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Full Instructors Sync (All records)...");
-        }
-
-        // 1. Target all records without watermark constraints
-        $query = $this->source->table('instructors');
-
-        $total = $query->count();
-
-        if ($total === 0) {
-            if ($command) {
-                $command->info("[" . now()->format('Y-m-d H:i:s') . "] No instructor records found on source.");
-            }
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $syncCount = 0;
-        $highestTimestampSeen = '1900-01-01 00:00:00';
-
-        // 2. Process records chunked deterministically by primary key
-        $query->orderBy('id', 'asc')->chunk(500, function ($instructors) use (&$syncCount, &$highestTimestampSeen, $sourceSystemKey, $bar) {
-            foreach ($instructors as $instructor) {
-
+        return $this->executeSyncRunner(
+            'Dim_Instructor',
+            $command,
+            $query,
+            function ($instructor) use ($sourceSystemKey) {
                 $this->dwh->table('Dim_Instructor')->updateOrInsert(
                     [
                         'Source_Instructor_Id' => $instructor->id,
                         'Source_System_Key'    => $sourceSystemKey,
                     ],
                     [
-                        'Instructor_Number' => $instructor->instructor_number,
-                        'Instructor_Type'   => $instructor->instructor_type,
-                        'First_Name'        => $instructor->first_name,
-                        'Last_Name'         => $instructor->last_name,
-                        'Email'             => $instructor->email,
-                        'Telephone'         => $instructor->telephone,
-                        'Landline'          => $instructor->landline,
-
-                        'Age_Range_Id' => $instructor->age_range_id,
-                        'Ethnicity_Id' => $instructor->ethnicity_id,
-                        'Gender_Id'    => $instructor->gender_id,
-                        'Title_Id'     => $instructor->title_id,
-
-                        'Address_01' => $instructor->address_01,
-                        'Address_02' => $instructor->address_02,
-                        'City'       => $instructor->city,
-                        'Postcode'   => $instructor->postcode,
-
-                        'Status_Raw'        => $instructor->status,
-                        'Is_Pending'        => (bool) $instructor->is_pending,
-                        'Flag_Nsi_Migrated' => (bool) $instructor->flag_nsi_migrated,
-
-                        'Pref_Receive_News'          => (bool) $instructor->pref_receive_news,
-                        'Pref_Delivering_Bikeability'=> (bool) $instructor->pref_delivering_bikeability,
-                        'Pref_Delivering_Other'      => (bool) $instructor->pref_delivering_other,
-                        'Pref_Bursary_Eligibility'   => (bool) $instructor->pref_bursary_eligibility,
-                        'Has_Received_Bursary'       => (bool) $instructor->has_received_bursary,
-
-                        'Date_Registered'      => $instructor->date_registered,
-                        'Date_Renewal'         => $instructor->date_renewal,
-                        'Date_Deregistered'    => $instructor->date_deregistered,
-                        'Deregistration_Reason'=> $instructor->deregistration_reason,
-
+                        'Instructor_Number'                      => $instructor->instructor_number,
+                        'Instructor_Type'                        => $instructor->instructor_type,
+                        'First_Name'                             => $instructor->first_name,
+                        'Last_Name'                              => $instructor->last_name,
+                        'Email'                                  => $instructor->email,
+                        'Telephone'                              => $instructor->telephone,
+                        'Landline'                               => $instructor->landline,
+                        'Age_Range_Id'                           => $instructor->age_range_id,
+                        'Ethnicity_Id'                           => $instructor->ethnicity_id,
+                        'Gender_Id'                              => $instructor->gender_id,
+                        'Title_Id'                               => $instructor->title_id,
+                        'Address_01'                             => $instructor->address_01,
+                        'Address_02'                             => $instructor->address_02,
+                        'City'                                   => $instructor->city,
+                        'Postcode'                               => $instructor->postcode,
+                        'Status_Raw'                             => $instructor->status,
+                        'Is_Pending'                             => (bool) $instructor->is_pending,
+                        'Flag_Nsi_Migrated'                      => (bool) $instructor->flag_nsi_migrated,
+                        'Pref_Receive_News'                      => (bool) $instructor->pref_receive_news,
+                        'Pref_Delivering_Bikeability'            => (bool) $instructor->pref_delivering_bikeability,
+                        'Pref_Delivering_Other'                  => (bool) $instructor->pref_delivering_other,
+                        'Pref_Bursary_Eligibility'               => (bool) $instructor->pref_bursary_eligibility,
+                        'Has_Received_Bursary'                   => (bool) $instructor->has_received_bursary,
+                        'Date_Registered'                        => $instructor->date_registered,
+                        'Date_Renewal'                           => $instructor->date_renewal,
+                        'Date_Deregistered'                      => $instructor->date_deregistered,
+                        'Deregistration_Reason'                  => $instructor->deregistration_reason,
                         'First_Aid_Training_Complete_Date'       => $instructor->first_aid_training_complete_date,
                         'Safeguarding_Training_Complete_Date'    => $instructor->safeguarding_training_complete_date,
                         'Send_Training_Complete_Date'            => $instructor->send_training_complete_date,
                         'Send_Training_Overridden'               => (bool) $instructor->send_training_overridden,
                         'Send_Training_Certificate_Download_Date'=> $instructor->send_training_certificate_download_date,
-
-                        'Account_Notes'     => $instructor->account_notes,
-                        'Source_Created_At' => $instructor->created_at,
-                        'Source_Updated_At' => $instructor->updated_at,
-                        'updated_at'        => now(),
+                        'Account_Notes'                          => $instructor->account_notes,
+                        'Source_Created_At'                      => $instructor->created_at,
+                        'Source_Updated_At'                      => $instructor->updated_at,
+                        'updated_at'                             => now(),
                     ]
                 );
-
-                if ($instructor->updated_at && $instructor->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $instructor->updated_at;
-                }
-
-                if ($bar) $bar->advance();
-                $syncCount++;
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Instructor', now()->toDateTimeString(), $count);
             }
-        });
-
-        // 3. Keep the sync ledger updated with total records and completion time
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Instructor'],
-            [
-                'Last_Synced_At'    => now()->toDateTimeString(),
-                'Records_Processed' => $syncCount,
-            ]
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command?->newLine();
-        }
-
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Successfully synced {$syncCount} Instructors (Full Scan).");
-        }
     }
-
 
     public function syncDeliveryHeaders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_Delivery_Header')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-        $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
-
-        $highestTimestampSeen = $watermark;
+        $watermark = Carbon::parse($this->getWatermark('Dim_Delivery_Header'))->subSeconds(5)->toDateTimeString();
 
         $query = $this->source->table('deliveries')
-            ->where(function ($q) use ($watermark) {
-                $q->where('deliveries.updated_at', '>', $watermark)
-                    ->orWhereNull('deliveries.updated_at');
-            });
-
-        $total = $query->count();
-
-        if ($total === 0) {
-            return "No new delivery changes detected.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-
-        if ($bar) $bar->start();
-
-        $this->source->table('deliveries')
-            ->select(
+            ->select([
                 'id', 'grant_id', 'grant_old_id', 'school_urn', 'training_provider_id',
                 'status', 'date_delivery_start', 'date_delivery_end', 'short_description',
                 'digitisation_booking', 'pref_alt_delivery_location', 'alt_delivery_location',
@@ -712,131 +590,114 @@ class DataWarehouseSyncService
                 'confirm_booked_reminder_email_sent', 'max_consents', 'waiting_list_enabled',
                 'organisation_id', 'fleet_cycles_used', 'consent_cutoff_date', 'rider_list_uploaded',
                 'url_code', 'housekeeping_selected', 'enable_school_management', 'external_system_id',
-                'created_at', 'updated_at', 'deleted_at'
-            )
+                'created_at', 'updated_at', 'deleted_at',
+            ])
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
+                    ->orWhere('deliveries.deleted_at', '>', $watermark)
                     ->orWhereNull('deliveries.updated_at');
             })
-            ->orderBy('id')
-            ->chunk(1000, function ($deliveries) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-                foreach ($deliveries as $delivery) {
+            ->orderBy('id', 'asc');
 
-                    // Get Grant Key - if the delivery has a grant id
-                    $grantKey = $delivery->grant_id ? $this->dwh->table('Dim_Grant')
-                        ->where('Source_Grant_Id', $delivery->grant_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Grant_Key') : null;
+        return $this->executeSyncRunner(
+            'Dim_Delivery_Header',
+            $command,
+            $query,
+            function ($delivery, $state) use ($sourceSystemKey) {
+                $grantKey = $delivery->grant_id ? $this->dwh->table('Dim_Grant')
+                    ->where('Source_Grant_Id', $delivery->grant_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Grant_Key') : null;
 
-                    // Get School Key - if the delivery has a school_urn
-                    $schoolKey = $delivery->school_urn ? $this->dwh->table('Dim_School')
-                        ->where('School_Urn', $delivery->school_urn)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('School_Key') : null;
+                $schoolKey = $delivery->school_urn ? $this->dwh->table('Dim_School')
+                    ->where('School_Urn', $delivery->school_urn)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('School_Key') : null;
 
-                    // Get Organisation Key - if the delivery has a organisation_id
-                    $organisationKey = $delivery->organisation_id ? $this->dwh->table('Dim_Organisation')
-                        ->where('Source_Organisation_Id', $delivery->organisation_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Organisation_Key') : null;
+                $organisationKey = $delivery->organisation_id ? $this->dwh->table('Dim_Organisation')
+                    ->where('Source_Organisation_Id', $delivery->organisation_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Organisation_Key') : null;
 
-                    // Get Training Provider key
-                    $providerKey = $this->dwh->table('Dim_Training_Provider')
-                        ->where('Source_Provider_Id', $delivery->training_provider_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->where('Is_Current', 1)
-                        ->value('Provider_Key');
+                $providerKey = $this->dwh->table('Dim_Training_Provider')
+                    ->where('Source_Provider_Id', $delivery->training_provider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->where('Is_Current', 1)
+                    ->value('Provider_Key');
 
-                    $externalSystemKey = null;
-                    if (!empty($delivery->external_system_id)) {
-                        $externalSystemKey = DB::connection('mysql')->table('Dim_External_Systems')
-                            ->where('Source_External_System_Id', $delivery->external_system_id)
-                            ->value('External_System_Key');
-                    }
-
-                    // Upsert the Delivery Header data
-                    $this->dwh->table('Dim_Delivery_Header')->updateOrInsert(
-                        [
-                            'Source_Delivery_Id' => $delivery->id,
-                            'Source_System_Key' => $sourceSystemKey
-                        ],
-                        [
-                            'Grant_Key' => $grantKey,
-                            'School_Key' => $schoolKey,
-                            'Organisation_Key' => $organisationKey,
-                            'Training_Provider_Key' => $providerKey,
-                            'External_System_Key' => $externalSystemKey,
-                            'Delivery_Status' => ($delivery->digitisation_booking===1)?$this->mapDeliveryStatus($delivery->status):'N/A',
-                            'Date_Delivery_Start' => $delivery->date_delivery_start,
-                            'Date_Delivery_End' => $delivery->date_delivery_end,
-                            'Digitisation_Booking' => $delivery->digitisation_booking,
-                            'Fleet_Cycles_Used' => $delivery->fleet_cycles_used,
-                            'Consent_Cutoff_Date' => $delivery->consent_cutoff_date,
-                            'Pref_Alt_Delivery_Location' => $delivery->pref_alt_delivery_location,
-                            'Alt_Delivery_Location' => $delivery->alt_delivery_location,
-                            'Notes' => $delivery->notes,
-                            'Instructor_General_Notes' => $delivery->instructor_general_notes,
-                            'Teacher_Notes' => $delivery->teacher_notes,
-                            'School_Contacts' => $delivery->school_contacts, // Laravel passes as string, MySQL writes to JSON
-                            'Venue' => $delivery->venue,
-                            'Provider_Additional_Questions' => $delivery->provider_additional_questions,
-                            'Comms_Start_Date' => $delivery->comms_start_date,
-                            'Date_Completed' => $delivery->date_completed,
-                            'Pref_Link_Managed_Consent' => $delivery->pref_link_managed_consent,
-                            'Include_Tp_Terms_In_Consent' => $delivery->include_tp_terms_in_consent??0,
-                            'Consent_Src_Characteristics' => $delivery->consent_src_characteristics??0,
-                            'Max_Consents' => $delivery->max_consents,
-                            'Waiting_List_Enabled' => $delivery->waiting_list_enabled??0,
-
-                            'Short_Description'                  => $delivery->short_description ?? null,
-                            'Local_Funding'                      => (int) ($delivery->local_funding ?? 0),
-                            'Legacy_Delivery_Id'                 => $delivery->legacy_delivery_id ?? null,
-                            'Legacy_Delivery_Method'             => $delivery->legacy_delivery_method ?? null,
-                            'Rider_List_Uploaded'                => (bool) ($delivery->rider_list_uploaded ?? false),
-                            'Url_Code'                           => $delivery->url_code ?? null,
-                            'Venue_Notification_Sent'            => (bool) ($delivery->venue_notification_sent ?? false),
-                            'Survey_Notifications_Sent'          => (bool) ($delivery->survey_notifications_sent ?? false),
-                            'Confirm_Booked_Email_Sent'          => $delivery->confirm_booked_email_sent ?? null,
-                            'Confirm_Booked_Reminder_Email_Sent' => $delivery->confirm_booked_reminder_email_sent ?? null,
-                            'Housekeeping_Selected'              => (bool) ($delivery->housekeeping_selected ?? false),
-                            'Enable_School_Management'           => (bool) ($delivery->enable_school_management ?? false),
-                            'Source_Created_At'                  => $delivery->created_at ?? null,
-                            'Source_Updated_At'                  => $delivery->updated_at ?? null,
-                            'Source_Deleted_At'                  => $delivery->deleted_at ?? null,
-                        ]
-                    );
-
-                    if ($delivery->updated_at > $highestTimestampSeen) {
-                        $highestTimestampSeen = $delivery->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
+                $externalSystemKey = null;
+                if (!empty($delivery->external_system_id)) {
+                    $externalSystemKey = $this->dwh->table('Dim_External_Systems')
+                        ->where('Source_External_System_Id', $delivery->external_system_id)
+                        ->value('External_System_Key');
                 }
-            });
 
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Delivery_Header'],
-            [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total
-            ]
+                $this->dwh->table('Dim_Delivery_Header')->updateOrInsert(
+                    [
+                        'Source_Delivery_Id' => $delivery->id,
+                        'Source_System_Key'  => $sourceSystemKey,
+                    ],
+                    [
+                        'Grant_Key'                          => $grantKey,
+                        'School_Key'                         => $schoolKey,
+                        'Organisation_Key'                   => $organisationKey,
+                        'Training_Provider_Key'              => $providerKey,
+                        'External_System_Key'                => $externalSystemKey,
+                        'Delivery_Status'                    => ($delivery->digitisation_booking === 1) ? $this->mapDeliveryStatus($delivery->status) : 'N/A',
+                        'Date_Delivery_Start'                => $delivery->date_delivery_start,
+                        'Date_Delivery_End'                  => $delivery->date_delivery_end,
+                        'Digitisation_Booking'               => $delivery->digitisation_booking,
+                        'Fleet_Cycles_Used'                  => $delivery->fleet_cycles_used,
+                        'Consent_Cutoff_Date'                => $delivery->consent_cutoff_date,
+                        'Pref_Alt_Delivery_Location'         => $delivery->pref_alt_delivery_location,
+                        'Alt_Delivery_Location'              => $delivery->alt_delivery_location,
+                        'Notes'                              => $delivery->notes,
+                        'Instructor_General_Notes'           => $delivery->instructor_general_notes,
+                        'Teacher_Notes'                      => $delivery->teacher_notes,
+                        'School_Contacts'                    => $delivery->school_contacts,
+                        'Venue'                              => $delivery->venue,
+                        'Provider_Additional_Questions'      => $delivery->provider_additional_questions,
+                        'Comms_Start_Date'                   => $delivery->comms_start_date,
+                        'Date_Completed'                     => $delivery->date_completed,
+                        'Pref_Link_Managed_Consent'          => $delivery->pref_link_managed_consent,
+                        'Include_Tp_Terms_In_Consent'        => $delivery->include_tp_terms_in_consent ?? 0,
+                        'Consent_Src_Characteristics'        => $delivery->consent_src_characteristics ?? 0,
+                        'Max_Consents'                       => $delivery->max_consents,
+                        'Waiting_List_Enabled'               => $delivery->waiting_list_enabled ?? 0,
+                        'Short_Description'                  => $delivery->short_description ?? null,
+                        'Local_Funding'                      => (int) ($delivery->local_funding ?? 0),
+                        'Legacy_Delivery_Id'                 => $delivery->legacy_delivery_id ?? null,
+                        'Legacy_Delivery_Method'             => $delivery->legacy_delivery_method ?? null,
+                        'Rider_List_Uploaded'                => (bool) ($delivery->rider_list_uploaded ?? false),
+                        'Url_Code'                           => $delivery->url_code ?? null,
+                        'Venue_Notification_Sent'            => (bool) ($delivery->venue_notification_sent ?? false),
+                        'Survey_Notifications_Sent'          => (bool) ($delivery->survey_notifications_sent ?? false),
+                        'Confirm_Booked_Email_Sent'          => $delivery->confirm_booked_email_sent ?? null,
+                        'Confirm_Booked_Reminder_Email_Sent' => $delivery->confirm_booked_reminder_email_sent ?? null,
+                        'Housekeeping_Selected'              => (bool) ($delivery->housekeeping_selected ?? false),
+                        'Enable_School_Management'           => (bool) ($delivery->enable_school_management ?? false),
+                        'Source_Created_At'                  => $delivery->created_at ?? null,
+                        'Source_Updated_At'                  => $delivery->updated_at ?? null,
+                        'Source_Deleted_At'                  => $delivery->deleted_at ?? null,
+                    ]
+                );
+
+                if ($delivery->updated_at && (!$state->highestTimestamp || $delivery->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $delivery->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Delivery_Header', $state->highestTimestamp, $count);
+                }
+            }
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Delivery Headers synced with relational keys.";
     }
 
     public function syncCourses($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_Course')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-        $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
+        $watermark = Carbon::parse($this->getWatermark('Dim_Course'))->subSeconds(5)->toDateTimeString();
 
         $hasCourseSoftDeletes   = $this->sourceHasColumn('courses', 'deleted_at');
         $hasDeliverySoftDeletes = $this->sourceHasColumn('deliveries', 'deleted_at');
@@ -852,1582 +713,847 @@ class DataWarehouseSyncService
                 }
             });
 
-        // 1. Exclude courses belonging to soft-deleted deliveries
-        if ($hasDeliverySoftDeletes) {
-            $query->whereNull('deliveries.deleted_at');
-        }
-
-        // 2. Exclude soft-deleted courses themselves
+//        if ($hasDeliverySoftDeletes) {
+//            $query->whereNull('deliveries.deleted_at');
+//        }
         if ($hasCourseSoftDeletes) {
             $query->whereNull('courses.deleted_at');
         }
 
-        $total = $query->count();
+        $query->select([
+            'courses.id', 'courses.course_id', 'courses.parent_course_id', 'courses.delivery_id',
+            'courses.status', 'courses.start_date', 'courses.date_complete', 'courses.year_group',
+            'courses.is_cancelled', 'courses.cancellation_reason', 'courses.has_confirmed_booked',
+            'courses.confirmed_by', 'courses.confirmed_by_email', 'courses.confirmed_at',
+            'courses.provisional_booked', 'courses.booked', 'courses.adults', 'courses.children',
+            'courses.attendees_overridden_metadata', 'courses.attendees_overridden_by',
+            'courses.attendees_overridden_at', 'courses.updated_at',
+        ])->orderBy('courses.id', 'asc');
 
-        if ($total === 0) {
-            return "No new delivery changes detected.";
-        }
+        $result = $this->executeSyncRunner(
+            'Dim_Course',
+            $command,
+            $query,
+            function ($course, $state) use ($sourceSystemKey) {
+                $delivery = $this->dwh->table('Dim_Delivery_Header')
+                    ->where('Source_Delivery_Id', $course->delivery_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->select(['Delivery_Key', 'Source_Deleted_At'])
+                    ->first();
 
-        $highestTimestampSeen = $watermark;
+                if (!$delivery) {
+                    return; // Skip courses referencing missing/soft-deleted deliveries
+                }
 
-        // Fetch courses with their delivery relationship
-        $sourceCourses = $this->source->table('courses')
-            ->select([
-                'id',
-                'course_id',
-                'parent_course_id',
-                'delivery_id',
-                'status',
-                'start_date',
-                'date_complete',
-                'year_group',
-                'is_cancelled',
-                'cancellation_reason',
-                'has_confirmed_booked',
-                'confirmed_by',
-                'confirmed_by_email',
-                'confirmed_at',
-                'provisional_booked',
-                'booked',
-                'adults',
-                'children',
-                'attendees_overridden_metadata',
-                'attendees_overridden_by',
-                'attendees_overridden_at',
-                'updated_at',
-            ])
-            ->where(function ($q) use ($watermark) {
-                $q->where('courses.updated_at', '>', $watermark)
-                    ->orWhereNull('courses.updated_at');
-            })
-            ->get();
+                $this->dwh->table('Dim_Course')->updateOrInsert(
+                    [
+                        'Source_Course_Id'  => $course->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'Delivery_Key'                  => $delivery->Delivery_Key,
+                        'Course_Level'                  => $course->course_id,
+                        'Status'                        => $course->status,
+                        'Start_Date'                    => $course->start_date,
+                        'Date_Complete'                 => $course->date_complete,
+                        'Year_Group'                    => $course->year_group,
+                        'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
+                        'Cancellation_Reason'           => $course->cancellation_reason ?? null,
+                        'Has_Confirmed_Booked'          => (bool) ($course->has_confirmed_booked ?? false),
+                        'Confirmed_By'                  => $course->confirmed_by ?? null,
+                        'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
+                        'Confirmed_At'                  => $course->confirmed_at ?? null,
+                        'Provisional_Booked'            => $course->provisional_booked ?? null,
+                        'Booked'                        => $course->booked ?? null,
+                        'Adults'                        => $course->adults ?? null,
+                        'Children'                      => $course->children ?? null,
+                        'Attendees_Overridden_Metadata' => $course->attendees_overridden_metadata ?? null,
+                        'Attendees_Overridden_By'       => $course->attendees_overridden_by ?? null,
+                        'Attendees_Overridden_At'       => $course->attendees_overridden_at ?? null,
+                    ]
+                );
 
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $skippedCount = 0;
-
-        // Upsert Basic Info & Delivery Link
-        foreach ($sourceCourses as $course) {
-            // Find active Delivery_Key from the Header dimension
-            $delivery = $this->dwh->table('Dim_Delivery_Header')
-                ->where('Source_Delivery_Id', $course->delivery_id)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->select(['Delivery_Key', 'Source_Deleted_At'])
-                ->first();
-
-            // Guard: If delivery header doesn't exist or is soft-deleted, skip this course
-            if (!$delivery || !empty($delivery->Source_Deleted_At)) {
-
-                $skippedCount++;
-                if ($bar) $bar->advance();
-                continue;
+                if ($course->updated_at && (!$state->highestTimestamp || $course->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $course->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Course', $state->highestTimestamp, $count);
+                }
             }
+        );
 
-            $deliveryKey = $delivery->Delivery_Key;
+        // Finalize Parent-Child Course Links
+        try {
+            $childCourses = $this->source->table('courses')
+                ->whereNotNull('parent_course_id')
+                ->select(['id', 'parent_course_id'])
+                ->get();
 
-            $this->dwh->table('Dim_Course')->updateOrInsert(
-                [
-                    'Source_Course_Id' => $course->id,
-                    'Source_System_Key' => $sourceSystemKey
-                ],
-                [
-                    'Delivery_Key'                  => $deliveryKey,
-                    'Course_Level'                  => $course->course_id,
-                    'Status'                        => $course->status,
-                    'Start_Date'                    => $course->start_date,
-                    'Date_Complete'                 => $course->date_complete,
-                    'Year_Group'                    => $course->year_group,
-                    'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
-                    'Cancellation_Reason'           => $course->cancellation_reason ?? null,
-                    'Has_Confirmed_Booked'          => (bool) ($course->has_confirmed_booked ?? false),
-                    'Confirmed_By'                  => $course->confirmed_by ?? null,
-                    'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
-                    'Confirmed_At'                  => $course->confirmed_at ?? null,
-                    'Provisional_Booked'            => $course->provisional_booked ?? null,
-                    'Booked'                        => $course->booked ?? null,
-                    'Adults'                        => $course->adults ?? null,
-                    'Children'                      => $course->children ?? null,
-                    'Attendees_Overridden_Metadata' => $course->attendees_overridden_metadata ?? null,
-                    'Attendees_Overridden_By'       => $course->attendees_overridden_by ?? null,
-                    'Attendees_Overridden_At'       => $course->attendees_overridden_at ?? null,
-                ]
-            );
-
-            if ($course->updated_at > $highestTimestampSeen) {
-                $highestTimestampSeen = $course->updated_at;
-            }
-
-            if ($bar) $bar->advance();
-        }
-
-        // Connect child courses to parent
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-            $command->info("Finalizing Course parent-child relationships...");
-            $bar->start();
-        }
-
-        foreach ($sourceCourses as $course) {
-            if ($course->parent_course_id) {
+            foreach ($childCourses as $child) {
                 $parentKey = $this->dwh->table('Dim_Course')
-                    ->where('Source_Course_Id', $course->parent_course_id)
+                    ->where('Source_Course_Id', $child->parent_course_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Course_Key');
 
                 if ($parentKey) {
                     $this->dwh->table('Dim_Course')
-                        ->where('Source_Course_Id', $course->id)
+                        ->where('Source_Course_Id', $child->id)
+                        ->where('Source_System_Key', $sourceSystemKey)
                         ->update(['Parent_Course_Key' => $parentKey]);
                 }
             }
-            if ($bar) $bar->advance();
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Dim_Course (Parent Hierarchy)', $e->getMessage());
         }
 
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Course'],
-            [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total
-            ]
-        );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        $skipNotice = $skippedCount > 0 ? " (Skipped {$skippedCount} courses with missing or deleted deliveries)" : "";
-        return "Course Dimension synced with Delivery links and hierarchy.{$skipNotice}";
+        return $result;
     }
 
     public function syncRiders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = Carbon::parse($this->getWatermark('Dim_Rider'))->subSeconds(5)->toDateTimeString();
 
-        // Get the update Watermark for riders
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_Rider')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        // Safety buffer for overlapping transactions
-        $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
-        $highestTimestampSeen = $watermark;
-
-        // Get Rider records which have been updated after the watermark
         $query = Rider::select([
-            'id',
-            'school_urn',
-            'ethnicity',
-            'gender',
-            'free_school_meals',
-            'send_code',
-            'updated_at'
-        ])->where(function ($q) use ($watermark) {
-            $q->where('updated_at', '>', $watermark)
-                ->orWhereNull('updated_at');
-        })->orderBy('updated_at', 'asc');
+            'id', 'school_urn', 'ethnicity', 'gender', 'free_school_meals', 'send_code', 'updated_at',
+        ])
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)->orWhereNull('updated_at');
+            })
+            ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) return "No new rider changes detected.";
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        // Process in Chunks
-        $query->chunk(1000, function ($riders) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-            foreach ($riders as $rider) {
-
-                // Resolve School Key
+        return $this->executeSyncRunner(
+            'Dim_Rider',
+            $command,
+            $query,
+            function ($rider, $state) use ($sourceSystemKey) {
                 $schoolKey = $this->dwh->table('Dim_School')
                     ->where('School_Urn', $rider->school_urn)
                     ->value('School_Key');
 
-                // Upsert the Main Rider Record (SCD Type 1)
                 $this->dwh->table('Dim_Rider')->updateOrInsert(
                     ['Source_Rider_Id' => $rider->id, 'Source_System_Key' => $sourceSystemKey],
                     [
-                        'School_Key' => $schoolKey,
-                        'Ethnicity' => $rider->ethnicity,
-                        'Gender' => $rider->gender,
+                        'School_Key'    => $schoolKey,
+                        'Ethnicity'     => $rider->ethnicity,
+                        'Gender'        => $rider->gender,
                         'Pupil_Premium' => ($rider->free_school_meals === 'Yes') ? 1 : 0,
-                        'Has_SEND' => !empty($rider->send_code) ? 1 : 0,
+                        'Has_SEND'      => !empty($rider->send_code) ? 1 : 0,
                     ]
                 );
 
-                // Get the Rider_Key
                 $riderKey = $this->dwh->table('Dim_Rider')
                     ->where('Source_Rider_Id', $rider->id)
                     ->value('Rider_Key');
 
-                // Handle SEND Codes - these are created as required
-                $sendCodesRaw = is_array($rider->send_code) ? $rider->send_code : [];
-                $sendCodes = array_unique(array_filter($sendCodesRaw));
+                if ($riderKey) {
+                    $sendCodesRaw = is_array($rider->send_code) ? $rider->send_code : [];
+                    $sendCodes = array_unique(array_filter($sendCodesRaw));
 
-                // Clear existing map for this rider (re-map fresh for updates)
-                $this->dwh->table('Map_Rider_Send')->where('Rider_Key', $riderKey)->delete();
+                    $this->dwh->table('Map_Rider_Send')->where('Rider_Key', $riderKey)->delete();
 
-                foreach ($sendCodes as $code) {
-                    if (empty($code)) continue;
+                    foreach ($sendCodes as $code) {
+                        $this->dwh->table('Dim_Send_Code')->updateOrInsert(
+                            ['Send_Code' => $code],
+                            ['Send_Code' => $code]
+                        );
 
-                    // Ensure code exists in Dimension table
-                    $this->dwh->table('Dim_Send_Code')->updateOrInsert(
-                        ['Send_Code' => $code],
-                        ['Send_Code' => $code]
-                    );
+                        $sendCodeKey = $this->dwh->table('Dim_Send_Code')
+                            ->where('Send_Code', $code)
+                            ->value('Send_Code_Key');
 
-                    $sendCodeKey = $this->dwh->table('Dim_Send_Code')
-                        ->where('Send_Code', $code)
-                        ->value('Send_Code_Key');
-
-                    // Insert Mapping
-                    $this->dwh->table('Map_Rider_Send')->insert([
-                        'Rider_Key' => $riderKey,
-                        'Send_Code_Key' => $sendCodeKey
-                    ]);
+                        $this->dwh->table('Map_Rider_Send')->insert([
+                            'Rider_Key'     => $riderKey,
+                            'Send_Code_Key' => $sendCodeKey,
+                        ]);
+                    }
                 }
 
-                // Track highest timestamp for the watermark update
-                if ($rider->updated_at->gt($highestTimestampSeen)) {
-                    $highestTimestampSeen = $rider->updated_at->toDateTimeString();
+                if ($rider->updated_at && (!$state->highestTimestamp || $rider->updated_at->toDateTimeString() > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $rider->updated_at->toDateTimeString();
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Rider', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        // Update the Watermark
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Rider'],
-            [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total
-            ]
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Synced {$total} Riders (Incremental).";
     }
 
     public function syncConsents($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-
-        // Get the Watermark for Consents
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Dim_Consent')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        // Put the timestamp back by 5-seconds so we overlap for potential updates in source
-        // which occur during the Sync process
-        $watermark = Carbon::parse($watermark)->subSeconds(5)->toDateTimeString();
-        $highestTimestampSeen = $watermark;
+        $watermark = Carbon::parse($this->getWatermark('Dim_Consent'))->subSeconds(5)->toDateTimeString();
 
         $query = $this->source->table('consents')
             ->select([
                 'id', 'rider_id', 'delivery_id', 'consent_status',
                 'pref_join_bikeability_club', 'pref_further_research', 'pref_receive_news',
-                'has_bike', 'cycle_ability', 'is_fsm',
-                'is_SEND', 'send_details', 'has_medical_condition', 'medical_details',
-                'attended', 'year_group', 'gender', 'ethnicity',
-                'created_at', 'updated_at', 'deleted_at', 'deleted_reason'
+                'has_bike', 'cycle_ability', 'is_fsm', 'is_SEND', 'send_details',
+                'has_medical_condition', 'medical_details', 'attended', 'year_group',
+                'gender', 'ethnicity', 'created_at', 'updated_at', 'deleted_at', 'deleted_reason',
             ])
             ->where(function ($q) use ($watermark) {
                 $q->where('updated_at', '>', $watermark)
                     ->orWhere('deleted_at', '>', $watermark)
                     ->orWhereNull('updated_at');
-            })->orderBy('updated_at', 'asc');
+            })
+            ->orderBy('id', 'asc'); // Deterministic ordering avoiding null/stale updated_at drift
 
-        $total = $query->count();
-        if ($total === 0) return "No new consent changes detected.";
+        return $this->executeSyncRunner(
+            'Dim_Consent',
+            $command,
+            $query,
+            function ($consent, $state) use ($sourceSystemKey) {
+                if (!isset($state->skipped_unmapped)) {
+                    $state->skipped_unmapped = 0;
+                }
 
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        // Process in Chunks
-        $query->chunk(1000, function ($consents) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-
-            $consentIds = $consents->pluck('id')->toArray();
-
-            $allFrequencies = $this->source->table('cycle_frequency')
-                ->whereIn('consent_id', $consentIds)
-                ->get()
-                ->groupBy('consent_id');
-
-
-            foreach ($consents as $consent) {
-
-                // Resolve Rider Key from DWH
                 $riderKey = $this->dwh->table('Dim_Rider')
                     ->where('Source_Rider_Id', $consent->rider_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Rider_Key');
 
-                // Resolve Delivery Key from DWH
                 $deliveryKey = $this->dwh->table('Dim_Delivery_Header')
                     ->where('Source_Delivery_Id', $consent->delivery_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Delivery_Key');
 
-                // If keys aren't found, we skip (Ensures Referential Integrity)
+                // Referential integrity check - track orphan if parent is missing
                 if (!$riderKey || !$deliveryKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    $state->skipped_unmapped++;
+                    return;
                 }
 
-                //Get the array of Abilities
                 $abilities = is_array($consent->cycle_ability)
                     ? $consent->cycle_ability
                     : json_decode($consent->cycle_ability, true) ?? [];
 
-                $freqs = $allFrequencies->get($consent->id) ?? collect();
+                $freqs = $this->source->table('cycle_frequency')
+                    ->where('consent_id', $consent->id)
+                    ->get();
 
-                // Map based on the label_lookup_id (1: School, 2: Leisure, 3: Exercise, 4: Other)
                 $freqData = [
                     'Pre_Freq_To_School' => $freqs->where('label_lookup_id', 1)->first()->grading_lookup_id ?? null,
-                    'Pre_Freq_Leisure' => $freqs->where('label_lookup_id', 2)->first()->grading_lookup_id ?? null,
-                    'Pre_Freq_Exercise' => $freqs->where('label_lookup_id', 3)->first()->grading_lookup_id ?? null,
-                    'Pre_Freq_Other' => $freqs->where('label_lookup_id', 4)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Leisure'   => $freqs->where('label_lookup_id', 2)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Exercise'  => $freqs->where('label_lookup_id', 3)->first()->grading_lookup_id ?? null,
+                    'Pre_Freq_Other'     => $freqs->where('label_lookup_id', 4)->first()->grading_lookup_id ?? null,
                 ];
-
 
                 $this->dwh->table('Dim_Consent')->updateOrInsert(
                     [
                         'Source_Consent_Id' => $consent->id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     array_merge($freqData, [
-                        'Rider_Key' => $riderKey,
-                        'Delivery_Key' => $deliveryKey,
-                        'Consent_Status' => $consent->consent_status,
-                        'Pref_Join_Bikeclub' => $consent->pref_join_bikeability_club ?: 0,
-                        'Pref_Further_Research' => $consent->pref_further_research ?: 0,
-                        'Pref_Receive_News' => $consent->pref_receive_news ?: 0,
-
-                        // Flatten Ability Flags
-                        'Ability_Cannot_Cycle' => in_array("1", $abilities) ? 1 : 0,
+                        'Rider_Key'                      => $riderKey,
+                        'Delivery_Key'                   => $deliveryKey,
+                        'Consent_Status'                 => $consent->consent_status,
+                        'Pref_Join_Bikeclub'             => $consent->pref_join_bikeability_club ?: 0,
+                        'Pref_Further_Research'          => $consent->pref_further_research ?: 0,
+                        'Pref_Receive_News'              => $consent->pref_receive_news ?: 0,
+                        'Ability_Cannot_Cycle'           => in_array("1", $abilities) ? 1 : 0,
                         'Ability_Can_Look_Over_Shoulder' => in_array("2", $abilities) ? 1 : 0,
-                        'Ability_Can_One_Hand_Signal' => in_array("3", $abilities) ? 1 : 0,
-                        'Ability_Has_Level_2' => in_array("4", $abilities) ? 1 : 0,
-                        'Cycle_Ability_Raw' => json_encode($abilities), // Normalize to JSON string
-                        'Is_Pupil_premium' => $consent->is_fsm ?: 0,
-                        'Is_SEND' => $consent->is_SEND ?: 0,
-                        'SEND_Details' => $consent->send_details,
-                        'Has_Medical_Condition' => $consent->has_medical_condition ?: 0,
-                        'Medical_Details' => $consent->medical_details,
-                        'Attended' => $consent->attended,
-                        'Year_Group' => $consent->year_group,
-                        'Gender' => $consent->gender,
-                        'Ethnicity' => $consent->ethnicity,
-
+                        'Ability_Can_One_Hand_Signal'    => in_array("3", $abilities) ? 1 : 0,
+                        'Ability_Has_Level_2'            => in_array("4", $abilities) ? 1 : 0,
+                        'Cycle_Ability_Raw'              => json_encode($abilities),
+                        'Is_Pupil_premium'               => $consent->is_fsm ?: 0,
+                        'Is_SEND'                        => $consent->is_SEND ?: 0,
+                        'SEND_Details'                   => $consent->send_details,
+                        'Has_Medical_Condition'          => $consent->has_medical_condition ?: 0,
+                        'Medical_Details'                => $consent->medical_details,
+                        'Attended'                       => $consent->attended,
+                        'Year_Group'                     => $consent->year_group,
+                        'Gender'                         => $consent->gender,
+                        'Ethnicity'                      => $consent->ethnicity,
                         'Deleted_Reason'                 => $consent->deleted_reason ?? null,
                         'Source_Created_At'              => $consent->created_at ?? null,
                         'Source_Updated_At'              => $consent->updated_at ?? null,
                         'Source_Deleted_At'              => $consent->deleted_at ?? null,
                         'updated_at'                     => now(),
-
                     ])
                 );
 
-                // Update Watermark tracker
-                $activeTimestamp = max($consent->updated_at ?? '1900-01-01', $consent->deleted_at ?? '1900-01-01');
-                if ($activeTimestamp > $highestTimestampSeen) {
-                    $highestTimestampSeen = $activeTimestamp;
+                // Watermark progression across updates and deletions
+                $activeTimestamp = max(
+                    $consent->updated_at ?? '1900-01-01 00:00:00',
+                    $consent->deleted_at ?? '1900-01-01 00:00:00'
+                );
+
+                if ($activeTimestamp && (!$state->highestTimestamp || $activeTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $activeTimestamp;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Consent', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        // Finalize Watermark
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Dim_Consent'],
-            [
-                'Last_Synced_At' => $highestTimestampSeen,
-                'Records_Processed' => $total
-            ]
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Synced {$total} Consents.";
     }
 
-    /**
-     * Sync Dim_Teacher_Trainer Dimension Table
-     */
     public function syncTeacherTrainers($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Dimension - Teacher Trainers Sync...");
-
-        $watermark = $this->getWatermark('Dim_Teacher_Trainer') ?? '1900-01-01 00:00:00';
+        $watermark = $this->getWatermark('Dim_Teacher_Trainer');
 
         $query = $this->source->table('teacher_trainers')
-            ->where('updated_at', '>', $watermark);
-
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("Dim_Teacher_Trainer is already up to date.");
-            return "Dim_Teacher_Trainer up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-        $syncCount = 0;
-
-        // 🎯 Use chunkById on primary key 'id' to prevent pagination drift
-        $this->source->table('teacher_trainers')
             ->where('updated_at', '>', $watermark)
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, &$syncCount) {
-                foreach ($rows as $row) {
-                    $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
-
-                    $this->dwh->table('Dim_Teacher_Trainer')->updateOrInsert(
-                        [
-                            'Source_Teacher_Trainer_Id' => $row->id,
-                            'Source_System_Key'         => $sourceSystemKey,
-                        ],
-                        [
-                            'First_Name'                                  => $row->first_name,
-                            'Last_Name'                                   => $row->last_name,
-                            'Full_Name'                                   => $fullName ?: null,
-                            'Email'                                       => $row->email,
-                            'Telephone'                                   => $row->telephone,
-                            'Landline'                                    => $row->landline ?? null,
-                            'Main_School_Urn'                             => $row->main_school_urn,
-                            'Active'                                      => $row->active ?? 1,
-                            'Status'                                      => $row->status ?? 0,
-                            'Enable_Rider_Upload'                         => $row->enable_rider_upload ?? 0,
-                            'Enable_App_Access'                           => $row->enable_app_access ?? 0,
-                            'Enable_Get_Cycling_Admin'                    => $row->enable_get_cycling_admin ?? 0,
-                            'Pref_Receive_News'                           => $row->pref_receive_news ?? 0,
-                            'Pref_Delivering_Bikeability'                 => $row->pref_delivering_bikeability ?? 0,
-                            'Age_Range_Id'                                => $row->age_range_id,
-                            'Gender_Id'                                   => $row->gender_id,
-                            'Ethnicity_Id'                                => $row->ethnicity_id,
-                            'Date_Registered'                             => $row->date_registered,
-                            'Date_Renewal'                                => $row->date_renewal,
-                            'Date_Deregistered'                           => $row->date_deregistered,
-                            'Deregistration_Reason'                       => $row->deregistration_reason,
-                            'Rdc_Practical_Training_Complete_Date'        => $row->rdc_practical_training_complete_date,
-                            'In_School_Training_Complete_Date'            => $row->in_school_training_complete_date,
-                            'In_School_Training_Certificate_Download_Date'=> $row->in_school_training_certificate_download_date,
-                            'Send_Training_Complete_Date'                 => $row->send_training_complete_date,
-                            'Send_Training_Certificate_Download_Date'     => $row->send_training_certificate_download_date,
-                            'Updated_At'                                  => now(),
-                        ]
-                    );
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
-                    $syncCount++;
-                }
-            });
-
-        $this->updateWatermark('Dim_Teacher_Trainer', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} Teacher Trainers.";
-    }
-
-    /**
-     * 1. Sync Dim_Get_Cycling_Course (Full Catalog Sync)
-     */
-    public function syncGetCyclingCourses($command = null)
-    {
-        $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Course (Full Sync)...");
-
-        $courses = $this->source->table('get_cycling_courses')->get();
-
-        foreach ($courses as $c) {
-            $this->dwh->table('Dim_Get_Cycling_Course')->updateOrInsert(
-                [
-                    'Source_Course_Id'  => $c->id,
-                    'Source_System_Key' => $sourceSystemKey,
-                ],
-                [
-                    'Course_Code' => $c->course_id,
-                    'Course_Name' => $c->name,
-                    'Updated_At'  => now(),
-                ]
-            );
-        }
-
-        return "Dim_Get_Cycling_Course synced successfully.";
-    }
-
-    /**
-     * 2. Sync Dim_Get_Cycling_Rider (Watermark Sync with PII Filter)
-     */
-    public function syncGetCyclingRiders($command = null)
-    {
-        $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Rider...");
-
-        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider') ?? '1900-01-01 00:00:00';
-        $highestTimestamp = $watermark;
-
-        $total = $this->source->table('get_cycling_riders')
-            ->where('updated_at', '>', $watermark)
-            ->count();
-
-        if ($total === 0) {
-            if ($command) $command->info("Dim_Get_Cycling_Rider is up to date.");
-            return "Dim_Get_Cycling_Rider up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $this->source->table('get_cycling_riders')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-                foreach ($rows as $row) {
-                    // Resolve School Key
-                    $schoolKey = null;
-                    if (!empty($row->school_urn)) {
-                        $schoolKey = $this->dwh->table('Dim_School')
-                            ->where('School_Urn', (string)$row->school_urn)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('School_Key');
-                    }
-
-                    // Resolve Teacher Trainer Key
-                    $trainerKey = null;
-                    if (!empty($row->uploaded_by_teacher_trainer_id)) {
-                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
-                            ->where('Source_Teacher_Trainer_Id', (int)$row->uploaded_by_teacher_trainer_id)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('Teacher_Trainer_Key');
-                    }
-
-                    // Upsert excluding first_name, last_name, hash_first_name, hash_last_name
-                    $this->dwh->table('Dim_Get_Cycling_Rider')->updateOrInsert(
-                        [
-                            'Source_Rider_Id'   => $row->id,
-                            'Source_System_Key' => $sourceSystemKey,
-                        ],
-                        [
-                            'School_Key'                     => $schoolKey,
-                            'Teacher_Trainer_Key'            => $trainerKey,
-                            'School_Urn'                     => $row->school_urn ? (string)$row->school_urn : null,
-                            'Archived'                       => (bool)($row->archived ?? 0),
-                            'Archived_At'                    => $row->archived_at,
-                            'Upn'                            => $row->upn,
-                            'Year_Group'                     => $row->year_group,
-                            'Class_Name'                     => $row->class_name,
-                            'Gender'                         => $row->gender,
-                            'Ethnicity'                      => $row->ethnicity,
-                            'Send_Code'                      => $row->send_code,
-                            'Pupil_Premium'                  => $row->pp,
-                            'Uploaded_By_Teacher_Trainer_Id' => $row->uploaded_by_teacher_trainer_id ? (int)$row->uploaded_by_teacher_trainer_id : null,
-                            'Last_Activity_Date'             => $row->last_activity_date,
-                            'Updated_At'                     => now(),
-                        ]
-                    );
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
-                }
-            });
-
-        $this->updateWatermark('Dim_Get_Cycling_Rider', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Dim_Get_Cycling_Rider synced successfully.";
-    }
-
-    /**
-     * 3. Sync Dim_Get_Cycling_Rider_Note (Watermark Sync)
-     */
-    public function syncGetCyclingRiderNotes($command = null)
-    {
-        $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Dim_Get_Cycling_Rider_Note...");
-
-        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider_Note') ?? '1900-01-01 00:00:00';
-        $highestTimestamp = $watermark;
-
-        $this->source->table('get_cycling_rider_notes')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, &$highestTimestamp) {
-                foreach ($rows as $row) {
-                    $riderKey = $this->dwh->table('Dim_Get_Cycling_Rider')
-                        ->where('Source_Rider_Id', $row->rider_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('GC_Rider_Key');
-
-                    if (!$riderKey) {
-                        continue;
-                    }
-
-                    $this->dwh->table('Dim_Get_Cycling_Rider_Note')->updateOrInsert(
-                        [
-                            'Source_Note_Id'    => $row->id,
-                            'Source_System_Key' => $sourceSystemKey,
-                        ],
-                        [
-                            'GC_Rider_Key'    => $riderKey,
-                            'Source_Rider_Id' => $row->rider_id,
-                            'Note'            => $row->note,
-                            'Updated_At'      => now(),
-                        ]
-                    );
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-                }
-            });
-
-        $this->updateWatermark('Dim_Get_Cycling_Rider_Note', $highestTimestamp);
-
-        return "Dim_Get_Cycling_Rider_Note synced.";
-    }
-
-    /**
-     * Synchronise the "Facts"
-     */
-    private function mapEthnicityToColumn($input)
-    {
-        // Clean and normalize the input string format
-        $key = strtolower(trim($input));
-
-        // Map text names & summary groups to standard 4-character codes
-        $code = match ($key) {
-            // Standard codes (Passthrough)
-            'wbri', 'whitebritish' ,'white_british'  => 'WBRI',
-            'wiri', 'white_irish'                    => 'WIRI',
-            'wirt', 'white_traveller'                => 'WIRT',
-            'woth', 'white'                          => 'WOTH',
-            'wrom', 'white_gypsy'                    => 'WROM',
-            'mwbc', 'mixed_white_caribbean', 'mixed_white_black_carib' => 'MWBC',
-            'mwba', 'mixed_white_african'            => 'MWBA',
-            'mwas', 'mixed_white_asian'              => 'MWAS',
-            'moth', 'mixed'                          => 'MOTH',
-            'aind', 'asian_indian', 'indian'         => 'AIND',
-            'apkn', 'asian_pakistani'                => 'APKN',
-            'aban', 'asian_bangladeshi'              => 'ABAN',
-            'chne', 'asian_chinese'                  => 'CHNE',
-            'aoth', 'asian'                          => 'AOTH',
-            'bcrb', 'black_caribbean'                => 'BCRB',
-            'bafr', 'black_african'                  => 'BAFR',
-            'both', 'black'                          => 'BOTH',
-            'ooth', 'other', 'other_arab'            => 'OOTH',
-            'na', 'n', 'refused', 'prefer_not_to_say' => 'NA',
-            default                                  => 'NA'
-        };
-
-        // Map the 4-character code to the DWH column name
-        return match ($code) {
-            'WBRI' => 'Count_Ethnicity_White_British',
-            'WIRI' => 'Count_Ethnicity_White_Irish',
-            'WIRT' => 'Count_Ethnicity_White_Traveller',
-            'WOTH' => 'Count_Ethnicity_White_Other',
-            'WROM' => 'Count_Ethnicity_Gypsy_Romany',
-            'MWBC' => 'Count_Ethnicity_Mixed_White_Black_Carib',
-            'MWBA' => 'Count_Ethnicity_Mixed_White_Black_African',
-            'MWAS' => 'Count_Ethnicity_Mixed_White_Asian',
-            'MOTH' => 'Count_Ethnicity_Mixed_Other',
-            'AIND' => 'Count_Ethnicity_Asian_Indian',
-            'APKN' => 'Count_Ethnicity_Asian_Pakistani',
-            'ABAN' => 'Count_Ethnicity_Asian_Bangladeshi',
-            'CHNE' => 'Count_Ethnicity_Asian_Chinese',
-            'AOTH' => 'Count_Ethnicity_Asian_Other',
-            'BCRB' => 'Count_Ethnicity_Black_Caribbean',
-            'BAFR' => 'Count_Ethnicity_Black_African',
-            'BOTH' => 'Count_Ethnicity_Black_Other',
-            'OOTH' => 'Count_Ethnicity_Other_Any',
-            'NA'   => 'Count_Ethnicity_Not_Stated',
-            default => 'Count_Ethnicity_Not_Stated',
-        };
-    }
-
-    private function initializeExtendedMetricArray()
-    {
-        return [
-            //Genders
-            'Count_Female' => 0,
-            'Count_Male' => 0,
-            'Count_Gender_Other' => 0,
-            'Count_Gender_Not_Stated' => 0,
-
-            //Family Counts
-            'Count_Adults' => 0,
-            'Count_Teens' => 0,
-            'Count_Children' => 0,
-
-            //Repeat Type
-            'Count_Booked_Repeat_Type_Na' => 0,
-            'Count_Booked_Repeat_Type_Unique' => 0,
-            'Count_Booked_Repeat_Type_Repeat' => 0,
-
-            //Ethnicities
-            'Count_Ethnicity_White_British' => 0,
-            'Count_Ethnicity_White_Irish' => 0,
-            'Count_Ethnicity_White_Other' => 0,
-            'Count_Ethnicity_White_Traveller' => 0,
-            'Count_Ethnicity_Gypsy_Romany' => 0,
-            'Count_Ethnicity_Mixed_White_Black_Carib' => 0,
-            'Count_Ethnicity_Mixed_White_Black_African' => 0,
-            'Count_Ethnicity_Mixed_White_Asian' => 0,
-            'Count_Ethnicity_Mixed_Other' => 0,
-            'Count_Ethnicity_Asian_Indian' => 0,
-            'Count_Ethnicity_Asian_Pakistani' => 0,
-            'Count_Ethnicity_Asian_Bangladeshi' => 0,
-            'Count_Ethnicity_Asian_Chinese' => 0,
-            'Count_Ethnicity_Asian_Other' => 0,
-            'Count_Ethnicity_Black_African' => 0,
-            'Count_Ethnicity_Black_Caribbean' => 0,
-            'Count_Ethnicity_Black_Other' => 0,
-            'Count_Ethnicity_Other_Arab' => 0,
-            'Count_Ethnicity_Other_Any' => 0,
-            'Count_Ethnicity_Not_Stated' => 0,
-
-            //SEND and Pupil Premium
-            'Count_Pupil_Premium' => 0,
-            'Count_SEND' => 0,
-            'Count_SEND_Not_Stated' => 0,
-            'Count_Pupil_Premium_Not_Stated'  => 0,
-
-            //Bikes
-            'Count_Bikes_Swapped' => 0,
-            'Count_Bikes_Recycled' => 0,
-
-            //Age Range
-            'Count_Age_Range_18_24' => 0,
-            'Count_Age_Range_25_34' => 0,
-            'Count_Age_Range_35_44' => 0,
-            'Count_Age_Range_45_54' => 0,
-            'Count_Age_Range_55_64' => 0,
-            'Count_Age_Range_Over_65' => 0,
-            'Count_Age_Range_Not_Stated' => 0,
-        ];
-    }
-
-    public function syncFactCourseDelivery($command = null)
-    {
-        $sourceSystemKey = $this->getSourceSystemKey();
-
-        $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
-            ->hasColumn('deliveries', 'delivery_details');
-
-        $useLegacyCourseCharacteristics = \Illuminate\Support\Facades\Schema::connection('mysql_src')
-            ->hasColumn('courses', 'characteristics');
-
-        // Get the historical synchronization high-watermark
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Fact_Course_Delivery')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        // 1. Identify distinct candidate Delivery IDs modified across deliveries, courses, or rider links
-        $candidateDeliveryIds = $this->source->table('deliveries')
-            ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
-            ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
-            ->where(function ($q) use ($watermark) {
-                $q->where('deliveries.updated_at', '>', $watermark)
-                    ->orWhere('courses.updated_at', '>', $watermark)
-                    ->orWhere('jrc.updated_at', '>', $watermark)
-                    ->orWhereNull('deliveries.updated_at');
-            })
-            ->distinct()
-            ->pluck('deliveries.id')
-            ->toArray();
-
-        $total = count($candidateDeliveryIds);
-        if ($total === 0) {
-            return "Fact table is up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestampSeen = $watermark;
-
-        // 2. Process fixed batches of delivery IDs (avoids offset drift and runaway loops)
-        collect($candidateDeliveryIds)->chunk(200)->each(function ($deliveryIdChunk) use (
-            $sourceSystemKey,
-            $useLegacy,
-            $useLegacyCourseCharacteristics,
-            $bar,
-            &$highestTimestampSeen
-        ) {
-            // Query courses and deliveries for this fixed batch of IDs
-            $recordsQuery = $this->source->table('deliveries')
-                ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
-                ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
-                ->whereIn('deliveries.id', $deliveryIdChunk)
-                ->select([
-                    'deliveries.id as delivery_id',
-                    'deliveries.date_delivery_start',
-                    'deliveries.consent_src_characteristics',
-                    'deliveries.updated_at as delivery_updated',
-                    'courses.id as course_id',
-                    'courses.start_date as course_start',
-                    'courses.updated_at as course_updated',
-                    DB::raw('MAX(jrc.updated_at) as rider_course_updated'),
-                ])
-                ->groupBy([
-                    'deliveries.id',
-                    'deliveries.date_delivery_start',
-                    'deliveries.consent_src_characteristics',
-                    'deliveries.updated_at',
-                    'courses.id',
-                    'courses.start_date',
-                    'courses.updated_at',
-                ]);
-
-            if ($useLegacy) {
-                $recordsQuery->addSelect('deliveries.delivery_details');
-                $recordsQuery->groupBy('deliveries.delivery_details');
-            }
-
-            if ($useLegacyCourseCharacteristics) {
-                $recordsQuery->addSelect('courses.characteristics');
-                $recordsQuery->groupBy('courses.characteristics');
-            }
-
-            $records = $recordsQuery->get();
-
-            foreach ($records as $record) {
-                // Track highest timestamp across all entities
-                $activeTimestamp = max(
-                    $record->delivery_updated ?? '1900-01-01 00:00:00',
-                    $record->course_updated ?? '1900-01-01 00:00:00',
-                    $record->rider_course_updated ?? '1900-01-01 00:00:00'
-                );
-
-                if ($activeTimestamp > $highestTimestampSeen) {
-                    $highestTimestampSeen = $activeTimestamp;
-                }
-
-                // Resolve target dimension parent entry
-                $delivery = $this->dwh->table('Dim_Delivery_Header')
-                    ->where('Source_Delivery_Id', $record->delivery_id)
-                    ->where('Source_System_Key', $sourceSystemKey)
-                    ->first();
-
-                if (!$delivery) {
-                    continue;
-                }
-
-                // Arrange metrics
-                $mockCourse = (object)[
-                    'id'               => $record->course_id,
-                    'delivery_id'      => $record->delivery_id,
-                    'delivery_details' => $record->delivery_details ?? null
-                ];
-                $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
-
-                $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
-                $yearGroupString   = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
-                unset($deliveryDetailMetrics['Extracted_Course_Level']);
-                unset($deliveryDetailMetrics['Extracted_Year_Group']);
-
-                // Resolve or provision Dim_Course
-                $courseKey = null;
-                if (!is_null($record->course_id)) {
-                    $courseKey = $this->dwh->table('Dim_Course')
-                        ->where('Source_Course_Id', $record->course_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Course_Key');
-                } elseif (!empty($courseLevelString)) {
-                    $this->dwh->table('Dim_Course')->updateOrInsert(
-                        [
-                            'Delivery_Key'      => $delivery->Delivery_Key,
-                            'Course_Level'      => $courseLevelString,
-                            'Source_Course_Id'  => null,
-                            'Source_System_Key' => $sourceSystemKey,
-                        ],
-                        [
-                            'Status'        => 1,
-                            'Start_Date'    => $record->course_start ?: $record->date_delivery_start,
-                            'Date_Complete' => $record->course_start ?: $record->date_delivery_start,
-                            'Year_Group'    => $yearGroupString,
-                        ]
-                    );
-
-                    $courseKey = $this->dwh->table('Dim_Course')
-                        ->where('Delivery_Key', $delivery->Delivery_Key)
-                        ->where('Course_Level', $courseLevelString)
-                        ->whereNull('Source_Course_Id')
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Course_Key');
-                }
-
-                if (is_null($courseKey)) {
-                    continue;
-                }
-
-                // Attendance fallback for digitised deliveries
-                $isDigitised = ((int)($delivery->Digitisation_Booking ?? 0) === 1) || !is_null($record->course_id);
-                $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
-
-                if ($currentAttended === 0 && $isDigitised && !is_null($record->course_id)) {
-                    $actualAttended = $this->dwh->table('Fact_Rider_Course')
-                        ->where('Source_Course_Id', $record->course_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->where('Attended', 1)
-                        ->count();
-
-                    if ($actualAttended > 0) {
-                        $deliveryDetailMetrics['Count_Attended_Confirmed'] = $actualAttended;
-                    }
-                }
-
-                // Resolve Rider counts
-                $enrolledCount = 0;
-                $completedCount = 0;
-                if (!is_null($record->course_id)) {
-                    $enrolledCount = $this->source->table('join_riders_courses')
-                        ->where('course_id', $record->course_id)
-                        ->count();
-
-                    $completedCount = $this->source->table('join_riders_courses')
-                        ->where('course_id', $record->course_id)
-                        ->where('has_completed_course', 1)
-                        ->count();
-                }
-
-                // Demographics
-                if ($record->consent_src_characteristics == 1) {
-                    $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
-                } else {
-                    if ($useLegacyCourseCharacteristics) {
-                        $metrics = !empty($record->characteristics)
-                            ? $this->aggregateFromLegacyCharacteristics($record->characteristics)
-                            : $this->initializeExtendedMetricArray();
-                    } elseif (!is_null($record->course_id)) {
-                        $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
-                    } else {
-                        $metrics = $this->initializeExtendedMetricArray();
-                    }
-                }
-
-                $fact_date = $record->course_start ?: $record->date_delivery_start;
-
-                $finalPayload = array_merge(
-                    $useLegacy ? [] : $metrics,
-                    $deliveryDetailMetrics,
+            ->orderBy('id', 'asc');
+
+        return $this->executeSyncRunner(
+            'Dim_Teacher_Trainer',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $fullName = trim(($row->first_name ?? '') . ' ' . ($row->last_name ?? ''));
+
+                $this->dwh->table('Dim_Teacher_Trainer')->updateOrInsert(
                     [
-                        'Riders_Enrolled_Count'  => $enrolledCount,
-                        'Riders_Completed_Count' => $completedCount,
-                        'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
-                        'School_Key'             => $delivery->School_Key,
-                        'Organisation_Key'       => $delivery->Organisation_Key,
-                        'Provider_Key'           => $delivery->Training_Provider_Key,
-                        'Grant_Key'              => $delivery->Grant_Key,
+                        'Source_Teacher_Trainer_Id' => $row->id,
+                        'Source_System_Key'         => $sourceSystemKey,
+                    ],
+                    [
+                        'First_Name'                                  => $row->first_name,
+                        'Last_Name'                                   => $row->last_name,
+                        'Full_Name'                                   => $fullName ?: null,
+                        'Email'                                       => $row->email,
+                        'Telephone'                                   => $row->telephone,
+                        'Landline'                                    => $row->landline ?? null,
+                        'Main_School_Urn'                             => $row->main_school_urn,
+                        'Active'                                      => $row->active ?? 1,
+                        'Status'                                      => $row->status ?? 0,
+                        'Enable_Rider_Upload'                         => $row->enable_rider_upload ?? 0,
+                        'Enable_App_Access'                           => $row->enable_app_access ?? 0,
+                        'Enable_Get_Cycling_Admin'                    => $row->enable_get_cycling_admin ?? 0,
+                        'Pref_Receive_News'                           => $row->pref_receive_news ?? 0,
+                        'Pref_Delivering_Bikeability'                 => $row->pref_delivering_bikeability ?? 0,
+                        'Age_Range_Id'                                => $row->age_range_id,
+                        'Gender_Id'                                   => $row->gender_id,
+                        'Ethnicity_Id'                                => $row->ethnicity_id,
+                        'Date_Registered'                             => $row->date_registered,
+                        'Date_Renewal'                                => $row->date_renewal,
+                        'Date_Deregistered'                           => $row->date_deregistered,
+                        'Deregistration_Reason'                       => $row->deregistration_reason,
+                        'Rdc_Practical_Training_Complete_Date'        => $row->rdc_practical_training_complete_date,
+                        'In_School_Training_Complete_Date'            => $row->in_school_training_complete_date,
+                        'In_School_Training_Certificate_Download_Date'=> $row->in_school_training_certificate_download_date,
+                        'Send_Training_Complete_Date'                 => $row->send_training_complete_date,
+                        'Send_Training_Certificate_Download_Date'     => $row->send_training_certificate_download_date,
+                        'Updated_At'                                  => now(),
                     ]
                 );
 
-                $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Teacher_Trainer', $state->highestTimestamp, $count);
+                }
+            }
+        );
+    }
+
+    public function syncGetCyclingCourses($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $courses = $this->source->table('get_cycling_courses')->get();
+
+        return $this->executeSyncRunner(
+            'Dim_Get_Cycling_Course',
+            $command,
+            $courses,
+            function ($c) use ($sourceSystemKey) {
+                $this->dwh->table('Dim_Get_Cycling_Course')->updateOrInsert(
                     [
-                        'Delivery_Key' => $delivery->Delivery_Key,
-                        'Course_Key'   => $courseKey,
+                        'Source_Course_Id'  => $c->id,
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
-                    $finalPayload
+                    [
+                        'Course_Code' => $c->course_id,
+                        'Course_Name' => $c->name,
+                        'Updated_At'  => now(),
+                    ]
                 );
             }
-
-            if ($bar) {
-                $bar->advance(count($deliveryIdChunk));
-            }
-        });
-
-        // Commit watermark
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Fact_Course_Delivery'],
-            [
-                'Last_Synced_At'    => $highestTimestampSeen,
-                'Records_Processed' => $total,
-            ]
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command?->newLine();
-        }
-
-        return "Fact_Course_Delivery synced. ({$total} deliveries processed)";
     }
 
-    private function getCourseDeliveryMetrics($course, $useLegacy)
+    public function syncGetCyclingRiders($command = null)
     {
-        // Check if the 'delivery_details' column exists in the source 'deliveries' table
-        // If it doesn't exist, it means the JSON normalization has happened so we will use
-        // the delivery_modules and delivery_metrics
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider');
 
-        if (is_null($useLegacy)) {
-            $useLegacy = \Illuminate\Support\Facades\Schema::connection('mysql_src')
-                ->hasColumn('deliveries', 'delivery_details');
-        }
+        $query = $this->source->table('get_cycling_riders')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc');
 
-        if ($useLegacy) {
-            return $this->extractFromLegacyJson($course);
-        }
+        return $this->executeSyncRunner(
+            'Dim_Get_Cycling_Rider',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $schoolKey = null;
+                if (!empty($row->school_urn)) {
+                    $schoolKey = $this->dwh->table('Dim_School')
+                        ->where('School_Urn', (string) $row->school_urn)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('School_Key');
+                }
 
-        return $this->extractFromNormalizedTables($course);
+                $trainerKey = null;
+                if (!empty($row->uploaded_by_teacher_trainer_id)) {
+                    $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                        ->where('Source_Teacher_Trainer_Id', (int) $row->uploaded_by_teacher_trainer_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Teacher_Trainer_Key');
+                }
+
+                $this->dwh->table('Dim_Get_Cycling_Rider')->updateOrInsert(
+                    [
+                        'Source_Rider_Id'   => $row->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'School_Key'                     => $schoolKey,
+                        'Teacher_Trainer_Key'            => $trainerKey,
+                        'School_Urn'                     => $row->school_urn ? (string) $row->school_urn : null,
+                        'Archived'                       => (bool) ($row->archived ?? 0),
+                        'Archived_At'                    => $row->archived_at,
+                        'Upn'                            => $row->upn,
+                        'Year_Group'                     => $row->year_group,
+                        'Class_Name'                     => $row->class_name,
+                        'Gender'                         => $row->gender,
+                        'Ethnicity'                      => $row->ethnicity,
+                        'Send_Code'                      => $row->send_code,
+                        'Pupil_Premium'                  => $row->pp,
+                        'Uploaded_By_Teacher_Trainer_Id' => $row->uploaded_by_teacher_trainer_id ? (int) $row->uploaded_by_teacher_trainer_id : null,
+                        'Last_Activity_Date'             => $row->last_activity_date,
+                        'Updated_At'                     => now(),
+                    ]
+                );
+
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Get_Cycling_Rider', $state->highestTimestamp, $count);
+                }
+            }
+        );
     }
 
-    private function extractFromLegacyJson($course)
+    public function syncGetCyclingRiderNotes($command = null)
     {
-        $details = json_decode($course->delivery_details ?? '[]', true);
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Dim_Get_Cycling_Rider_Note');
 
-        // Initialize baseline metrics structure array maps matching extended boundaries
-        $metrics = array_merge($this->initializeExtendedMetricArray(), [
-            'Count_Booked_Provisional' => 0,
-            'Count_Booked_Confirmed'   => 0,
-            'Count_Attended_Confirmed' => 0,
-            'Count_Bikes_Swapped'      => 0,
-            'Count_Bikes_Recycled'     => 0,
-            'Extracted_Course_Level'   => null,
-            'Extracted_Year_Group'     => null,
-            'Count_Gender_Not_Stated'   => 0,
-            'Count_SEND'                     => 0,
-            'Count_Pupil_Premium'            => 0,
-            'Count_SEND_Not_Stated'          => 0,
-            'Count_Pupil_Premium_Not_Stated' => 0,
-        ]);
+        $query = $this->source->table('get_cycling_rider_notes')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc');
 
-        foreach ($details as $entry) {
-            // Target the correct array element context loop
-            $isTargetModule = is_null($course->id) || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id);
+        return $this->executeSyncRunner(
+            'Dim_Get_Cycling_Rider_Note',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $riderKey = $this->dwh->table('Dim_Get_Cycling_Rider')
+                    ->where('Source_Rider_Id', $row->rider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('GC_Rider_Key');
 
-            if ($isTargetModule) {
-                // DERIVE LEVEL IDENTITY: Pulls the course level straight from module context tracking
-                $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
-                $metrics['Extracted_Year_Group'] = $entry['delivery']['year_group'] ?? null;
-
-                $delivery = $entry['delivery'] ?? [];
-                $booked   = $delivery['booked'] ?? [];
-
-                $metrics['Count_Booked_Provisional'] = (int)($booked['provisional'] ?? 0);
-
-                if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
-                    $metrics['Count_Booked_Confirmed']   = (int)($booked['total'] ?? 0);
-                    $metrics['Count_Attended_Confirmed'] = (int)($delivery['attended']['total'] ?? 0);
+                if (!$riderKey) {
+                    return;
                 }
 
-                if (($entry['module']['id'] ?? '') === 'plus_family') {
-                    $metrics['Count_Adults']   = (int)($delivery['adults'] ?? 0);
-                    $metrics['Count_Teens']    = (int)($delivery['teens'] ?? 0);
-                    $metrics['Count_Children'] = (int)($delivery['children'] ?? 0);
+                $this->dwh->table('Dim_Get_Cycling_Rider_Note')->updateOrInsert(
+                    [
+                        'Source_Note_Id'    => $row->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'GC_Rider_Key'    => $riderKey,
+                        'Source_Rider_Id' => $row->rider_id,
+                        'Note'            => $row->note,
+                        'Updated_At'      => now(),
+                    ]
+                );
 
-                    break;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                // Map Legacy Genders into correct Fact columns
-                $gender = $booked['gender'] ?? [];
-                foreach ($gender as $sub => $val) {
-                    if ($sub === 'female') $metrics['Count_Female'] += (int)$val;
-                    elseif ($sub === 'male') $metrics['Count_Male'] += (int)$val;
-                    elseif ($sub === 'other') $metrics['Count_Gender_Other'] += (int)$val;
-                    elseif ($sub === 'na') $metrics['Count_Gender_Not_Stated'] += (int)$val;
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Get_Cycling_Rider_Note', $state->highestTimestamp, $count);
                 }
-
-                // Translate and map Legacy JSON Ethnicity text keys into DWH Columns
-                $ethnicity = $booked['ethnicity'] ?? [];
-                foreach ($ethnicity as $sub => $val) {
-
-                    // Resolve "WBRI" into "Count_Ethnicity_White_British" column map name
-                    $targetColumn = $this->mapEthnicityToColumn($sub);
-
-                    if (array_key_exists($targetColumn, $metrics)) {
-                        $metrics[$targetColumn] += (int)$val;
-                    } else {
-                        $metrics['Count_Ethnicity_Not_Stated'] += (int)$val;
-                    }
-                }
-
-                // Extract Age Ranges
-                $ages = $booked['age_range'] ?? [];
-                foreach ($ages as $sub => $val) {
-                    $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
-                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int)$val;
-                }
-
-                // Extract Repeat Types
-                $repeats = $booked['repeat_type'] ?? [];
-                foreach ($repeats as $sub => $val) {
-                    $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
-                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int)$val;
-                }
-
-                // Privacy Indicators fallbacks
-                $metrics['Count_SEND']                     += (int)($booked['send'] ?? 0);
-                $metrics['Count_Pupil_Premium']            += (int)($booked['free_school_meals'] ?? 0);
-                $metrics['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
-                $metrics['Count_Pupil_Premium_Not_Stated'] += (int)($booked['free_school_meals_na'] ?? 0);
-
-                // Circular economy assets variables
-                $metrics['Count_Bikes_Swapped']  = (int)($delivery['bikes_swapped'] ?? 0);
-                $metrics['Count_Bikes_Recycled'] = (int)($delivery['bikes_recycled'] ?? 0);
-                break;
             }
-        }
-        return $metrics;
+        );
     }
 
-    private function extractFromNormalizedTables($course)
-    {
-        $metrics = array_merge($this->initializeExtendedMetricArray(), [
-            'Count_Booked_Provisional' => 0,
-            'Count_Booked_Confirmed'   => 0,
-            'Count_Attended_Confirmed' => 0,
-            'Count_Bikes_Swapped'      => 0,
-            'Count_Bikes_Recycled'     => 0
-        ]);
-
-        // 1. Query the delivery_modules bridge using the unique criteria combo
-        $moduleQuery = $this->source->table('delivery_modules');
-
-        if (!is_null($course->id)) {
-            // Digitised track matching by numeric Course ID
-            $moduleQuery->where('entity_id', $course->id);
-        } else {
-            // Non-digitised track matching by parent delivery ID and text label string context
-            $moduleQuery->where('delivery_id', $course->delivery_id);
-        }
-
-        $module = $moduleQuery->first();
-
-        if (!$module) {
-            return $metrics;
-        }
-
-        // Set base confirmation metrics out of module properties
-        $metrics['Count_Booked_Provisional'] = (int)$module->booked_provisional;
-        $metrics['Count_Booked_Confirmed']   = ($module->confirmed) ? (int)$module->booked_total : 0;
-        $metrics['Count_Attended_Confirmed'] = ($module->confirmed) ? (int)$module->attended_total : 0;
-
-        // 2. Query metrics rows by joining back to delivery_modules.id
-        $metricRows = $this->source->table('delivery_metrics')
-            ->where('module_id', $module->id)
-            ->get();
-
-        foreach ($metricRows as $row) {
-            $cat = strtolower($row->category);
-            $sub = strtolower($row->sub_category);
-            $val = (int)$row->value;
-
-            if ($cat === 'booked_gender') {
-                if ($sub === 'male')     $metrics['Count_Male'] = $val;
-                if ($sub === 'female')   $metrics['Count_Female'] = $val;
-                if ($sub === 'other')    $metrics['Count_Gender_Other'] = $val;
-                if ($sub === 'na')       $metrics['Count_Gender_Not_Stated'] = $val;
-            }
-
-            // Extract and map Ethnicities directly using the 4-character code mapper helper
-            if ($cat === 'booked_ethnicity') {
-                $col = $this->mapEthnicityToColumn($sub); // e.g. maps 'white_british' row sub directly
-                if (array_key_exists($col, $metrics)) {
-                    $metrics[$col] = $val;
-                } else {
-                    $metrics['Count_Ethnicity_Not_Stated'] += $val;
-                }
-            }
-
-            // Extract circular economy bike metrics
-            if ($sub === 'bikes_swapped')  $metrics['Count_Bikes_Swapped'] += $val;
-            if ($sub === 'bikes_recycled') $metrics['Count_Bikes_Recycled'] += $val;
-
-            // Extract embedded Age Range metric counts dynamically
-            if ($cat === 'booked_age_range') {
-                $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
-                $metrics[$col] = $val;
-            }
-
-            // Extract embedded Repeat Type metric counts dynamically
-            if ($cat === 'booked_repeat_type') {
-                $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
-                $metrics[$col] = $val;
-            }
-
-            // Extract privacy disclosure indicators
-            if ($cat === 'booked_demographics' || $cat === 'demographics') {
-                if (in_array($sub, ['send', 'booked_send'])) {
-                    $metrics['Count_SEND'] = $val;
-                } elseif (in_array($sub, ['send_na', 'booked_send_na'])) {
-                    $metrics['Count_SEND_Not_Stated'] = $val;
-                } elseif (in_array($sub, ['free_school_meals', 'pupil_premium', 'booked_free_school_meals'])) {
-                    $metrics['Count_Pupil_Premium'] = $val;
-                } elseif (in_array($sub, ['free_school_meals_na', 'pupil_premium_na'])) {
-                    $metrics['Count_Pupil_Premium_Not_Stated'] = $val;
-                }
-            }
-        }
-
-        return $metrics;
-    }
-
-
-    private function aggregateFromDWHConsents($deliveryKey)
-    {
-        $consents = $this->dwh->table('Dim_Consent')
-            ->where('Delivery_Key', $deliveryKey)
-            ->where('Attended', 1)
-            ->get();
-
-        $m = $this->initializeExtendedMetricArray();
-
-        foreach ($consents as $consent) {
-            // Gender
-            if ($consent->Gender === 'Female') $m['Count_Female']++;
-            elseif ($consent->Gender === 'Male') $m['Count_Male']++;
-
-            // Detailed Ethnicity Mapping
-            $eth = strtolower($consent->Ethnicity);
-
-            // Use a helper or match to find the specific column
-            $column = $this->mapEthnicityToColumn($eth);
-            if (isset($m[$column])) {
-                $m[$column]++;
-            } else {
-                $m['Count_Ethnicity_Not_Stated']++;
-            }
-
-            // Pupil Premium & SEND
-            if ($consent->Is_Pupil_Premium) $m['Count_Pupil_Premium']++;
-            if ($consent->Is_SEND) $m['Count_SEND']++;
-        }
-
-        return $m;
-    }
-
-    private function aggregateFromLegacyCharacteristics($jsonString)
-    {
-        $m = $this->initializeExtendedMetricArray();
-        $data = json_decode($jsonString ?? '[]', true);
-
-        if (!is_array($data) || empty($data)) return $m;
-
-        // Course characteristics is typically an array with a single block object at index 0
-        $block = $data[0] ?? [];
-
-        // Map Gender
-        $gender = $block['gender'] ?? [];
-        foreach ($gender as $sub => $val) {
-            if ($sub === 'female') $m['Count_Female'] += (int)$val;
-            elseif ($sub === 'male') $m['Count_Male'] += (int)$val;
-        }
-        $booked = $block['booked'] ?? $block;
-        // 2. Map Age Range Totals
-        $ages = $booked['age_range'] ?? [];
-        foreach ($ages as $sub => $val) {
-            if ($sub === 'na') {
-                $m['Count_Age_Range_Not_Stated'] += (int)$val;
-            } elseif ($sub === 'over_65') {
-                $m['Count_Age_Range_Over_65'] += (int)$val;
-            } else {
-                $column = 'Count_Age_Range_' . $sub;
-                if (array_key_exists($column, $m)) $m[$column] += (int)$val;
-            }
-        }
-
-        // 3. Map Repeat Type Totals
-        $repeats = $booked['repeat_type'] ?? [];
-        foreach ($repeats as $sub => $val) {
-            $column = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
-            if (array_key_exists($column, $m)) $m[$column] += (int)$val;
-        }
-
-        // Map Detailed Ethnicity (Safeguarding White Traveller)
-        $ethnicity = $booked['ethnicity'] ?? [];
-        foreach ($ethnicity as $sub => $val) {
-            if ($sub === 'white_traveller') {
-                $m['Count_Ethnicity_White_Traveller'] += (int)$val;
-                continue;
-            }
-
-            $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
-            if (array_key_exists($column, $m)) {
-                $m[$column] += (int)$val;
-            } else {
-                $m['Count_Ethnicity_Other_Any'] += (int)$val;
-            }
-        }
-
-        // SEND and Pupil Premium counts
-        $m['Count_SEND']                     += (int)($booked['send'] ?? 0);
-        $m['Count_SEND_Not_Stated']          += (int)($booked['send_na'] ?? 0);
-        $m['Count_Pupil_Premium']            += (int)($booked['free_school_meals'] ?? 0);
-        $m['Count_Pupil_Premium_Not_Stated'] += (int)($booked['free_school_meals_na'] ?? 0);
-
-        return $m;
-    }
-
-    private function aggregateFromSourceTable($tableName, $courseId)
-    {
-        $rows = $this->source->table($tableName)->where('course_id', $courseId)->get();
-        $m = $this->initializeExtendedMetricArray();
-
-        foreach ($rows as $row) {
-            $cat = strtolower($row->category);
-            $sub = strtolower($row->sub_category);
-            $val = (int)$row->value;
-
-            if ($cat === 'gender') {
-                if ($sub === 'female') $m['Count_Female'] += $val;
-                elseif ($sub === 'male') $m['Count_Male'] += $val;
-            }
-
-            if ($cat === 'age_range') {
-                if ($sub === 'na') {
-                    $m['Count_Age_Range_Not_Stated'] += $val;
-                } elseif ($sub === 'over_65') {
-                    $m['Count_Age_Range_Over_65'] += $val;
-                } else {
-                    $column = 'Count_Age_Range_' . $sub;
-                    if (array_key_exists($column, $m)) $m[$column] += $val;
-                }
-            }
-
-            if ($cat === 'repeat_type') {
-                $column = 'Count_Booked_Repeat_Type_' . ucfirst($sub);
-                if (array_key_exists($column, $m)) $m[$column] += $val;
-            }
-
-            if ($cat === 'ethnicity') {
-                if ($sub === 'white_traveller') {
-                    $m['Count_Ethnicity_White_Traveller'] += $val;
-                    continue;
-                }
-
-                $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
-                if (array_key_exists($column, $m)) {
-                    $m[$column] += $val;
-                } else {
-                    $m['Count_Ethnicity_Other_Any'] += $val;
-                }
-            }
-
-            if ($cat === 'pupil_premium') {
-                if ($sub === 'free_school_meals_na') {
-                    $m['Count_Pupil_Premium_Not_Stated'] += $val;
-                } else {
-                    $m['Count_Pupil_Premium'] += $val;
-                }
-            }
-
-            if ($cat === 'send') {
-                if ($sub === 'booked_send_na' || $sub === 'send_na') {
-                    $m['Count_SEND_Not_Stated'] += $val;
-                } else {
-                    $m['Count_SEND'] += $val;
-                }
-            }
-        }
-        return $m;
-    }
-
+    // =========================================================================
+    // FACTS & BRIDGES
+    // =========================================================================
 
     public function syncInstructorTrainingProviders($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
 
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing all Instructor - Training Provider links (including soft deletes)...");
-        }
+        try {
+            $providerMap = $this->dwh->table('Dim_Training_Provider')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->where('Is_Current', 1)
+                ->pluck('Provider_Key', 'Source_Provider_Id')
+                ->toArray();
 
-        // 1. Fetch active dimension surrogate lookups
-        $providerMap = $this->dwh->table('Dim_Training_Provider')
-            ->where('Source_System_Key', $sourceSystemKey)
-            ->where('Is_Current', 1)
-            ->pluck('Provider_Key', 'Source_Provider_Id')
-            ->toArray();
+            $instructorMap = $this->dwh->table('Dim_Instructor')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->pluck('Instructor_Key', 'Source_Instructor_Id')
+                ->toArray();
 
-        $instructorMap = $this->dwh->table('Dim_Instructor')
-            ->where('Source_System_Key', $sourceSystemKey)
-            ->pluck('Instructor_Key', 'Source_Instructor_Id')
-            ->toArray();
+            $sourceLinks = $this->source->table('join_instructors_training_providers')
+                ->select(['instructor_id', 'training_provider_id', 'dbs_certification_date', 'deleted_at'])
+                ->get();
 
-        // 2. Fetch all pairings from source (no whereNull('deleted_at'))
-        $sourceLinks = $this->source->table('join_instructors_training_providers')
-            ->select([
-                'instructor_id',
-                'training_provider_id',
-                'dbs_certification_date',
-                'deleted_at',
-            ])
-            ->get();
+            $total = $sourceLinks->count();
+            if ($total === 0) {
+                $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
+                $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
+                $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
+                return "Fact_Instructor_Training_Provider cleared (0 source records).";
+            }
 
-        $total = $sourceLinks->count();
+            $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+            if ($bar) $bar->start();
 
-        if ($total === 0) {
+            $insertBuffer = [];
+            $skippedCount = 0;
+
+            foreach ($sourceLinks as $link) {
+                $instructorKey = $instructorMap[$link->instructor_id] ?? null;
+                $providerKey   = $providerMap[$link->training_provider_id] ?? null;
+
+                if (!$instructorKey || !$providerKey) {
+                    $skippedCount++;
+                    if ($bar) $bar->advance();
+                    continue;
+                }
+
+                $insertBuffer[] = [
+                    'Instructor_Key'         => $instructorKey,
+                    'Provider_Key'           => $providerKey,
+                    'Source_Instructor_Id'   => $link->instructor_id,
+                    'Source_Provider_Id'     => $link->training_provider_id,
+                    'Source_System_Key'      => $sourceSystemKey,
+                    'Dbs_Certification_Date' => $link->dbs_certification_date ?: null,
+                    'Source_Deleted_At'      => $link->deleted_at ?: null,
+                ];
+
+                if ($bar) $bar->advance();
+            }
+
             $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
             $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
             $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
-            return "No instructor-provider linkages found. Table cleared.";
-        }
 
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        // 3. Map surrogate keys and build batch insert array
-        $insertBuffer = [];
-        $skippedCount = 0;
-
-        foreach ($sourceLinks as $link) {
-            $instructorKey = $instructorMap[$link->instructor_id] ?? null;
-            $providerKey   = $providerMap[$link->training_provider_id] ?? null;
-
-            if (!$instructorKey || !$providerKey) {
-                $skippedCount++;
-                if ($bar) $bar->advance();
-                continue;
+            foreach (array_chunk($insertBuffer, 1000) as $batch) {
+                $this->dwh->table('Fact_Instructor_Training_Provider')->insert($batch);
             }
 
-            $insertBuffer[] = [
-                'Instructor_Key'         => $instructorKey,
-                'Provider_Key'           => $providerKey,
-                'Source_Instructor_Id'   => $link->instructor_id,
-                'Source_Provider_Id'     => $link->training_provider_id,
-                'Source_System_Key'      => $sourceSystemKey,
-                'Dbs_Certification_Date' => $link->dbs_certification_date ?: null,
-                'Source_Deleted_At'      => $link->deleted_at ?: null,
-            ];
+            $this->updateWatermark('Fact_Instructor_Training_Provider', now()->toDateTimeString(), count($insertBuffer));
 
-            if ($bar) $bar->advance();
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            $skipNotice = $skippedCount > 0 ? " ({$skippedCount} orphaned records skipped)" : "";
+            return "Fact_Instructor_Training_Provider refreshed with " . count($insertBuffer) . " records.{$skipNotice}";
+
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Fact_Instructor_Training_Provider', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
         }
-
-        // 4. Truncate and batch insert
-        $this->dwh->statement('SET FOREIGN_KEY_CHECKS=0;');
-        $this->dwh->table('Fact_Instructor_Training_Provider')->truncate();
-        $this->dwh->statement('SET FOREIGN_KEY_CHECKS=1;');
-
-        foreach (array_chunk($insertBuffer, 1000) as $batch) {
-            $this->dwh->table('Fact_Instructor_Training_Provider')->insert($batch);
-        }
-
-        // 5. Update ledger
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Fact_Instructor_Training_Provider'],
-            [
-                'Last_Synced_At'    => now()->toDateTimeString(),
-                'Records_Processed' => count($insertBuffer),
-            ]
-        );
-
-        if ($bar) {
-            $bar->finish();
-            $command?->newLine();
-        }
-
-        $skipNotice = $skippedCount > 0 ? " (Skipped {$skippedCount} unmapped linkages)" : "";
-        return "Fact_Instructor_Training_Provider refreshed with " . count($insertBuffer) . " records.{$skipNotice}";
     }
 
-    /**
-     * Synchronize Rider - Course Fact
-     */
+    public function syncFactCourseDelivery($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $useLegacy = $this->sourceHasColumn('deliveries', 'delivery_details');
+        $useLegacyCourseCharacteristics = $this->sourceHasColumn('courses', 'characteristics');
+
+        $watermark = $this->getWatermark('Fact_Course_Delivery');
+
+        try {
+            $candidateDeliveryIds = $this->source->table('deliveries')
+                ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
+                ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+                ->where(function ($q) use ($watermark) {
+                    $q->where('deliveries.updated_at', '>', $watermark)
+                        ->orWhere('courses.updated_at', '>', $watermark)
+                        ->orWhere('jrc.updated_at', '>', $watermark)
+                        ->orWhereNull('deliveries.updated_at');
+                })
+                ->distinct()
+                ->pluck('deliveries.id')
+                ->toArray();
+
+            $total = count($candidateDeliveryIds);
+            if ($total === 0) {
+                return "Fact_Course_Delivery is up to date.";
+            }
+
+            $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+            if ($bar) $bar->start();
+
+            $highestTimestampSeen = $watermark;
+
+            collect($candidateDeliveryIds)->chunk(200)->each(function ($deliveryIdChunk) use (
+                $sourceSystemKey, $useLegacy, $useLegacyCourseCharacteristics, $bar, &$highestTimestampSeen
+            ) {
+                $recordsQuery = $this->source->table('deliveries')
+                    ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
+                    ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+                    ->whereIn('deliveries.id', $deliveryIdChunk)
+                    ->select([
+                        'deliveries.id as delivery_id',
+                        'deliveries.date_delivery_start',
+                        'deliveries.consent_src_characteristics',
+                        'deliveries.updated_at as delivery_updated',
+                        'courses.id as course_id',
+                        'courses.start_date as course_start',
+                        'courses.updated_at as course_updated',
+                        DB::raw('MAX(jrc.updated_at) as rider_course_updated'),
+                    ])
+                    ->groupBy([
+                        'deliveries.id',
+                        'deliveries.date_delivery_start',
+                        'deliveries.consent_src_characteristics',
+                        'deliveries.updated_at',
+                        'courses.id',
+                        'courses.start_date',
+                        'courses.updated_at',
+                    ]);
+
+                if ($useLegacy) {
+                    $recordsQuery->addSelect('deliveries.delivery_details')->groupBy('deliveries.delivery_details');
+                }
+                if ($useLegacyCourseCharacteristics) {
+                    $recordsQuery->addSelect('courses.characteristics')->groupBy('courses.characteristics');
+                }
+
+                $records = $recordsQuery->get();
+
+                foreach ($records as $record) {
+                    $activeTimestamp = max(
+                        $record->delivery_updated ?? '1900-01-01 00:00:00',
+                        $record->course_updated ?? '1900-01-01 00:00:00',
+                        $record->rider_course_updated ?? '1900-01-01 00:00:00'
+                    );
+
+                    if ($activeTimestamp > $highestTimestampSeen) {
+                        $highestTimestampSeen = $activeTimestamp;
+                    }
+
+                    $delivery = $this->dwh->table('Dim_Delivery_Header')
+                        ->where('Source_Delivery_Id', $record->delivery_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->first();
+
+                    if (!$delivery) {
+                        continue;
+                    }
+
+                    $mockCourse = (object)[
+                        'id'               => $record->course_id,
+                        'delivery_id'      => $record->delivery_id,
+                        'delivery_details' => $record->delivery_details ?? null,
+                    ];
+                    $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
+
+                    $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
+                    $yearGroupString   = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
+                    unset($deliveryDetailMetrics['Extracted_Course_Level'], $deliveryDetailMetrics['Extracted_Year_Group']);
+
+                    $courseKey = null;
+                    if (!is_null($record->course_id)) {
+                        $courseKey = $this->dwh->table('Dim_Course')
+                            ->where('Source_Course_Id', $record->course_id)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('Course_Key');
+                    } elseif (!empty($courseLevelString)) {
+                        $this->dwh->table('Dim_Course')->updateOrInsert(
+                            [
+                                'Delivery_Key'      => $delivery->Delivery_Key,
+                                'Course_Level'      => $courseLevelString,
+                                'Source_Course_Id'  => null,
+                                'Source_System_Key' => $sourceSystemKey,
+                            ],
+                            [
+                                'Status'        => 1,
+                                'Start_Date'    => $record->course_start ?: $record->date_delivery_start,
+                                'Date_Complete' => $record->course_start ?: $record->date_delivery_start,
+                                'Year_Group'    => $yearGroupString,
+                            ]
+                        );
+
+                        $courseKey = $this->dwh->table('Dim_Course')
+                            ->where('Delivery_Key', $delivery->Delivery_Key)
+                            ->where('Course_Level', $courseLevelString)
+                            ->whereNull('Source_Course_Id')
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->value('Course_Key');
+                    }
+
+                    if (is_null($courseKey)) {
+                        continue;
+                    }
+
+                    // Attendance fallback
+                    $isDigitised = ((int) ($delivery->Digitisation_Booking ?? 0) === 1) || !is_null($record->course_id);
+                    $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
+
+                    if ($currentAttended === 0 && $isDigitised && !is_null($record->course_id)) {
+                        $actualAttended = $this->dwh->table('Fact_Rider_Course')
+                            ->where('Source_Course_Id', $record->course_id)
+                            ->where('Source_System_Key', $sourceSystemKey)
+                            ->where('Attended', 1)
+                            ->count();
+
+                        if ($actualAttended > 0) {
+                            $deliveryDetailMetrics['Count_Attended_Confirmed'] = $actualAttended;
+                        }
+                    }
+
+                    $enrolledCount = 0;
+                    $completedCount = 0;
+                    if (!is_null($record->course_id)) {
+                        $enrolledCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
+                        $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
+                    }
+
+                    if ($record->consent_src_characteristics == 1) {
+                        $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
+                    } else {
+                        if ($useLegacyCourseCharacteristics) {
+                            $metrics = !empty($record->characteristics)
+                                ? $this->aggregateFromLegacyCharacteristics($record->characteristics)
+                                : $this->initializeExtendedMetricArray();
+                        } elseif (!is_null($record->course_id)) {
+                            $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
+                        } else {
+                            $metrics = $this->initializeExtendedMetricArray();
+                        }
+                    }
+
+                    $fact_date = $record->course_start ?: $record->date_delivery_start;
+
+                    $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
+                        [
+                            'Delivery_Key' => $delivery->Delivery_Key,
+                            'Course_Key'   => $courseKey,
+                        ],
+                        array_merge(
+                            $useLegacy ? [] : $metrics,
+                            $deliveryDetailMetrics,
+                            [
+                                'Riders_Enrolled_Count'  => $enrolledCount,
+                                'Riders_Completed_Count' => $completedCount,
+                                'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
+                                'School_Key'             => $delivery->School_Key,
+                                'Organisation_Key'       => $delivery->Organisation_Key,
+                                'Provider_Key'           => $delivery->Training_Provider_Key,
+                                'Grant_Key'              => $delivery->Grant_Key,
+                            ]
+                        )
+                    );
+                }
+
+                if ($bar) $bar->advance(count($deliveryIdChunk));
+            });
+
+            $this->updateWatermark('Fact_Course_Delivery', $highestTimestampSeen, $total);
+
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            return "Fact_Course_Delivery synced ({$total} candidate deliveries processed).";
+
+        } catch (Throwable $e) {
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+            $this->slack->sendSyncError('Fact_Course_Delivery', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
+        }
+    }
+
     public function syncFactRiderCourse($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Course Sync...");
-
-        // Fetch our high-watermark checkpoint
         $watermark = $this->getWatermark('Fact_Rider_Course');
 
-        // Query against the source table looking for modified rows
         $query = $this->source->table('join_riders_courses')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Rider Courses are already up to date.");
-            return "Fact_Rider_Course up to date.";
-        }
-
-        // Progress Bar initialization
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        // Process in chunks to maintain low memory footprints
-        $query->chunk(250, function ($riderCourses) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($riderCourses as $rc) {
-
+        return $this->executeSyncRunner(
+            'Fact_Rider_Course',
+            $command,
+            $query,
+            function ($rc, $state) use ($sourceSystemKey) {
                 $finalAttendance = (!empty($rc->attended_override) && $rc->attended_override == 1)
                     ? $rc->attended_override
                     : ($rc->attended ?? 1);
 
                 $this->dwh->table('Fact_Rider_Course')->updateOrInsert(
                     [
-                        'Source_Rider_Id' => $rc->rider_id,
-                        'Source_Course_Id' => $rc->course_id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_Rider_Id'   => $rc->rider_id,
+                        'Source_Course_Id'  => $rc->course_id,
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
-                        'Status' => $rc->status ?? 0,
-                        'Attended' => $finalAttendance,
-                        'Withdrawn' => $rc->withdrawn ?? 0,
-                        'Withdrawal_Reason' => $rc->withdrawal_reason,
+                        'Status'               => $rc->status ?? 0,
+                        'Attended'             => $finalAttendance,
+                        'Withdrawn'            => $rc->withdrawn ?? 0,
+                        'Withdrawal_Reason'    => $rc->withdrawal_reason,
                         'Has_Completed_Course' => $rc->has_completed_course ?? 0,
                         'Has_Survey_Completed' => $rc->has_survey_completed ?? 0,
                         'Course_Complete_Date' => $rc->course_complete_date,
-                        'Source_Created_At' => $rc->created_at,
-                        'Source_Updated_At' => $rc->updated_at,
-                        'Updated_At' => now()
+                        'Source_Created_At'    => $rc->created_at,
+                        'Source_Updated_At'    => $rc->updated_at,
+                        'Updated_At'           => now(),
                     ]
                 );
 
-                //Track the watermark
-                if ($rc->updated_at > $highestTimestamp) {
-                    $highestTimestamp = $rc->updated_at;
+                if ($rc->updated_at && (!$state->highestTimestamp || $rc->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $rc->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Rider_Course', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        //  Commit the watermark
-        $this->updateWatermark('Fact_Rider_Course', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Rider_Course synced.";
+        );
     }
 
     public function syncFactRiderActivityOutcomes($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Activity Outcomes Sync...");
-
         $watermark = $this->getWatermark('Fact_Rider_Activity_Outcome');
 
         if (!$this->sourceHasColumn('join_riders_courses', 'outcomes')) {
-            if ($command) $command->warn("Column 'outcomes' does not exist in source table 'join_riders_courses'.");
             return "Skipped: 'outcomes' column missing.";
         }
 
@@ -2436,26 +1562,9 @@ class DataWarehouseSyncService
             ->where('jrc.outcomes', '!=', '[]')
             ->where('jrc.outcomes', '!=', '')
             ->where('jrc.updated_at', '>', $watermark)
-            ->select([
-                'jrc.rider_id',
-                'jrc.course_id',
-                'jrc.outcomes',
-                'jrc.updated_at'
-            ])
+            ->select(['jrc.rider_id', 'jrc.course_id', 'jrc.outcomes', 'jrc.updated_at'])
             ->orderBy('jrc.updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Rider Activity Outcomes are already up to date.");
-            return "Fact_Rider_Activity_Outcome up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        // In-memory mapping table for outcomes metadata
         $outcomesLookup = [
             1 => ['code' => 'O', 'grade' => 'On my own'],
             2 => ['code' => 'P', 'grade' => 'With practice'],
@@ -2463,63 +1572,60 @@ class DataWarehouseSyncService
             4 => ['code' => 'N', 'grade' => 'Not seen'],
         ];
 
-        // Cache Activity_Keys in memory: Source_Activity_Id => Activity_Key
         $activityKeyMap = $this->dwh->table('Dim_Course_Activity')
             ->pluck('Activity_Key', 'Source_Activity_Id')
             ->toArray();
 
-        $query->chunk(250, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, $activityKeyMap, $outcomesLookup) {
-            foreach ($rows as $row) {
-                // 1. Resolve Rider Key
+        return $this->executeSyncRunner(
+            'Fact_Rider_Activity_Outcome',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey, $outcomesLookup, &$activityKeyMap) {
                 $riderKey = $this->dwh->table('Dim_Rider')
                     ->where('Source_Rider_Id', $row->rider_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Rider_Key');
 
-                // 2. Resolve Course Dimension
                 $course = $this->dwh->table('Dim_Course')
                     ->where('Source_Course_Id', $row->course_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->first();
 
                 if (!$riderKey || !$course) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
-                // 3. Resolve Header dimension keys
                 $delivery = $this->dwh->table('Dim_Delivery_Header')
                     ->where('Delivery_Key', $course->Delivery_Key)
                     ->first();
 
                 $outcomes = json_decode($row->outcomes, true);
                 if (!is_array($outcomes)) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
-                // 4. Iterate over evaluated activity outcomes
                 foreach ($outcomes as $item) {
                     $sourceActivityId = $item['id'] ?? null;
-                    $outcomeScore     = (int)($item['outcome'] ?? 0);
+                    $outcomeScore     = (int) ($item['outcome'] ?? 0);
 
                     if (!$sourceActivityId || empty($outcomeScore)) {
                         continue;
                     }
 
                     $activityKey = $activityKeyMap[$sourceActivityId] ?? null;
-
                     if (!$activityKey) {
                         $activityKey = $this->dwh->table('Dim_Course_Activity')
                             ->where('Source_Activity_Id', $sourceActivityId)
                             ->value('Activity_Key');
+                        if ($activityKey) {
+                            $activityKeyMap[$sourceActivityId] = $activityKey;
+                        }
                     }
 
                     if (!$activityKey) {
                         continue;
                     }
 
-                    // Map textual code and grade from lookup array
                     $outcomeMeta = $outcomesLookup[$outcomeScore] ?? ['code' => null, 'grade' => null];
 
                     $this->dwh->table('Fact_Rider_Activity_Outcome')->updateOrInsert(
@@ -2536,38 +1642,29 @@ class DataWarehouseSyncService
                             'Outcome_Score'         => $outcomeScore,
                             'Outcome_Code'          => $outcomeMeta['code'],
                             'Outcome_Grade'         => $outcomeMeta['grade'],
-                            'Created_At'            => now()
+                            'Created_At'            => now(),
                         ]
                     );
                 }
 
-                if ($row->updated_at > $highestTimestamp) {
-                    $highestTimestamp = $row->updated_at;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Rider_Activity_Outcome', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Rider_Activity_Outcome', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Rider_Activity_Outcome synced successfully with descriptive grades.";
+        );
     }
 
     public function syncFactRiderInstructorFeedback($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Rider Instructor Feedback Sync...");
-
         $watermark = $this->getWatermark('Fact_Rider_Instructor_Feedback');
 
         if (!$this->sourceHasColumn('join_riders_courses', 'instructor_feedback')) {
-            if ($command) $command->warn("Column 'instructor_feedback' does not exist in source table.");
             return "Skipped: 'instructor_feedback' column missing.";
         }
 
@@ -2581,56 +1678,37 @@ class DataWarehouseSyncService
             $query->whereNull('jrc.deleted_at');
         }
 
-        $query->select([
-            'jrc.rider_id',
-            'jrc.course_id',
-            'jrc.instructor_feedback',
-            'jrc.updated_at'
-        ])
+        $query->select(['jrc.rider_id', 'jrc.course_id', 'jrc.instructor_feedback', 'jrc.updated_at'])
             ->orderBy('jrc.updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Rider Instructor Feedback are already up to date.");
-            return "Fact_Rider_Instructor_Feedback up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        $query->chunk(250, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($rows as $row) {
-                // 1. Resolve Rider Key
+        return $this->executeSyncRunner(
+            'Fact_Rider_Instructor_Feedback',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
                 $riderKey = $this->dwh->table('Dim_Rider')
                     ->where('Source_Rider_Id', $row->rider_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Rider_Key');
 
-                // 2. Resolve Course Dimension
                 $course = $this->dwh->table('Dim_Course')
                     ->where('Source_Course_Id', $row->course_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->first();
 
                 if (!$riderKey || !$course) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
-                // 3. Resolve Header Dimension
                 $delivery = $this->dwh->table('Dim_Delivery_Header')
                     ->where('Delivery_Key', $course->Delivery_Key)
                     ->first();
 
                 $fbData = json_decode($row->instructor_feedback, true);
                 if (!is_array($fbData)) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
-                // 4. Resolve Instructor Key
                 $instructorKey = null;
                 if (!empty($fbData['instructor_id'])) {
                     $instructorKey = $this->dwh->table('Dim_Instructor')
@@ -2639,18 +1717,12 @@ class DataWarehouseSyncService
                         ->value('Instructor_Key');
                 }
 
-                // Cleanly unpack JSON array string if nested
                 $paragraphsRaw = $fbData['paragraphs'] ?? [];
-                if (is_string($paragraphsRaw)) {
-                    $paragraphs = json_decode($paragraphsRaw, true) ?? [];
-                } else {
-                    $paragraphs = (array) $paragraphsRaw;
-                }
+                $paragraphs = is_string($paragraphsRaw) ? (json_decode($paragraphsRaw, true) ?? []) : (array) $paragraphsRaw;
 
                 $feedbackDate = !empty($fbData['feedbackDate']) ? $fbData['feedbackDate'] : null;
                 $notes        = $fbData['notes'] ?? null;
 
-                // 5. Insert each exact paragraph ID
                 foreach ($paragraphs as $paragraphId) {
                     $exactFeedbackId = (int) $paragraphId;
                     if (!$exactFeedbackId) {
@@ -2676,341 +1748,281 @@ class DataWarehouseSyncService
                     );
                 }
 
-                if ($row->updated_at > $highestTimestamp) {
-                    $highestTimestamp = $row->updated_at;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Rider_Instructor_Feedback', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Rider_Instructor_Feedback', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Rider_Instructor_Feedback synced with exact statement IDs and soft-deletes filtered.";
-    }
-
-    private function mapFeedbackCategoryLabel(int $categoryId): string
-    {
-        return match ($categoryId) {
-            11      => 'Core - General Preparation & Setting Off',
-            12      => 'Core - Control, Steering & Braking',
-            13      => 'Core - Road Safety & Decision Making',
-            14      => 'Communication & Hand Signals',
-            15      => 'Observations & Shoulder Checks',
-            16      => 'Road Positioning (Primary/Secondary)',
-            17      => 'Junctions & Priorities',
-            18      => 'Advanced - Road Awareness & Route Planning',
-            19      => 'Advanced - Communication at Junctions',
-            20      => 'Advanced - Observations & Hazard Awareness',
-            21      => 'Advanced - Road Positioning & Blind Spots',
-            22      => 'Advanced - Junctions & Filtering',
-            23      => 'Plus Fix (Cycle Maintenance)',
-            24      => 'Plus Learn (Balance & Pedalling)',
-            25      => 'Plus Balance / Learn (Starting & Stopping)',
-            26      => 'Plus Balance (Gliding & Mounting)',
-            133, 134, 135, 136, 137, 138 => 'Praise & Positive Reinforcement',
-            default => 'General Feedback',
-        };
+        );
     }
 
     public function syncFactActivityOutcomeSummary($command = null)
     {
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Rebuilding Fact_Course_Activity_Outcome_Summary rollup...");
+        try {
+            $sql = "
+            REPLACE INTO Fact_Course_Activity_Outcome_Summary (
+                Delivery_Key, Course_Key, Course_Code,
+                l1_ac2_on_own, l1_ac2_practice, l1_ac2_assistance, l1_ac2_not_seen,
+                l1_ac3_on_own, l1_ac3_practice, l1_ac3_assistance, l1_ac3_not_seen,
+                l1_ac4_on_own, l1_ac4_practice, l1_ac4_assistance, l1_ac4_not_seen,
+                l1_ac5_on_own, l1_ac5_practice, l1_ac5_assistance, l1_ac5_not_seen,
+                l2_ac1_on_own, l2_ac1_practice, l2_ac1_assistance, l2_ac1_not_seen,
+                l2_ac2_on_own, l2_ac2_practice, l2_ac2_assistance, l2_ac2_not_seen,
+                l2_ac3_on_own, l2_ac3_practice, l2_ac3_assistance, l2_ac3_not_seen,
+                l2_ac4_on_own, l2_ac4_practice, l2_ac4_assistance, l2_ac4_not_seen,
+                l2_ac5_on_own, l2_ac5_practice, l2_ac5_assistance, l2_ac5_not_seen,
+                l2_ac6_on_own, l2_ac6_practice, l2_ac6_assistance, l2_ac6_not_seen,
+                l2_ac7_on_own, l2_ac7_practice, l2_ac7_assistance, l2_ac7_not_seen,
+                l3_ac1_on_own, l3_ac1_practice, l3_ac1_assistance, l3_ac1_not_seen,
+                l3_ac2_on_own, l3_ac2_practice, l3_ac2_assistance, l3_ac2_not_seen,
+                l3_ac3_on_own, l3_ac3_practice, l3_ac3_assistance, l3_ac3_not_seen,
+                l3_ac4_on_own, l3_ac4_practice, l3_ac4_assistance, l3_ac4_not_seen,
+                l3_ac5_on_own, l3_ac5_practice, l3_ac5_assistance, l3_ac5_not_seen,
+                l3_ac6_on_own, l3_ac6_practice, l3_ac6_assistance, l3_ac6_not_seen,
+                l3_ac7_on_own, l3_ac7_practice, l3_ac7_assistance, l3_ac7_not_seen,
+                l3_ac8_on_own, l3_ac8_practice, l3_ac8_assistance, l3_ac8_not_seen,
+                pb_ac1_on_own, pb_ac1_practice, pb_ac1_assistance, pb_ac1_not_seen,
+                pb_ac2_on_own, pb_ac2_practice, pb_ac2_assistance, pb_ac2_not_seen,
+                pb_ac3_on_own, pb_ac3_practice, pb_ac3_assistance, pb_ac3_not_seen,
+                pl_ac1_on_own, pl_ac1_practice, pl_ac1_assistance, pl_ac1_not_seen,
+                pl_ac2_on_own, pl_ac2_practice, pl_ac2_assistance, pl_ac2_not_seen,
+                pl_ac3_on_own, pl_ac3_practice, pl_ac3_assistance, pl_ac3_not_seen,
+                pl_ac4_on_own, pl_ac4_practice, pl_ac4_assistance, pl_ac4_not_seen,
+                pl_ac5_on_own, pl_ac5_practice, pl_ac5_assistance, pl_ac5_not_seen,
+                pf_ac1_on_own, pf_ac1_practice, pf_ac1_assistance, pf_ac1_not_seen,
+                pf_ac2_on_own, pf_ac2_practice, pf_ac2_assistance, pf_ac2_not_seen
+            )
+            SELECT
+                fao.Delivery_Key, fao.Course_Key, a.Course_Code,
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END)
+            FROM Fact_Rider_Activity_Outcome fao
+            JOIN Dim_Course_Activity a ON fao.Activity_Key = a.Activity_Key
+            GROUP BY fao.Delivery_Key, fao.Course_Key, a.Course_Code
+            ";
 
-        $sql = "
-        REPLACE INTO Fact_Course_Activity_Outcome_Summary (
-            Delivery_Key, Course_Key, Course_Code,
-            l1_ac2_on_own, l1_ac2_practice, l1_ac2_assistance, l1_ac2_not_seen,
-            l1_ac3_on_own, l1_ac3_practice, l1_ac3_assistance, l1_ac3_not_seen,
-            l1_ac4_on_own, l1_ac4_practice, l1_ac4_assistance, l1_ac4_not_seen,
-            l1_ac5_on_own, l1_ac5_practice, l1_ac5_assistance, l1_ac5_not_seen,
-            l2_ac1_on_own, l2_ac1_practice, l2_ac1_assistance, l2_ac1_not_seen,
-            l2_ac2_on_own, l2_ac2_practice, l2_ac2_assistance, l2_ac2_not_seen,
-            l2_ac3_on_own, l2_ac3_practice, l2_ac3_assistance, l2_ac3_not_seen,
-            l2_ac4_on_own, l2_ac4_practice, l2_ac4_assistance, l2_ac4_not_seen,
-            l2_ac5_on_own, l2_ac5_practice, l2_ac5_assistance, l2_ac5_not_seen,
-            l2_ac6_on_own, l2_ac6_practice, l2_ac6_assistance, l2_ac6_not_seen,
-            l2_ac7_on_own, l2_ac7_practice, l2_ac7_assistance, l2_ac7_not_seen,
-            l3_ac1_on_own, l3_ac1_practice, l3_ac1_assistance, l3_ac1_not_seen,
-            l3_ac2_on_own, l3_ac2_practice, l3_ac2_assistance, l3_ac2_not_seen,
-            l3_ac3_on_own, l3_ac3_practice, l3_ac3_assistance, l3_ac3_not_seen,
-            l3_ac4_on_own, l3_ac4_practice, l3_ac4_assistance, l3_ac4_not_seen,
-            l3_ac5_on_own, l3_ac5_practice, l3_ac5_assistance, l3_ac5_not_seen,
-            l3_ac6_on_own, l3_ac6_practice, l3_ac6_assistance, l3_ac6_not_seen,
-            l3_ac7_on_own, l3_ac7_practice, l3_ac7_assistance, l3_ac7_not_seen,
-            l3_ac8_on_own, l3_ac8_practice, l3_ac8_assistance, l3_ac8_not_seen,
-            pb_ac1_on_own, pb_ac1_practice, pb_ac1_assistance, pb_ac1_not_seen,
-            pb_ac2_on_own, pb_ac2_practice, pb_ac2_assistance, pb_ac2_not_seen,
-            pb_ac3_on_own, pb_ac3_practice, pb_ac3_assistance, pb_ac3_not_seen,
-            pl_ac1_on_own, pl_ac1_practice, pl_ac1_assistance, pl_ac1_not_seen,
-            pl_ac2_on_own, pl_ac2_practice, pl_ac2_assistance, pl_ac2_not_seen,
-            pl_ac3_on_own, pl_ac3_practice, pl_ac3_assistance, pl_ac3_not_seen,
-            pl_ac4_on_own, pl_ac4_practice, pl_ac4_assistance, pl_ac4_not_seen,
-            pl_ac5_on_own, pl_ac5_practice, pl_ac5_assistance, pl_ac5_not_seen,
-            pf_ac1_on_own, pf_ac1_practice, pf_ac1_assistance, pf_ac1_not_seen,
-            pf_ac2_on_own, pf_ac2_practice, pf_ac2_assistance, pf_ac2_not_seen
-        )
-        SELECT
-            fao.Delivery_Key,
-            fao.Course_Key,
-            a.Course_Code,
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l1-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac6' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l2-ac7' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac6' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac7' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'l3-ac8' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pb-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac3' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac4' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pl-ac5' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac1' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END)
-        FROM Fact_Rider_Activity_Outcome fao
-        JOIN Dim_Course_Activity a ON fao.Activity_Key = a.Activity_Key
-        GROUP BY fao.Delivery_Key, fao.Course_Key, a.Course_Code
-    ";
+            $this->dwh->statement($sql);
+            return "Fact_Course_Activity_Outcome_Summary rollup rebuilt.";
 
-        $this->dwh->statement($sql);
-
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Rollup complete.");
-        return "Fact_Course_Activity_Outcome_Summary updated.";
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Fact_Course_Activity_Outcome_Summary', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
+        }
     }
 
-    /**
-     * Synchronize Core Allocation Matrix
-     */
     public function syncFactGrantFinancials($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Grant Financials Sync...");
-
         $watermark = $this->getWatermark('Fact_Grant_Financials');
 
         $query = $this->source->table('grant_format_dft')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Facts - Grant Financials are already up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        $query->chunk(250, function ($formats) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($formats as $fmt) {
+        return $this->executeSyncRunner(
+            'Fact_Grant_Financials',
+            $command,
+            $query,
+            function ($fmt, $state) use ($sourceSystemKey) {
                 $grantKey = $this->resolveGrantKey($fmt->grant_id, $sourceSystemKey);
                 if (!$grantKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $this->dwh->table('Fact_Grant_Financials')->updateOrInsert(
                     ['Source_Format_Id' => $fmt->id, 'Source_System_Key' => $sourceSystemKey],
                     [
-                        'Grant_Key' => $grantKey,
-                        'Max_Allocation' => $fmt->max_allocation ?? 0.00,
-                        'Total_Levels' => $fmt->total_levels ?? 0,
-                        'Total_Plus' => $fmt->total_plus ?? 0,
-                        'Places_Level_1' => $fmt->places_level_1 ?? 0,
-                        'Grant_Level_1' => $fmt->grant_level_1 ?? 0.00,
-                        'Places_Level_1_2' => $fmt->places_level_1_2 ?? 0,
-                        'Grant_Level_1_2' => $fmt->grant_level_1_2 ?? 0.00,
-                        'Places_Level_2' => $fmt->places_level_2 ?? 0,
-                        'Grant_Level_2' => $fmt->grant_level_2 ?? 0.00,
-                        'Places_Level_3' => $fmt->places_level_3 ?? 0,
-                        'Grant_Level_3' => $fmt->grant_level_3 ?? 0.00,
-                        'Places_Plus_Balance' => $fmt->places_plus_balance ?? 0,
-                        'Grant_Plus_Balance' => $fmt->grant_plus_balance ?? 0.00,
-                        'Places_Plus_Bus' => $fmt->places_plus_bus ?? 0,
-                        'Grant_Plus_Bus' => $fmt->grant_plus_bus ?? 0.00,
-                        'Places_Plus_Fix' => $fmt->places_plus_fix ?? 0,
-                        'Grant_Plus_Fix' => $fmt->grant_plus_fix ?? 0.00,
-                        'Places_Plus_Learn' => $fmt->places_plus_learn ?? 0,
-                        'Grant_Plus_Learn' => $fmt->grant_plus_learn ?? 0.00,
-                        'Places_Plus_On_Show' => $fmt->places_plus_on_show ?? 0,
-                        'Grant_Plus_On_Show' => $fmt->grant_plus_on_show ?? 0.00,
-                        'Places_Plus_Parents' => $fmt->places_plus_parents ?? 0,
-                        'Grant_Plus_Parents' => $fmt->grant_plus_parents ?? 0.00,
-                        'Places_Plus_Promotion' => $fmt->places_plus_promotion ?? 0,
-                        'Grant_Plus_Promotion' => $fmt->grant_plus_promotion ?? 0.00,
-                        'Places_Plus_Recycled' => $fmt->places_plus_recycled ?? 0,
-                        'Grant_Plus_Recycled' => $fmt->grant_plus_recycled ?? 0.00,
-                        'Places_Plus_Ride' => $fmt->places_plus_ride ?? 0,
-                        'Grant_Plus_Ride' => $fmt->grant_plus_ride ?? 0.00,
+                        'Grant_Key'              => $grantKey,
+                        'Max_Allocation'         => $fmt->max_allocation ?? 0.00,
+                        'Total_Levels'           => $fmt->total_levels ?? 0,
+                        'Total_Plus'             => $fmt->total_plus ?? 0,
+                        'Places_Level_1'         => $fmt->places_level_1 ?? 0,
+                        'Grant_Level_1'          => $fmt->grant_level_1 ?? 0.00,
+                        'Places_Level_1_2'       => $fmt->places_level_1_2 ?? 0,
+                        'Grant_Level_1_2'        => $fmt->grant_level_1_2 ?? 0.00,
+                        'Places_Level_2'         => $fmt->places_level_2 ?? 0,
+                        'Grant_Level_2'          => $fmt->grant_level_2 ?? 0.00,
+                        'Places_Level_3'         => $fmt->places_level_3 ?? 0,
+                        'Grant_Level_3'          => $fmt->grant_level_3 ?? 0.00,
+                        'Places_Plus_Balance'    => $fmt->places_plus_balance ?? 0,
+                        'Grant_Plus_Balance'     => $fmt->grant_plus_balance ?? 0.00,
+                        'Places_Plus_Bus'        => $fmt->places_plus_bus ?? 0,
+                        'Grant_Plus_Bus'         => $fmt->grant_plus_bus ?? 0.00,
+                        'Places_Plus_Fix'        => $fmt->places_plus_fix ?? 0,
+                        'Grant_Plus_Fix'         => $fmt->grant_plus_fix ?? 0.00,
+                        'Places_Plus_Learn'      => $fmt->places_plus_learn ?? 0,
+                        'Grant_Plus_Learn'       => $fmt->grant_plus_learn ?? 0.00,
+                        'Places_Plus_On_Show'    => $fmt->places_plus_on_show ?? 0,
+                        'Grant_Plus_On_Show'     => $fmt->grant_plus_on_show ?? 0.00,
+                        'Places_Plus_Parents'    => $fmt->places_plus_parents ?? 0,
+                        'Grant_Plus_Parents'     => $fmt->grant_plus_parents ?? 0.00,
+                        'Places_Plus_Promotion'  => $fmt->places_plus_promotion ?? 0,
+                        'Grant_Plus_Promotion'   => $fmt->grant_plus_promotion ?? 0.00,
+                        'Places_Plus_Recycled'   => $fmt->places_plus_recycled ?? 0,
+                        'Grant_Plus_Recycled'    => $fmt->grant_plus_recycled ?? 0.00,
+                        'Places_Plus_Ride'       => $fmt->places_plus_ride ?? 0,
+                        'Grant_Plus_Ride'        => $fmt->grant_plus_ride ?? 0.00,
                         'Places_Plus_Transition' => $fmt->places_plus_transition ?? 0,
-                        'Grant_Plus_Transition' => $fmt->grant_plus_transition ?? 0.00,
-                        'Places_Plus_Family' => $fmt->places_plus_family ?? 0,
-                        'Grant_Plus_Family' => $fmt->grant_plus_family ?? 0.00,
-                        'Places_Plus_Adult' => $fmt->places_plus_adult ?? 0,
-                        'Grant_Plus_Adult' => $fmt->grant_plus_adult ?? 0.00,
-                        'Grant_Send' => $fmt->grant_send ?? 0.00,
-                        'Places_Send' => $fmt->places_send ?? 0,
-                        'Grant_Inclusion' => $fmt->grant_inclusion ?? 0.00,
-                        'Places_Inclusion' => $fmt->places_inclusion ?? 0,
-                        'updated_at' => now()
+                        'Grant_Plus_Transition'  => $fmt->grant_plus_transition ?? 0.00,
+                        'Places_Plus_Family'     => $fmt->places_plus_family ?? 0,
+                        'Grant_Plus_Family'      => $fmt->grant_plus_family ?? 0.00,
+                        'Places_Plus_Adult'      => $fmt->places_plus_adult ?? 0,
+                        'Grant_Plus_Adult'       => $fmt->grant_plus_adult ?? 0.00,
+                        'Grant_Send'             => $fmt->grant_send ?? 0.00,
+                        'Places_Send'            => $fmt->places_send ?? 0,
+                        'Grant_Inclusion'        => $fmt->grant_inclusion ?? 0.00,
+                        'Places_Inclusion'       => $fmt->places_inclusion ?? 0,
+                        'updated_at'             => now(),
                     ]
                 );
 
-                if ($fmt->updated_at > $highestTimestamp) $highestTimestamp = $fmt->updated_at;
-                if ($bar) $bar->advance();
+                if ($fmt->updated_at && (!$state->highestTimestamp || $fmt->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $fmt->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Financials', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Grant_Financials', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Grant_Financials synced.";
+        );
     }
 
-    /**
-     * Sync Reallocations (Header + Child Logs Split)
-     */
     public function syncFactGrantReallocations($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Reallocations Sync...");
-
         $watermark = $this->getWatermark('Fact_Grant_Reallocations');
+
         $query = $this->source->table('grant_reallocations')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Reallocations are already up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        $query->chunk(250, function ($reallocs) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($reallocs as $ra) {
+        return $this->executeSyncRunner(
+            'Fact_Grant_Reallocations',
+            $command,
+            $query,
+            function ($ra, $state) use ($sourceSystemKey) {
                 $grantKey = $this->resolveGrantKey($ra->grant_id, $sourceSystemKey);
                 if (!$grantKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $existingKeys = $this->dwh->table('Fact_Grant_Reallocations')
@@ -3019,94 +2031,82 @@ class DataWarehouseSyncService
                     ->pluck('Reallocation_Key')
                     ->toArray();
 
-                if (count($existingKeys) > 0) {
+                if (!empty($existingKeys)) {
                     $this->dwh->table('Fact_Grant_Reallocation_Logs')->whereIn('Reallocation_Key', $existingKeys)->delete();
                     $this->dwh->table('Fact_Grant_Reallocations')->whereIn('Reallocation_Key', $existingKeys)->delete();
                 }
 
                 $reallocationKey = $this->dwh->table('Fact_Grant_Reallocations')->insertGetId([
-                    'Grant_Key' => $grantKey,
-                    'Source_System_Key' => $sourceSystemKey,
-                    'Source_Reallocation_Id' => $ra->id,
-                    'Reallocation_Number' => $ra->reallocation_number,
-                    'Status_Raw' => $ra->status,
-                    'Date_Approved' => $ra->date_approved,
-                    'Reallocation_Type' => $ra->reallocation_type,
-                    'Reallocation_Notes' => $ra->reallocation_notes,
+                    'Grant_Key'                     => $grantKey,
+                    'Source_System_Key'             => $sourceSystemKey,
+                    'Source_Reallocation_Id'         => $ra->id,
+                    'Reallocation_Number'           => $ra->reallocation_number,
+                    'Status_Raw'                    => $ra->status,
+                    'Date_Approved'                 => $ra->date_approved,
+                    'Reallocation_Type'             => $ra->reallocation_type,
+                    'Reallocation_Notes'            => $ra->reallocation_notes,
                     'Reallocation_Increase_Reasons' => $ra->reallocation_increase_reasons,
-                    'created_at' => now(), 'updated_at' => now()
+                    'created_at'                    => now(),
+                    'updated_at'                    => now(),
                 ]);
 
                 if (!$this->sourceHasColumn('grant_reallocations', 'reallocation_log')) {
                     $logs = $this->source->table('grant_reallocation_logs')->where('grant_reallocation_id', $ra->id)->get();
                     foreach ($logs as $log) {
                         $this->dwh->table('Fact_Grant_Reallocation_Logs')->insert([
-                            'Reallocation_Key' => $reallocationKey,
+                            'Reallocation_Key'  => $reallocationKey,
                             'Source_System_Key' => $sourceSystemKey,
-                            'Module_Key' => $log->module_key,
-                            'Value_Count' => $log->value,
-                            'Amount' => $log->amount,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Module_Key'        => $log->module_key,
+                            'Value_Count'       => $log->value,
+                            'Amount'            => $log->amount,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 } else {
                     $logs = json_decode($ra->reallocation_log, true) ?? [];
                     foreach ($logs as $key => $node) {
                         $this->dwh->table('Fact_Grant_Reallocation_Logs')->insert([
-                            'Reallocation_Key' => $reallocationKey,
+                            'Reallocation_Key'  => $reallocationKey,
                             'Source_System_Key' => $sourceSystemKey,
-                            'Module_Key' => $key,
-                            'Value_Count' => $node['value'] ?? 0,
-                            'Amount' => $node['amount'] ?? 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Module_Key'        => $key,
+                            'Value_Count'       => $node['value'] ?? 0,
+                            'Amount'            => $node['amount'] ?? 0.00,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 }
 
-                if ($ra->updated_at > $highestTimestamp) $highestTimestamp = $ra->updated_at;
-                if ($bar) $bar->advance();
+                if ($ra->updated_at && (!$state->highestTimestamp || $ra->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $ra->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Reallocations', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Grant_Reallocations', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Grant_Reallocations synced.";
+        );
     }
 
-    /**
-     * Sync Amendments (Header + Child Logs Split)
-     */
     public function syncFactGrantAmendments($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Amendments Sync...");
-
         $watermark = $this->getWatermark('Fact_Grant_Amendments');
+
         $query = $this->source->table('grant_amendments')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Amendments are already up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        $query->chunk(250, function ($amends) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($amends as $am) {
+        return $this->executeSyncRunner(
+            'Fact_Grant_Amendments',
+            $command,
+            $query,
+            function ($am, $state) use ($sourceSystemKey) {
                 $grantKey = $this->resolveGrantKey($am->grant_id, $sourceSystemKey);
                 if (!$grantKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $existingKeys = $this->dwh->table('Fact_Grant_Amendments')
@@ -3115,93 +2115,81 @@ class DataWarehouseSyncService
                     ->pluck('Amendment_Key')
                     ->toArray();
 
-                if (count($existingKeys) > 0) {
+                if (!empty($existingKeys)) {
                     $this->dwh->table('Fact_Grant_Amendment_Logs')->whereIn('Amendment_Key', $existingKeys)->delete();
                     $this->dwh->table('Fact_Grant_Amendments')->whereIn('Amendment_Key', $existingKeys)->delete();
                 }
 
                 $amendmentKey = $this->dwh->table('Fact_Grant_Amendments')->insertGetId([
-                    'Grant_Key' => $grantKey,
-                    'Source_System_Key' => $sourceSystemKey,
+                    'Grant_Key'           => $grantKey,
+                    'Source_System_Key'   => $sourceSystemKey,
                     'Source_Amendment_Id' => $am->id,
-                    'Amendment_Number' => $am->amendment_number,
-                    'Status_Raw' => $am->status,
-                    'Date_Approved' => $am->date_approved,
-                    'created_at' => now(), 'updated_at' => now()
+                    'Amendment_Number'    => $am->amendment_number,
+                    'Status_Raw'          => $am->status,
+                    'Date_Approved'       => $am->date_approved,
+                    'created_at'          => now(),
+                    'updated_at'          => now(),
                 ]);
 
                 if (!$this->sourceHasColumn('grant_amendments', 'amendment_log')) {
                     $logs = $this->source->table('grant_amendment_logs')->where('grant_amendment_id', $am->id)->get();
                     foreach ($logs as $log) {
                         $this->dwh->table('Fact_Grant_Amendment_Logs')->insert([
-                            'Amendment_Key' => $amendmentKey,
+                            'Amendment_Key'     => $amendmentKey,
                             'Source_System_Key' => $sourceSystemKey,
-                            'Type_Label' => $log->type,
-                            'Module_Key' => $log->module,
-                            'Value_Count' => $log->value,
-                            'Amount' => $log->amount,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Type_Label'        => $log->type,
+                            'Module_Key'        => $log->module,
+                            'Value_Count'       => $log->value,
+                            'Amount'            => $log->amount,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 } else {
                     $logs = json_decode($am->amendment_log, true) ?? [];
                     foreach ($logs as $key => $node) {
                         $this->dwh->table('Fact_Grant_Amendment_Logs')->insert([
-                            'Amendment_Key' => $amendmentKey,
+                            'Amendment_Key'     => $amendmentKey,
                             'Source_System_Key' => $sourceSystemKey,
-                            'Type_Label' => $node['type'] ?? null,
-                            'Module_Key' => $node['module'] ?? $key,
-                            'Value_Count' => $node['value'] ?? 0,
-                            'Amount' => $node['amount'] ?? 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Type_Label'        => $node['type'] ?? null,
+                            'Module_Key'        => $node['module'] ?? $key,
+                            'Value_Count'       => $node['value'] ?? 0,
+                            'Amount'            => $node['amount'] ?? 0.00,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 }
 
-                if ($am->updated_at > $highestTimestamp) $highestTimestamp = $am->updated_at;
-                if ($bar) $bar->advance();
+                if ($am->updated_at && (!$state->highestTimestamp || $am->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $am->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Amendments', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Grant_Amendments', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Grant_Amendments synced.";
+        );
     }
 
-    /**
-     * Sync Claims and all their downstream child metrics into separate dedicated buckets
-     */
     public function syncFactGrantClaims($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Claims Sync...");
-
         $watermark = $this->getWatermark('Fact_Grant_Claims');
+
         $query = $this->source->table('grant_claims')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Claims are already up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        $query->chunk(250, function ($claims) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-            foreach ($claims as $cl) {
+        return $this->executeSyncRunner(
+            'Fact_Grant_Claims',
+            $command,
+            $query,
+            function ($cl, $state) use ($sourceSystemKey) {
                 $grantKey = $this->resolveGrantKey($cl->grant_id, $sourceSystemKey);
                 if (!$grantKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $existingClaimKeys = $this->dwh->table('Fact_Grant_Claims')
@@ -3210,7 +2198,7 @@ class DataWarehouseSyncService
                     ->pluck('Claim_Key')
                     ->toArray();
 
-                if (count($existingClaimKeys) > 0) {
+                if (!empty($existingClaimKeys)) {
                     $this->dwh->table('Fact_Grant_Claim_Inclusions')->whereIn('Claim_Key', $existingClaimKeys)->delete();
                     $this->dwh->table('Fact_Grant_Claim_Send_Records')->whereIn('Claim_Key', $existingClaimKeys)->delete();
                     $this->dwh->table('Fact_Grant_Claim_Logs')->whereIn('Claim_Key', $existingClaimKeys)->delete();
@@ -3218,261 +2206,217 @@ class DataWarehouseSyncService
                 }
 
                 $claimKey = $this->dwh->table('Fact_Grant_Claims')->insertGetId([
-                    'Grant_Key' => $grantKey,
-                    'Source_System_Key' => $sourceSystemKey,
-                    'Source_Claim_Id' => $cl->id,
-                    'Claim_Number' => $cl->claim_number,
-                    'Status_Raw' => $cl->status,
-                    'Pref_Authority_Given' => (bool)$cl->pref_authority_given,
-                    'Pref_Claim_Paid' => (bool)$cl->pref_claim_paid,
-                    'Date_Approved' => $cl->date_approved,
-                    'Delivery_On_Track_Prediction' => $cl->delivery_on_track_prediction,
-                    'Send_Claimable_Amount' => is_numeric($cl->send_claimable_amount) ? (float)$cl->send_claimable_amount : 0.00,
-                    'Inclusion_Claimable_Amount' => is_numeric($cl->inclusion_claimable_amount) ? (float)$cl->inclusion_claimable_amount : 0.00,
-                    'created_at' => now(), 'updated_at' => now()
+                    'Grant_Key'                   => $grantKey,
+                    'Source_System_Key'           => $sourceSystemKey,
+                    'Source_Claim_Id'             => $cl->id,
+                    'Claim_Number'                => $cl->claim_number,
+                    'Status_Raw'                  => $cl->status,
+                    'Pref_Authority_Given'        => (bool) $cl->pref_authority_given,
+                    'Pref_Claim_Paid'             => (bool) $cl->pref_claim_paid,
+                    'Date_Approved'               => $cl->date_approved,
+                    'Delivery_On_Track_Prediction'=> $cl->delivery_on_track_prediction,
+                    'Send_Claimable_Amount'       => is_numeric($cl->send_claimable_amount) ? (float) $cl->send_claimable_amount : 0.00,
+                    'Inclusion_Claimable_Amount'  => is_numeric($cl->inclusion_claimable_amount) ? (float) $cl->inclusion_claimable_amount : 0.00,
+                    'created_at'                  => now(),
+                    'updated_at'                  => now(),
                 ]);
 
-                // --- 1. SYNC CLAIM LOGS ---
+                // 1. Logs
                 if (!$this->sourceHasColumn('grant_claims', 'claim_log')) {
                     $logs = $this->source->table('grant_claim_logs')->where('grant_claim_id', $cl->id)->get();
                     foreach ($logs as $log) {
                         $this->dwh->table('Fact_Grant_Claim_Logs')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Module_Key' => $log->module_key, 'Item_Count' => $log->item_count,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Claim_Key'         => $claimKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key'        => $log->module_key,
+                            'Item_Count'        => $log->item_count,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 } else {
                     $logs = json_decode($cl->claim_log, true) ?? [];
                     foreach ($logs as $key => $count) {
                         $this->dwh->table('Fact_Grant_Claim_Logs')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Module_Key' => $key, 'Item_Count' => $count,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Claim_Key'         => $claimKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Module_Key'        => $key,
+                            'Item_Count'        => $count,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 }
 
-                // --- 2. SYNC SEND RECORDS ---
+                // 2. SEND Records
                 if (!$this->sourceHasColumn('grant_claims', 'send_records')) {
                     $sends = $this->source->table('grant_claim_send_records')->where('grant_claim_id', $cl->id)->get();
                     foreach ($sends as $s) {
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => !empty($s->send_id) ? $s->send_id : (!empty($s->send_id_string) ? $s->send_id_string : 'raw'),
-                            'Send_Riders_Count' => !empty($s->send_riders) ? (int)$s->send_riders : 0,
-                            'Send_Amount' => (!empty($s->send_amount) && is_numeric($s->send_amount)) ? (float)$s->send_amount : 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Claim_Key'         => $claimKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Send_Id_String'    => !empty($s->send_id) ? $s->send_id : (!empty($s->send_id_string) ? $s->send_id_string : 'raw'),
+                            'Send_Riders_Count' => !empty($s->send_riders) ? (int) $s->send_riders : 0,
+                            'Send_Amount'       => (!empty($s->send_amount) && is_numeric($s->send_amount)) ? (float) $s->send_amount : 0.00,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 } else {
                     $sends = json_decode($cl->send_records, true) ?? [];
                     foreach ($sends as $node) {
                         $this->dwh->table('Fact_Grant_Claim_Send_Records')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
-                            'Send_Id_String' => !empty($node['sendId']) ? $node['sendId'] : 'raw',
-                            'Send_Riders_Count' => !empty($node['sendRiders']) ? (int)$node['sendRiders'] : 0,
-                            'Send_Amount' => (!empty($node['sendAmount']) && is_numeric($node['sendAmount'])) ? (float)$node['sendAmount'] : 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Claim_Key'         => $claimKey,
+                            'Source_System_Key' => $sourceSystemKey,
+                            'Send_Id_String'    => !empty($node['sendId']) ? $node['sendId'] : 'raw',
+                            'Send_Riders_Count' => !empty($node['sendRiders']) ? (int) $node['sendRiders'] : 0,
+                            'Send_Amount'       => (!empty($node['sendAmount']) && is_numeric($node['sendAmount'])) ? (float) $node['sendAmount'] : 0.00,
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
                         ]);
                     }
                 }
 
-                // --- 3. SYNC INCLUSION RECORDS ---
+                // 3. Inclusion Records
                 if (!$this->sourceHasColumn('grant_claims', 'inclusion_records')) {
                     $inclusions = $this->source->table('grant_claim_inclusions')->where('grant_claim_id', $cl->id)->get();
                     foreach ($inclusions as $inc) {
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Claim_Key'           => $claimKey,
+                            'Source_System_Key'   => $sourceSystemKey,
                             'Inclusion_Id_String' => !empty($inc->inclusion_id) ? $inc->inclusion_id : (!empty($inc->inclusion_id_string) ? $inc->inclusion_id_string : 'raw'),
-                            'Inclusion_Category' => !empty($inc->inclusion_category) ? $inc->inclusion_category : 'N/A',
-                            'Inclusion_Delivery' => !empty($inc->inclusion_delivery) ? $inc->inclusion_delivery : null,
-                            'Inclusion_Amount' => (!empty($inc->inclusion_amount) && is_numeric($inc->inclusion_amount)) ? (float)$inc->inclusion_amount : 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Inclusion_Category'  => !empty($inc->inclusion_category) ? $inc->inclusion_category : 'N/A',
+                            'Inclusion_Delivery'  => !empty($inc->inclusion_delivery) ? $inc->inclusion_delivery : null,
+                            'Inclusion_Amount'    => (!empty($inc->inclusion_amount) && is_numeric($inc->inclusion_amount)) ? (float) $inc->inclusion_amount : 0.00,
+                            'created_at'          => now(),
+                            'updated_at'          => now(),
                         ]);
                     }
                 } else {
                     $inclusions = json_decode($cl->inclusion_records, true) ?? [];
                     foreach ($inclusions as $node) {
                         $this->dwh->table('Fact_Grant_Claim_Inclusions')->insert([
-                            'Claim_Key' => $claimKey, 'Source_System_Key' => $sourceSystemKey,
+                            'Claim_Key'           => $claimKey,
+                            'Source_System_Key'   => $sourceSystemKey,
                             'Inclusion_Id_String' => !empty($node['inclusionId']) ? $node['inclusionId'] : 'raw',
-                            'Inclusion_Category' => !empty($node['inclusionCategory']) ? $node['inclusionCategory'] : 'N/A',
-                            'Inclusion_Delivery' => isset($node['inclusionDelivery']) && $node['inclusionDelivery'] !== '' ? $node['inclusionDelivery'] : null,
-                            'Inclusion_Amount' => (!empty($node['inclusionAmount']) && is_numeric($node['inclusionAmount'])) ? (float)$node['inclusionAmount'] : 0.00,
-                            'created_at' => now(), 'updated_at' => now()
+                            'Inclusion_Category'  => !empty($node['inclusionCategory']) ? $node['inclusionCategory'] : 'N/A',
+                            'Inclusion_Delivery'  => isset($node['inclusionDelivery']) && $node['inclusionDelivery'] !== '' ? $node['inclusionDelivery'] : null,
+                            'Inclusion_Amount'    => (!empty($node['inclusionAmount']) && is_numeric($node['inclusionAmount'])) ? (float) $node['inclusionAmount'] : 0.00,
+                            'created_at'          => now(),
+                            'updated_at'          => now(),
                         ]);
                     }
                 }
 
-                if ($cl->updated_at > $highestTimestamp) $highestTimestamp = $cl->updated_at;
-                if ($bar) $bar->advance();
+                if ($cl->updated_at && (!$state->highestTimestamp || $cl->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $cl->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Claims', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Grant_Claims', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Grant_Claims synced.";
+        );
     }
 
     public function syncFactGrantFormatDft($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Grant Format DfT Allocations Sync...");
-        }
+        $watermark = $this->getWatermark('Fact_Grant_Allocation_Dft');
 
-        $watermark = $this->getWatermark('Fact_Grant_Allocation_Dft') ?? '1900-01-01 00:00:00';
-        $highestTimestamp = $watermark;
-
-        $baseQuery = $this->source->table('grant_format_dft')
-            ->where('updated_at', '>', $watermark)
-            ->whereNull('deleted_at');
-
-        $total = $baseQuery->count();
-        if ($total === 0) {
-            if ($command) {
-                $command->info("Fact_Grant_Allocation_Dft is up to date.");
-            }
-            return "Fact_Grant_Allocation_Dft up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) {
-            $bar->start();
-        }
-
-        $syncCount = 0;
-
-        $this->source->table('grant_format_dft')
+        $query = $this->source->table('grant_format_dft')
             ->where('updated_at', '>', $watermark)
             ->whereNull('deleted_at')
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp, &$syncCount) {
-                foreach ($rows as $row) {
-                    // 1. Resolve Dim_Grant foreign surrogate key
-                    $grantKey = $this->dwh->table('Dim_Grant')
-                        ->where('Source_Grant_Id', $row->grant_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Grant_Key');
+            ->orderBy('id', 'asc');
 
-                    if (!$grantKey) {
-                        if ($bar) {
-                            $bar->advance();
-                        }
-                        continue;
-                    }
-
-                    $sendAmount      = (float) ($row->grant_send ?? 0);
-                    $inclusionAmount = (float) ($row->grant_inclusion ?? 0);
-
-                    // 2. Upsert DfT Allocation Fact Record
-                    $this->dwh->table('Fact_Grant_Allocation_Dft')->updateOrInsert(
-                        [
-                            'Source_Allocation_Id' => $row->id,
-                            'Source_System_Key'    => $sourceSystemKey,
-                        ],
-                        [
-                            'Grant_Key'                => $grantKey,
-                            'Source_Grant_Id'          => $row->grant_id,
-                            'Max_Allocation'           => (float) ($row->max_allocation ?? 0),
-                            'Total_Levels'             => (int) ($row->total_levels ?? 0),
-                            'Total_Plus'               => (int) ($row->total_plus ?? 0),
-                            'Places_Level_1'           => (int) ($row->places_level_1 ?? 0),
-                            'Grant_Level_1'            => (float) ($row->grant_level_1 ?? 0),
-                            'Places_Level_1_2'         => (int) ($row->places_level_1_2 ?? 0),
-                            'Grant_Level_1_2'          => (float) ($row->grant_level_1_2 ?? 0),
-                            'Places_Level_2'           => (int) ($row->places_level_2 ?? 0),
-                            'Grant_Level_2'            => (float) ($row->grant_level_2 ?? 0),
-                            'Places_Level_3'           => (int) ($row->places_level_3 ?? 0),
-                            'Grant_Level_3'            => (float) ($row->grant_level_3 ?? 0),
-                            'Places_Plus_Balance'      => (int) ($row->places_plus_balance ?? 0),
-                            'Grant_Plus_Balance'       => (float) ($row->grant_plus_balance ?? 0),
-                            'Places_Plus_Bus'          => (int) ($row->places_plus_bus ?? 0),
-                            'Grant_Plus_Bus'           => (float) ($row->grant_plus_bus ?? 0),
-                            'Places_Plus_Fix'          => (int) ($row->places_plus_fix ?? 0),
-                            'Grant_Plus_Fix'           => (float) ($row->grant_plus_fix ?? 0),
-                            'Places_Plus_Learn'        => (int) ($row->places_plus_learn ?? 0),
-                            'Grant_Plus_Learn'         => (float) ($row->grant_plus_learn ?? 0),
-                            'Places_Plus_On_Show'      => (int) ($row->places_plus_on_show ?? 0),
-                            'Grant_Plus_On_Show'       => (float) ($row->grant_plus_on_show ?? 0),
-                            'Places_Plus_Parents'      => (int) ($row->places_plus_parents ?? 0),
-                            'Grant_Plus_Parents'       => (float) ($row->grant_plus_parents ?? 0),
-                            'Places_Plus_Promotion'    => (int) ($row->places_plus_promotion ?? 0),
-                            'Grant_Plus_Promotion'     => (float) ($row->grant_plus_promotion ?? 0),
-                            'Places_Plus_Recycled'     => (int) ($row->places_plus_recycled ?? 0),
-                            'Grant_Plus_Recycled'      => (float) ($row->grant_plus_recycled ?? 0),
-                            'Places_Plus_Ride'         => (int) ($row->places_plus_ride ?? 0),
-                            'Grant_Plus_Ride'          => (float) ($row->grant_plus_ride ?? 0),
-                            'Places_Plus_Transition'   => (int) ($row->places_plus_transition ?? 0),
-                            'Grant_Plus_Transition'    => (float) ($row->grant_plus_transition ?? 0),
-                            'Places_Plus_Family'       => (int) ($row->places_plus_family ?? 0),
-                            'Grant_Plus_Family'        => (float) ($row->grant_plus_family ?? 0),
-                            'Places_Plus_Adult'        => (int) ($row->places_plus_adult ?? 0),
-                            'Grant_Plus_Adult'         => (float) ($row->grant_plus_adult ?? 0),
-                            'Grant_Send'               => $sendAmount,
-                            'Places_Send'              => (int) ($row->places_send ?? 0),
-                            'Grant_Inclusion'          => $inclusionAmount,
-                            'Places_Inclusion'         => (int) ($row->places_inclusion ?? 0),
-                            'Updated_At'               => now(),
-                        ]
-                    );
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-
-                    if ($bar) {
-                        $bar->advance();
-                    }
-                    $syncCount++;
+        return $this->executeSyncRunner(
+            'Fact_Grant_Allocation_Dft',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $grantKey = $this->resolveGrantKey($row->grant_id, $sourceSystemKey);
+                if (!$grantKey) {
+                    return;
                 }
-            });
 
-        $this->updateWatermark('Fact_Grant_Allocation_Dft', $highestTimestamp);
+                $this->dwh->table('Fact_Grant_Allocation_Dft')->updateOrInsert(
+                    [
+                        'Source_Allocation_Id' => $row->id,
+                        'Source_System_Key'    => $sourceSystemKey,
+                    ],
+                    [
+                        'Grant_Key'                => $grantKey,
+                        'Source_Grant_Id'          => $row->grant_id,
+                        'Max_Allocation'           => (float) ($row->max_allocation ?? 0),
+                        'Total_Levels'             => (int) ($row->total_levels ?? 0),
+                        'Total_Plus'               => (int) ($row->total_plus ?? 0),
+                        'Places_Level_1'           => (int) ($row->places_level_1 ?? 0),
+                        'Grant_Level_1'            => (float) ($row->grant_level_1 ?? 0),
+                        'Places_Level_1_2'         => (int) ($row->places_level_1_2 ?? 0),
+                        'Grant_Level_1_2'          => (float) ($row->grant_level_1_2 ?? 0),
+                        'Places_Level_2'           => (int) ($row->places_level_2 ?? 0),
+                        'Grant_Level_2'            => (float) ($row->grant_level_2 ?? 0),
+                        'Places_Level_3'           => (int) ($row->places_level_3 ?? 0),
+                        'Grant_Level_3'            => (float) ($row->grant_level_3 ?? 0),
+                        'Places_Plus_Balance'      => (int) ($row->places_plus_balance ?? 0),
+                        'Grant_Plus_Balance'       => (float) ($row->grant_plus_balance ?? 0),
+                        'Places_Plus_Bus'          => (int) ($row->places_plus_bus ?? 0),
+                        'Grant_Plus_Bus'           => (float) ($row->grant_plus_bus ?? 0),
+                        'Places_Plus_Fix'          => (int) ($row->places_plus_fix ?? 0),
+                        'Grant_Plus_Fix'           => (float) ($row->grant_plus_fix ?? 0),
+                        'Places_Plus_Learn'        => (int) ($row->places_plus_learn ?? 0),
+                        'Grant_Plus_Learn'         => (float) ($row->grant_plus_learn ?? 0),
+                        'Places_Plus_On_Show'      => (int) ($row->places_plus_on_show ?? 0),
+                        'Grant_Plus_On_Show'       => (float) ($row->grant_plus_on_show ?? 0),
+                        'Places_Plus_Parents'      => (int) ($row->places_plus_parents ?? 0),
+                        'Grant_Plus_Parents'       => (float) ($row->grant_plus_parents ?? 0),
+                        'Places_Plus_Promotion'    => (int) ($row->places_plus_promotion ?? 0),
+                        'Grant_Plus_Promotion'     => (float) ($row->grant_plus_promotion ?? 0),
+                        'Places_Plus_Recycled'     => (int) ($row->places_plus_recycled ?? 0),
+                        'Grant_Plus_Recycled'      => (float) ($row->grant_plus_recycled ?? 0),
+                        'Places_Plus_Ride'         => (int) ($row->places_plus_ride ?? 0),
+                        'Grant_Plus_Ride'          => (float) ($row->grant_plus_ride ?? 0),
+                        'Places_Plus_Transition'   => (int) ($row->places_plus_transition ?? 0),
+                        'Grant_Plus_Transition'    => (float) ($row->grant_plus_transition ?? 0),
+                        'Places_Plus_Family'       => (int) ($row->places_plus_family ?? 0),
+                        'Grant_Plus_Family'        => (float) ($row->grant_plus_family ?? 0),
+                        'Places_Plus_Adult'        => (int) ($row->places_plus_adult ?? 0),
+                        'Grant_Plus_Adult'         => (float) ($row->grant_plus_adult ?? 0),
+                        'Grant_Send'               => (float) ($row->grant_send ?? 0),
+                        'Places_Send'              => (int) ($row->places_send ?? 0),
+                        'Grant_Inclusion'          => (float) ($row->grant_inclusion ?? 0),
+                        'Places_Inclusion'         => (int) ($row->places_inclusion ?? 0),
+                        'Updated_At'               => now(),
+                    ]
+                );
 
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Successfully synced {$syncCount} DfT Grant Allocations.";
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Allocation_Dft', $state->highestTimestamp, $count);
+                }
+            }
+        );
     }
-
 
     public function syncFactInstructorDeliveries($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor-Deliveries Sync...");
-
-        // Resolve Watermark
         $watermark = $this->getWatermark('Fact_Instructor_Delivery');
 
-        //  Query Source delta (including soft deleted rows so we sync the deletion status)
         $query = $this->source->table('join_deliveries_instructors')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructor-Deliveries are up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestampSeen = $watermark;
-
-        // Process Chunk Loop
-        $query->chunk(500, function ($allocations) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-            foreach ($allocations as $alloc) {
-
-                // Resolve DWH Keys securely from parent dimensions
+        return $this->executeSyncRunner(
+            'Fact_Instructor_Delivery',
+            $command,
+            $query,
+            function ($alloc, $state) use ($sourceSystemKey) {
                 $deliveryKey = $this->dwh->table('Dim_Delivery_Header')
                     ->where('Source_Delivery_Id', $alloc->delivery_id)
                     ->where('Source_System_Key', $sourceSystemKey)
@@ -3483,44 +2427,35 @@ class DataWarehouseSyncService
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Instructor_Key');
 
-                // Enforce referential data integrity
                 if (!$deliveryKey || !$instructorKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $this->dwh->table('Fact_Instructor_Delivery')->updateOrInsert(
                     [
-                        'Delivery_Key' => $deliveryKey,
-                        'Instructor_Key' => $instructorKey,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Delivery_Key'      => $deliveryKey,
+                        'Instructor_Key'    => $instructorKey,
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
-                        'Instructor_Notified' => (bool)$alloc->instructor_notified,
-                        'Source_Created_At' => $alloc->created_at,
-                        'Source_Updated_At' => $alloc->updated_at,
-                        'Source_Deleted_At' => $alloc->deleted_at,
-                        'updated_at' => now()
+                        'Instructor_Notified' => (bool) $alloc->instructor_notified,
+                        'Source_Created_At'   => $alloc->created_at,
+                        'Source_Updated_At'   => $alloc->updated_at,
+                        'Source_Deleted_At'   => $alloc->deleted_at,
+                        'updated_at'          => now(),
                     ]
                 );
 
-                if ($alloc->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $alloc->updated_at;
+                if ($alloc->updated_at && (!$state->highestTimestamp || $alloc->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $alloc->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Instructor_Delivery', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        // Record watermark state
-        $this->updateWatermark('Fact_Instructor_Delivery', $highestTimestampSeen);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Instructor_Delivery synced.";
-
+        );
     }
 
     public function syncFactInstructorCourse($command = null)
@@ -3528,641 +2463,354 @@ class DataWarehouseSyncService
         $sourceSystemKey = $this->getSourceSystemKey();
         $now = now()->toDateTimeString();
 
-        if ($command) $command->info("[{$now}] Starting Instructor-Course Pivot Sync...");
+        try {
+            $sourcePairs = $this->source->table('join_instructors_courses')
+                ->select('instructor_id', 'course_id')
+                ->get()
+                ->map(fn($row) => "{$row->instructor_id}-{$row->course_id}")
+                ->toArray();
 
-        // Fetch all currently active allocations from the SOURCE database
-        // Pluck as "instructor_id-course_id" strings for instant O(1) lookups in PHP memory
-        $sourcePairs = $this->source->table('join_instructors_courses') // replace with actual source table name
-        ->select('instructor_id', 'course_id')
-            ->get()
-            ->map(function ($row) {
-                return "{$row->instructor_id}-{$row->course_id}";
-            })
-            ->toArray();
+            $dwhActiveRows = $this->dwh->table('Fact_Instructor_Course')
+                ->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
+                ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key')
+                ->where('Fact_Instructor_Course.Is_Current', 1)
+                ->where('Fact_Instructor_Course.Source_System_Key', $sourceSystemKey)
+                ->select([
+                    'Fact_Instructor_Course.Instructor_Course_Key',
+                    'Dim_Instructor.Source_Instructor_Id',
+                    'Dim_Course.Source_Course_Id',
+                ])
+                ->get();
 
-        //  Fetch all rows the DWH currently considers active
-        $dwhActiveRows = $this->dwh->table('Fact_Instructor_Course')
-            ->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
-            ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key')
-            ->where('Fact_Instructor_Course.Is_Current', 1)
-            ->where('Fact_Instructor_Course.Source_System_Key', $sourceSystemKey)
-            ->select([
-                'Fact_Instructor_Course.Instructor_Course_Key',
-                'Dim_Instructor.Source_Instructor_Id',
-                'Dim_Course.Source_Course_Id'
-            ])
-            ->get();
+            $dwhActivePairs = [];
+            foreach ($dwhActiveRows as $row) {
+                $dwhActivePairs["{$row->Source_Instructor_Id}-{$row->Source_Course_Id}"] = $row->Instructor_Course_Key;
+            }
 
-        $dwhActivePairs = [];
-        foreach ($dwhActiveRows as $row) {
-            $dwhActivePairs["{$row->Source_Instructor_Id}-{$row->Source_Course_Id}"] = $row->Instructor_Course_Key;
-        }
+            // Detect Removals
+            $closedCount = 0;
+            foreach ($dwhActivePairs as $pairStr => $dwhKey) {
+                if (!in_array($pairStr, $sourcePairs)) {
+                    $this->dwh->table('Fact_Instructor_Course')
+                        ->where('Instructor_Course_Key', $dwhKey)
+                        ->update(['Active_To' => $now, 'Is_Current' => 0]);
+                    $closedCount++;
+                }
+            }
 
-        // Detect Removals (Relationship disappeared) ---
-        // If it's active in DWH but missing from Source, it was deleted. Close it off.
-        $closedCount = 0;
-        foreach ($dwhActivePairs as $pairStr => $dwhKey) {
-            if (!in_array($pairStr, $sourcePairs)) {
-                $this->dwh->table('Fact_Instructor_Course')
-                    ->where('Instructor_Course_Key', $dwhKey)
-                    ->update([
-                        'Active_To' => $now,
-                        'Is_Current' => 0
+            // Detect Additions
+            $pairsToInsert = array_diff($sourcePairs, array_keys($dwhActivePairs));
+            $newCount = 0;
+
+            $bar = ($command && count($pairsToInsert) > 0)
+                ? $command->getOutput()->createProgressBar(count($pairsToInsert))
+                : null;
+            if ($bar) $bar->start();
+
+            foreach ($pairsToInsert as $pairStr) {
+                [$sourceInstructorId, $sourceCourseId] = explode('-', $pairStr);
+
+                $instructorKey = $this->dwh->table('Dim_Instructor')
+                    ->where('Source_Instructor_Id', $sourceInstructorId)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Instructor_Key');
+
+                $courseKey = $this->dwh->table('Dim_Course')
+                    ->where('Source_Course_Id', $sourceCourseId)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Course_Key');
+
+                if ($instructorKey && $courseKey) {
+                    $this->dwh->table('Fact_Instructor_Course')->insert([
+                        'Instructor_Key'    => $instructorKey,
+                        'Course_Key'        => $courseKey,
+                        'Source_System_Key' => $sourceSystemKey,
+                        'Active_From'       => $now,
+                        'Active_To'         => null,
+                        'Is_Current'        => 1,
                     ]);
-                $closedCount++;
-            }
-        }
-
-        // Detect additions (New Relationship)
-        // If it's in Source but missing from DWH active list, it's brand new.
-        $newCount = 0;
-
-        // Process additions in chunks of source array keys to handle memory safely
-        $pairsToInsert = array_diff($sourcePairs, array_keys($dwhActivePairs));
-
-        if ($command && count($pairsToInsert) > 0) {
-            $bar = $command->getOutput()->createProgressBar(count($pairsToInsert));
-            $bar->start();
-        }
-
-        foreach ($pairsToInsert as $pairStr) {
-            [$sourceInstructorId, $sourceCourseId] = explode('-', $pairStr);
-
-            // Resolve DWH Dimension keys safely
-            $instructorKey = $this->dwh->table('Dim_Instructor')
-                ->where('Source_Instructor_Id', $sourceInstructorId)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->value('Instructor_Key');
-
-            $courseKey = $this->dwh->table('Dim_Course')
-                ->where('Source_Course_Id', $sourceCourseId)
-                ->where('Source_System_Key', $sourceSystemKey)
-                ->value('Course_Key');
-
-            // If dimensions match, write the open-ended active row
-            if ($instructorKey && $courseKey) {
-                $this->dwh->table('Fact_Instructor_Course')->insert([
-                    'Instructor_Key' => $instructorKey,
-                    'Course_Key' => $courseKey,
-                    'Source_System_Key' => $sourceSystemKey,
-                    'Active_From' => $now,
-                    'Active_To' => null,
-                    'Is_Current' => 1
-                ]);
-                $newCount++;
+                    $newCount++;
+                }
+                if ($bar) $bar->advance();
             }
 
-            if (isset($bar)) $bar->advance();
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            return "Fact_Instructor_Course synced. (New: {$newCount}, Closed: {$closedCount})";
+
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Fact_Instructor_Course', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
         }
-
-        if (isset($bar)) $bar->finish();
-
-        return "Fact_Instructor_Course synced.";
-
     }
 
     public function syncFactParentSurvey($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+        $useLegacyFeedback = $this->sourceHasColumn('parent_survey', 'rider_feedback');
+        $watermark = $this->getWatermark('Fact_Parent_Survey');
 
-        $useLegacyFeedback = \Illuminate\Support\Facades\Schema::connection('mysql_src')
-            ->hasColumn('parent_survey', 'rider_feedback');
-
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Fact_Parent_Survey')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        $highestTimestampSeen = $watermark;
-
-        $surveyData = $this->source->table('parent_survey')
+        $query = $this->source->table('parent_survey')
             ->where('status', 1)
             ->where('updated_at', '>', $watermark)
-            ->select('id', 'updated_at')
-            ->get();
+            ->orderBy('updated_at', 'asc');
 
-        $surveyIds = $surveyData->pluck('id');
-        $maxTimestamp = $surveyData->max('updated_at');
+        return $this->executeSyncRunner(
+            'Fact_Parent_Survey',
+            $command,
+            $query,
+            function ($survey, $state) use ($sourceSystemKey, $useLegacyFeedback) {
+                $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
+                $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
+                $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->first();
 
-        if ($surveyIds->isEmpty()) {
-            return "Parent Survey Facts are up to date.";
-        }
-
-        $total = count($surveyIds);
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $this->source->table('parent_survey')
-            ->whereIn('id', $surveyIds)
-            ->orderBy('updated_at', 'asc')
-            ->chunk(200, function ($surveys) use ($sourceSystemKey, $bar, $useLegacyFeedback) {
-                foreach ($surveys as $survey) {
-                    //Logic to Resolve Keys: $riderKey, $courseKey, $delivery
-                    $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
-                    $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
-                    $delivery = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->first();
-
-                    if (!$riderKey || !$courseKey || !$delivery) continue;
-
-                    // Resolve Multi-select Feedback
-                    if ($useLegacyFeedback) {
-                        $feedbackKeys = json_decode($survey->rider_feedback ?? '[]', true);
-                    } else {
-                        $feedbackKeys = $this->source->table('parent_survey_feedback')
-                            ->where('parent_survey_id', $survey->id)
-                            ->pluck('feedback_key')
-                            ->toArray();
-                    }
-
-                    // 1. Handle OQ1 Multi-choice (Encouragers)
-                    $oq1_data = json_decode($survey->optional_questions, true) ?? [];
-                    $encouragers = [
-                        'Encourage_More_Direct_Routes' => in_array('oq1_o1', $oq1_data) ? 1 : 0,
-                        'Encourage_Local_Route_Awareness' => in_array('oq1_o2', $oq1_data) ? 1 : 0,
-                        'Encourage_Storage' => in_array('oq1_o3', $oq1_data) ? 1 : 0,
-                        'Encourage_Road_Surfaces' => in_array('oq1_o4', $oq1_data) ? 1 : 0,
-                        'Encourage_Confidence' => in_array('oq1_o5', $oq1_data) ? 1 : 0,
-                        'Encourage_Cycle_Maintenance' => in_array('oq1_o6', $oq1_data) ? 1 : 0,
-                        'Encourage_Local_Initiatives' => in_array('oq1_o7', $oq1_data) ? 1 : 0,
-                        'Encourage_Purchase_Ability' => in_array('oq1_o8', $oq1_data) ? 1 : 0,
-                        'Encourage_Doesnt_Want_To_Cycle_More' => in_array('oq1_o9', $oq1_data) ? 1 : 0,
-                        'Encourage_None' => in_array('oq1_null', $oq1_data) ? 1 : 0,
-                        'Encourage_Other_Reason' => $survey->optional_questions_input,
-                    ];
-
-                    // 2. Handle OQ2-OQ19 (Agree/Disagree Array)
-                    $agree_disagree_data = json_decode($survey->agree_disagree_options, true) ?? [];
-
-                    // Convert the flat array ["oq2_o5", "oq3_o4"] into a keyed lookup for easy extraction
-                    $pivoted = [];
-                    foreach ($agree_disagree_data as $item) {
-                        // e.g., "oq2_o5" -> key: "oq2", value: 5
-                        if (preg_match('/(oq\d+)_o(\d+)/', $item, $matches)) {
-                            $pivoted[$matches[1]] = (int)$matches[2];
-                        }
-                    }
-
-                    $likertMetrics = [
-                        'Likert_Life_Skill' => $pivoted['oq2'] ?? null, // oq2
-                        'Likert_Self_Esteem' => $pivoted['oq3'] ?? null, // oq3
-                        'Likert_Fitness' => $pivoted['oq4'] ?? null, // oq4
-                        'Likert_Active' => $pivoted['oq5'] ?? null, // oq5
-                        'Likert_Mindfulness' => $pivoted['oq6'] ?? null, // oq6
-                        'Likert_Improve_Self_Regulate' => $pivoted['oq7'] ?? null, // oq7
-                        'Likert_Improve_Concentration' => $pivoted['oq8'] ?? null, // oq8
-                        'Likert_Improve_Academic_Performance' => $pivoted['oq9'] ?? null, // oq9
-                        'Likert_Independence' => $pivoted['oq10'] ?? null, // oq10
-                        'Likert_Improve_Road_Awareness' => $pivoted['oq11'] ?? null, // oq11
-                        'Likert_Improve_Environment_Awareness' => $pivoted['oq12'] ?? null, // oq12
-                        'Likert_Help_Socialise' => $pivoted['oq13'] ?? null, // oq13
-                        'Likert_Make_Children_Happy' => $pivoted['oq14'] ?? null, // oq14
-                        'Likert_Keep_Children_Occupied' => $pivoted['oq15'] ?? null, // oq15
-                        'Likert_Encourage_Children_Outside' => $pivoted['oq16'] ?? null, // oq16
-                        'Likert_Children_Less_Dependent' => $pivoted['oq17'] ?? null, // oq17
-                        'Likert_Reduce_Other_Transport_Expense' => $pivoted['oq18'] ?? null, // oq18
-                        'Likert_Enable_Cycle_As_Family' => $pivoted['oq19'] ?? null //oq19
-                    ];
-
-                    $this->dwh->table('Fact_Parent_Survey')->updateOrInsert(
-                        ['Source_Survey_Id' => $survey->id],
-                        array_merge($encouragers, $likertMetrics, [
-                            'Date_Key' => str_replace('-', '', substr($survey->created_at, 0, 10)),
-                            'Rider_Key' => $riderKey,
-                            'Course_Key' => $courseKey,
-                            'Delivery_Key' => $delivery->Delivery_Key,
-                            'Grant_Key' => $delivery->Grant_Key,
-
-                            'Like_To_Participate' => $survey->like_to_participation,
-                            'Like_To_Answer_Survey' => $survey->like_to_answer_survey,
-                            'Pref_Join_Bikeability' => $survey->pref_join_bikeability,
-                            'Rider_Emotion' => $survey->rider_emotion,
-                            'Pref_More_Training' => $survey->pref_more_training,
-                            'Pref_Interest_In_Training' => $survey->pref_interest_in_training,
-
-                            // Feedback Flags
-                            'Feedback_Is_Fun' => in_array('rfq1_rf1', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Is_Hard' => in_array('rfq1_rf2', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Is_Healthy' => in_array('rfq1_rf3', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Still_New' => in_array('rfq1_rf4', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Family_Friends' => in_array('rfq1_rf5', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Dont_See_Others_Like_Me' => in_array('rfq1_rf6', $feedbackKeys) ? 1 : 0,
-                            'Feedback_On_Own' => in_array('rfq1_rf7', $feedbackKeys) ? 1 : 0,
-                            'Feedback_Not_Enjoy' => in_array('rfq1_rf8', $feedbackKeys) ? 1 : 0,
-                            'Feedback_None_Apply' => in_array('rfq1_null', $feedbackKeys) ? 1 : 0,
-                            'Feedback_None_Apply_Input' => $survey->rider_feedback_input,
-
-                            // Store as Clean Integers (1-6)
-                            'Confidence_Bike_General' => $this->extractOptionInt('co', $survey->confidence_to_use_a_bike),
-                            'Confidence_Road' => $this->extractOptionInt('co', $survey->confidence_to_use_bike_on_road),
-                            'Confidence_Independent' => $this->extractOptionInt('co', $survey->confidence_to_use_bike_independently),
-
-                            //Frequency Flags
-                            'Frequency_School' => $this->extractOptionInt('fo', $survey->frequency_usable_to_and_from_school),
-                            'Frequency_Leisure' => $this->extractOptionInt('fo', $survey->frequency_usable_leisure_and_social),
-                            'Frequency_Exercise' => $this->extractOptionInt('fo', $survey->frequency_usable_exercise),
-
-                            //Encouragment
-                            'Encouragement_Use_Bike' => $this->extractOptionInt('eo', $survey->encouragement_to_use_a_bike),
-                            'Encouragement_Use_Bike_On_Road' => $this->extractOptionInt('eo', $survey->encouragement_to_use_bike_on_road),
-
-                            //Recommend
-                            'Likely_To_Recommend' => $survey->like_to_recommend,
-
-                            //Timestamps
-                            'Source_Created_At' => $survey->created_at,
-                            'Source_Updated_At' => $survey->updated_at
-                        ])
-                    );
-
-                    if ($bar) $bar->advance();
+                if (!$riderKey || !$courseKey || !$delivery) {
+                    return;
                 }
-            });
 
-        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
-            $highestTimestampSeen = $maxTimestamp;
-        }
+                if ($useLegacyFeedback) {
+                    $feedbackKeys = json_decode($survey->rider_feedback ?? '[]', true);
+                } else {
+                    $feedbackKeys = $this->source->table('parent_survey_feedback')
+                        ->where('parent_survey_id', $survey->id)
+                        ->pluck('feedback_key')
+                        ->toArray();
+                }
 
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Fact_Parent_Survey'],
-            ['Last_Synced_At' => $highestTimestampSeen]
+                $oq1_data = json_decode($survey->optional_questions, true) ?? [];
+                $encouragers = [
+                    'Encourage_More_Direct_Routes'        => in_array('oq1_o1', $oq1_data) ? 1 : 0,
+                    'Encourage_Local_Route_Awareness'     => in_array('oq1_o2', $oq1_data) ? 1 : 0,
+                    'Encourage_Storage'                   => in_array('oq1_o3', $oq1_data) ? 1 : 0,
+                    'Encourage_Road_Surfaces'             => in_array('oq1_o4', $oq1_data) ? 1 : 0,
+                    'Encourage_Confidence'                => in_array('oq1_o5', $oq1_data) ? 1 : 0,
+                    'Encourage_Cycle_Maintenance'         => in_array('oq1_o6', $oq1_data) ? 1 : 0,
+                    'Encourage_Local_Initiatives'         => in_array('oq1_o7', $oq1_data) ? 1 : 0,
+                    'Encourage_Purchase_Ability'          => in_array('oq1_o8', $oq1_data) ? 1 : 0,
+                    'Encourage_Doesnt_Want_To_Cycle_More' => in_array('oq1_o9', $oq1_data) ? 1 : 0,
+                    'Encourage_None'                      => in_array('oq1_null', $oq1_data) ? 1 : 0,
+                    'Encourage_Other_Reason'              => $survey->optional_questions_input,
+                ];
+
+                $agree_disagree_data = json_decode($survey->agree_disagree_options, true) ?? [];
+                $pivoted = [];
+                foreach ($agree_disagree_data as $item) {
+                    if (preg_match('/(oq\d+)_o(\d+)/', $item, $matches)) {
+                        $pivoted[$matches[1]] = (int) $matches[2];
+                    }
+                }
+
+                $likertMetrics = [
+                    'Likert_Life_Skill'                    => $pivoted['oq2'] ?? null,
+                    'Likert_Self_Esteem'                   => $pivoted['oq3'] ?? null,
+                    'Likert_Fitness'                       => $pivoted['oq4'] ?? null,
+                    'Likert_Active'                        => $pivoted['oq5'] ?? null,
+                    'Likert_Mindfulness'                   => $pivoted['oq6'] ?? null,
+                    'Likert_Improve_Self_Regulate'         => $pivoted['oq7'] ?? null,
+                    'Likert_Improve_Concentration'         => $pivoted['oq8'] ?? null,
+                    'Likert_Improve_Academic_Performance'  => $pivoted['oq9'] ?? null,
+                    'Likert_Independence'                  => $pivoted['oq10'] ?? null,
+                    'Likert_Improve_Road_Awareness'        => $pivoted['oq11'] ?? null,
+                    'Likert_Improve_Environment_Awareness' => $pivoted['oq12'] ?? null,
+                    'Likert_Help_Socialise'                => $pivoted['oq13'] ?? null,
+                    'Likert_Make_Children_Happy'           => $pivoted['oq14'] ?? null,
+                    'Likert_Keep_Children_Occupied'        => $pivoted['oq15'] ?? null,
+                    'Likert_Encourage_Children_Outside'    => $pivoted['oq16'] ?? null,
+                    'Likert_Children_Less_Dependent'       => $pivoted['oq17'] ?? null,
+                    'Likert_Reduce_Other_Transport_Expense'=> $pivoted['oq18'] ?? null,
+                    'Likert_Enable_Cycle_As_Family'        => $pivoted['oq19'] ?? null,
+                ];
+
+                $this->dwh->table('Fact_Parent_Survey')->updateOrInsert(
+                    ['Source_Survey_Id' => $survey->id],
+                    array_merge($encouragers, $likertMetrics, [
+                        'Date_Key'                          => str_replace('-', '', substr($survey->created_at, 0, 10)),
+                        'Rider_Key'                         => $riderKey,
+                        'Course_Key'                        => $courseKey,
+                        'Delivery_Key'                      => $delivery->Delivery_Key,
+                        'Grant_Key'                         => $delivery->Grant_Key,
+                        'Like_To_Participate'               => $survey->like_to_participation,
+                        'Like_To_Answer_Survey'             => $survey->like_to_answer_survey,
+                        'Pref_Join_Bikeability'             => $survey->pref_join_bikeability,
+                        'Rider_Emotion'                     => $survey->rider_emotion,
+                        'Pref_More_Training'                => $survey->pref_more_training,
+                        'Pref_Interest_In_Training'         => $survey->pref_interest_in_training,
+                        'Feedback_Is_Fun'                   => in_array('rfq1_rf1', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Is_Hard'                  => in_array('rfq1_rf2', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Is_Healthy'               => in_array('rfq1_rf3', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Still_New'                => in_array('rfq1_rf4', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Family_Friends'           => in_array('rfq1_rf5', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Dont_See_Others_Like_Me'  => in_array('rfq1_rf6', $feedbackKeys) ? 1 : 0,
+                        'Feedback_On_Own'                   => in_array('rfq1_rf7', $feedbackKeys) ? 1 : 0,
+                        'Feedback_Not_Enjoy'                => in_array('rfq1_rf8', $feedbackKeys) ? 1 : 0,
+                        'Feedback_None_Apply'               => in_array('rfq1_null', $feedbackKeys) ? 1 : 0,
+                        'Feedback_None_Apply_Input'         => $survey->rider_feedback_input,
+                        'Confidence_Bike_General'           => $this->extractOptionInt('co', $survey->confidence_to_use_a_bike),
+                        'Confidence_Road'                   => $this->extractOptionInt('co', $survey->confidence_to_use_bike_on_road),
+                        'Confidence_Independent'            => $this->extractOptionInt('co', $survey->confidence_to_use_bike_independently),
+                        'Frequency_School'                  => $this->extractOptionInt('fo', $survey->frequency_usable_to_and_from_school),
+                        'Frequency_Leisure'                 => $this->extractOptionInt('fo', $survey->frequency_usable_leisure_and_social),
+                        'Frequency_Exercise'                => $this->extractOptionInt('fo', $survey->frequency_usable_exercise),
+                        'Encouragement_Use_Bike'            => $this->extractOptionInt('eo', $survey->encouragement_to_use_a_bike),
+                        'Encouragement_Use_Bike_On_Road'    => $this->extractOptionInt('eo', $survey->encouragement_to_use_bike_on_road),
+                        'Likely_To_Recommend'               => $survey->like_to_recommend,
+                        'Source_Created_At'                 => $survey->created_at,
+                        'Source_Updated_At'                 => $survey->updated_at,
+                    ])
+                );
+
+                if ($survey->updated_at && (!$state->highestTimestamp || $survey->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $survey->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Parent_Survey', $state->highestTimestamp, $count);
+                }
+            }
         );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Parent Survey Fact synced with integer-based Likert scores.";
     }
 
     public function syncFactHandsupSurvey($command = null)
     {
-        $useLegacySurvey = \Illuminate\Support\Facades\Schema::connection('mysql_src')
-            ->hasColumn('courses', 'survey_details');
+        $useLegacySurvey = $this->sourceHasColumn('courses', 'survey_details');
+        $watermark = $this->getWatermark('Fact_HandsUp_Survey');
 
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Fact_HandsUp_Survey')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        $highestTimestampSeen = $watermark;
-
-
-        if ($useLegacySurvey) {
-            $courseData = $this->source->table('courses')
-                ->whereNotNull('survey_details')
-                ->where('updated_at', '>', $watermark)
-                ->select('id', 'updated_at')
-                ->get();
-
-            $courseIds = $courseData->pluck('id');
-            $maxTimestamp = $courseData->max('updated_at');
-        } else {
-            $resultData = $this->source->table('course_survey_results')
-                ->where('updated_at', '>', $watermark)
-                ->select('course_id', 'updated_at')
-                ->get();
-
-            $courseIds = $resultData->pluck('course_id')->distinct();
-            $maxTimestamp = $resultData->max('updated_at');
-        }
-
-        if ($courseIds->isEmpty()) {
-            return "Hands-up Facts are up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar(count($courseIds)) : null;
-        if ($bar) $bar->start();
-
-        foreach ($courseIds as $sourceCourseId) {
-            $course = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $sourceCourseId)->first();
-            if (!$course) continue;
-
-            // Initialize the metrics array
-            $m = $this->initializeHandsupMetrics();
-
+        try {
             if ($useLegacySurvey) {
-                // Parse from JSON - data hasnt been normalised yet
-                $legacyData = $this->source->table('courses')->where('id', $sourceCourseId)->value('survey_details');
-                $m = $this->aggregateHandsupFromLegacyJson($legacyData, $m);
+                $courseData = $this->source->table('courses')
+                    ->whereNotNull('survey_details')
+                    ->where('updated_at', '>', $watermark)
+                    ->select('id', 'updated_at')
+                    ->get();
+                $courseIds = $courseData->pluck('id');
+                $maxTimestamp = $courseData->max('updated_at');
             } else {
-                // Aggregated from Normalized table
-                $results = $this->source->table('course_survey_results')->where('course_id', $sourceCourseId)->get();
-                $m = $this->aggregateHandsupFromSourceRows($results, $m);
+                $resultData = $this->source->table('course_survey_results')
+                    ->where('updated_at', '>', $watermark)
+                    ->select('course_id', 'updated_at')
+                    ->get();
+                $courseIds = $resultData->pluck('course_id')->distinct();
+                $maxTimestamp = $resultData->max('updated_at');
             }
 
-            // Upsert the single row for this Course
-            $this->dwh->table('Fact_HandsUp_Survey')->updateOrInsert(
-                ['Course_Key' => $course->Course_Key],
-                array_merge($m, [
-                    'Date_Key' => $course->Start_Date ? str_replace('-', '', substr($course->Start_Date, 0, 10)) : null,
-                    'Delivery_Key' => $course->Delivery_Key,
-                ])
+            return $this->executeSyncRunner(
+                'Fact_HandsUp_Survey',
+                $command,
+                $courseIds,
+                function ($sourceCourseId, $state) use ($useLegacySurvey) {
+                    $course = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $sourceCourseId)->first();
+                    if (!$course) return;
+
+                    $m = $this->initializeHandsupMetrics();
+
+                    if ($useLegacySurvey) {
+                        $legacyData = $this->source->table('courses')->where('id', $sourceCourseId)->value('survey_details');
+                        $m = $this->aggregateHandsupFromLegacyJson($legacyData, $m);
+                    } else {
+                        $results = $this->source->table('course_survey_results')->where('course_id', $sourceCourseId)->get();
+                        $m = $this->aggregateHandsupFromSourceRows($results, $m);
+                    }
+
+                    $this->dwh->table('Fact_HandsUp_Survey')->updateOrInsert(
+                        ['Course_Key' => $course->Course_Key],
+                        array_merge($m, [
+                            'Date_Key'     => $course->Start_Date ? str_replace('-', '', substr($course->Start_Date, 0, 10)) : null,
+                            'Delivery_Key' => $course->Delivery_Key,
+                        ])
+                    );
+                },
+                function ($state, $count) use ($maxTimestamp) {
+                    if ($maxTimestamp) {
+                        $this->updateWatermark('Fact_HandsUp_Survey', $maxTimestamp, $count);
+                    }
+                }
             );
 
-            if ($bar) $bar->advance();
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Fact_HandsUp_Survey', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
         }
-
-        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
-            $highestTimestampSeen = $maxTimestamp;
-        }
-
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Fact_HandsUp_Survey'],
-            ['Last_Synced_At' => $highestTimestampSeen]
-        );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Hands-up Facts synced (Mapped from pre-aggregated source).";
-    }
-
-    private function aggregateHandsupFromLegacyJson($jsonString, $m)
-    {
-        $questions = json_decode($jsonString ?? '[]', true);
-
-        foreach ($questions as $q) {
-            $qid = $q['question_id'] ?? null;
-            $options = $q['option'] ?? [];
-
-            foreach ($options as $opt) {
-                // Reuse the shared mapping logic
-                $m = $this->mapHandsupToBucket($qid, $opt['id'], $opt['total'], $m);
-            }
-        }
-        return $m;
-    }
-
-    private function aggregateHandsupFromSourceRows($results, $m)
-    {
-        foreach ($results as $res) {
-            // Reuse the shared mapping logic
-            $m = $this->mapHandsupToBucket($res->question_id, $res->option_id, $res->total, $m);
-        }
-        return $m;
-    }
-
-    /**
-     * Helper function to set the array up
-     */
-    private function initializeHandsupMetrics()
-    {
-        return [
-            'Exp_Enjoyed' => 0, 'Exp_Did_Not_Enjoy' => 0, 'Exp_Not_Sure' => 0, 'Exp_Absent' => 0,
-            'Base_Yes' => 0, 'Base_No' => 0, 'Base_Not_Sure' => 0,
-            'Safe_More' => 0, 'Safe_Less' => 0, 'Safe_No_Diff' => 0, 'Safe_Not_Sure' => 0,
-            'Conf_More' => 0, 'Conf_Less' => 0, 'Conf_No_Diff' => 0, 'Conf_Not_Sure' => 0,
-        ];
-    }
-
-    /**
-     * Core Mapping for Hands Up metrics
-     */
-    private function mapHandsupToBucket($qid, $oid, $val, $m)
-    {
-        $val = (int)$val;
-
-        // BUCKET 1: Experience (Enjoyed / Not Enjoyed)
-        // Questions: 1, 4, 8, 12, 14, 16
-        if (in_array($oid, [1, 15, 33, 51, 60, 69])) $m['Exp_Enjoyed'] += $val;
-        if (in_array($oid, [2, 16, 34, 52, 61, 70])) $m['Exp_Did_Not_Enjoy'] += $val;
-        if (in_array($oid, [3, 17, 35, 53, 62, 71])) $m['Exp_Not_Sure'] += $val;
-        if (in_array($oid, [4, 18, 36, 54, 63, 72])) $m['Exp_Absent'] += $val;
-
-        // BUCKET 2: Baseline (Cycled on roads before?)
-        // Questions: 5, 9
-        if (in_array($oid, [19, 37])) $m['Base_Yes'] += $val;
-        if (in_array($oid, [20, 38])) $m['Base_No'] += $val;
-        if (in_array($oid, [21, 39])) $m['Base_Not_Sure'] += $val;
-        // (Note: Absent IDs 22/40 are ignored here as they don't fit the Y/N/NotSure columns)
-
-        // BUCKET 3: Safety (How safe do you feel?)
-        // Questions: 2, 6, 10
-        if (in_array($oid, [5, 23, 41])) $m['Safe_More'] += $val;
-        if (in_array($oid, [6, 24, 42])) $m['Safe_Less'] += $val;
-        if (in_array($oid, [7, 25, 43])) $m['Safe_No_Diff'] += $val;
-        if (in_array($oid, [8, 26, 44])) $m['Safe_Not_Sure'] += $val;
-
-        // BUCKET 4: Confidence (How confident do you feel?)
-        // Questions: 3, 7, 11, 13, 15
-        if (in_array($oid, [10, 28, 46, 55, 64])) $m['Conf_More'] += $val;
-        if (in_array($oid, [11, 29, 47, 56, 65])) $m['Conf_Less'] += $val;
-        if (in_array($oid, [12, 30, 48, 57, 66])) $m['Conf_No_Diff'] += $val;
-        if (in_array($oid, [13, 31, 49, 58, 67])) $m['Conf_Not_Sure'] += $val;
-
-        return $m;
     }
 
     public function syncFactParentFollowUpSurveys($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Fact_Follow_Up_Survey');
 
-        $watermark = $this->dwh->table('Sync_Log')
-            ->where('Table_Name', 'Fact_Follow_Up_Survey')
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-
-        $highestTimestampSeen = $watermark;
-
-        $surveys = $this->source->table('parent_follow_up_surveys')
+        $query = $this->source->table('parent_follow_up_surveys')
             ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc')->get();
+            ->orderBy('updated_at', 'asc');
 
-        $maxTimestamp = $surveys->max('updated_at');
+        return $this->executeSyncRunner(
+            'Fact_Follow_Up_Survey',
+            $command,
+            $query,
+            function ($survey, $state) use ($sourceSystemKey) {
+                $data = json_decode($survey->parent_follow_up_survey, true) ?? [];
+                $label = strtolower($survey->course_label);
 
-        $total = $surveys->count();
-        if ($total === 0) return 'No parent follow up surveys found.';
+                $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
+                $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
+                $deliveryKey = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->value('Delivery_Key');
 
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+                $mapped = $this->mapSurveyByCourse($label, $data);
 
-        foreach ($surveys as $survey) {
+                $this->dwh->table('Fact_Follow_Up_Survey')->updateOrInsert(
+                    ['Source_Survey_Id' => $survey->id, 'Source_System_Key' => $sourceSystemKey],
+                    array_merge($mapped, [
+                        'Delivery_Key'      => $deliveryKey,
+                        'Rider_Key'         => $riderKey,
+                        'Course_Key'        => $courseKey,
+                        'Course_Label_Raw'  => $survey->course_label,
+                        'Invitation_Month'  => $survey->invitation_month,
+                        'Source_Created_At' => $survey->created_at,
+                        'updated_at'        => now(),
+                    ])
+                );
 
-            $data = json_decode($survey->parent_follow_up_survey, true) ?? [];
-            $label = strtolower($survey->course_label);
-
-            $riderKey = $this->dwh->table('Dim_Rider')->where('Source_Rider_Id', $survey->rider_id)->value('Rider_Key');
-            $courseKey = $this->dwh->table('Dim_Course')->where('Source_Course_Id', $survey->course_id)->value('Course_Key');
-            $deliveryKey = $this->dwh->table('Dim_Delivery_Header')->where('Source_Delivery_Id', $survey->delivery_id)->value('Delivery_Key');
-
-            // Mapping logic based on array position in your examples
-            $mapped = $this->mapSurveyByCourse($label, $data);
-
-            $this->dwh->table('Fact_Follow_Up_Survey')->updateOrInsert(
-                ['Source_Survey_Id' => $survey->id, 'Source_System_Key' => $sourceSystemKey],
-                array_merge($mapped, [
-                    'Delivery_Key' => $deliveryKey,
-                    'Rider_Key' => $riderKey,
-                    'Course_Key' => $courseKey,
-                    'Course_Label_Raw' => $survey->course_label,
-                    'Invitation_Month' => $survey->invitation_month,
-                    'Source_Created_At' => $survey->created_at,
-                    'updated_at' => now()
-                ])
-            );
-
-            if ($bar) $bar->advance();
-        }
-
-        if ($maxTimestamp && $maxTimestamp > $highestTimestampSeen) {
-            $highestTimestampSeen = $maxTimestamp;
-        }
-
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => 'Fact_Follow_Up_Survey'],
-            ['Last_Synced_At' => $highestTimestampSeen]
-        );
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Parent Follow Up survey Facts synced.";
-
-    }
-
-    private function mapSurveyByCourse($label, $data)
-    {
-        $mapped = [
-            'q1a_freq_school' => null,
-            'q1b_freq_leisure' => null,
-            'q1c_freq_exercise' => null,
-            'q2a_conf_use_cycle' => null,
-            'q2b_conf_cycle_roads' => null,
-            'q3a_enc_use_cycle' => null,
-            'q3b_enc_cycle_roads' => null,
-            'q4_safety_roads' => null,
-            'q5_child_desire' => null,
-            'q6_encouragement_factors' => null,
-            'q7_conf_change' => null,
-            'q8_physical_activity' => null,
-        ];
-
-        foreach ($data as $value) {
-            // Handle Multi-select (Arrays) - Usually q5 or q6 depending on level
-            if (is_array($value)) {
-                $mapped['q6_encouragement_factors'] = json_encode($value);
-                continue;
-            }
-
-            // Logic-based mapping by searching for question keys in the string
-            // We extract the "Option Code" (e.g., o1, o2) to store in the Fact table
-
-            // Frequencies (Universal q1)
-            if (str_contains($value, '_q1a_')) $mapped['q1a_freq_school'] = $this->extractOption($value);
-            if (str_contains($value, '_q1b_')) $mapped['q1b_freq_leisure'] = $this->extractOption($value);
-            if (str_contains($value, '_q1c_')) $mapped['q1c_freq_exercise'] = $this->extractOption($value);
-
-            // Confidence & Likelihood (Keys shift by Level)
-            if (str_contains($value, '_q2a_')) $mapped['q2a_conf_use_cycle'] = $this->extractOption($value);
-            if (str_contains($value, '_q2b_')) $mapped['q2b_conf_cycle_roads'] = $this->extractOption($value);
-            if (str_contains($value, '_q3a_')) $mapped['q3a_enc_use_cycle'] = $this->extractOption($value);
-            if (str_contains($value, '_q3b_')) $mapped['q3b_enc_cycle_roads'] = $this->extractOption($value);
-
-            // Safety (Level 2/3 q4)
-            if (str_contains($value, '_q4_') && !str_contains($value, '_q4a_')) {
-                $mapped['q4_safety_roads'] = $this->extractOption($value);
-            }
-
-            // Desire to use cycle (q4 for Level 1, q5 for Level 2/3)
-            if (str_contains($value, '_q4_o') || str_contains($value, '_q4a_o') || str_contains($value, '_q5_o')) {
-                // Note: We only map this if it's not the safety question
-                if (!str_contains($value, 'level_2_q4') && !str_contains($value, 'level_3_q4')) {
-                    $mapped['q5_child_desire'] = $this->extractOption($value);
+                if ($survey->updated_at && (!$state->highestTimestamp || $survey->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $survey->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Follow_Up_Survey', $state->highestTimestamp, $count);
                 }
             }
-
-            // Change in Confidence (Level 2/3 q7)
-            if (str_contains($value, '_q7_')) $mapped['q7_conf_change'] = $this->extractOption($value);
-
-            // Physical Activity (q6 for Balance/L1, q8 for L2/L3)
-            if (str_contains($value, '_q6_o') || str_contains($value, '_q6a_o') || str_contains($value, '_q8_o')) {
-                $mapped['q8_physical_activity'] = $this->extractOption($value);
-            }
-        }
-
-        return $mapped;
-    }
-
-    private function extractOption($string)
-    {
-        $parts = explode('_', $string);
-        return end($parts);
-    }
-
-    /**
-     * Extracts the integer from strings like "cq1_co1", "cq3_co6" or "eq3_eo6"
-     * Returns null if no valid code is found.
-     */
-    private function extractOptionInt($prefix, $code)
-    {
-        if (empty($code)) return null;
-
-        // Pattern looks for the "prefix" followed by digits
-        $pattern = '/' . preg_quote($prefix, '/') . '(\d+)/';
-
-        if (preg_match($pattern, $code, $matches)) {
-            return (int)$matches[1];
-        }
-
-        return null;
-    }
-
-    /**
-     * Optional Helper to turn status IDs into readable strings for the DWH
-     */
-    private function mapDeliveryStatus($statusId)
-    {
-        return match ($statusId) {
-            0 => 'Delivery Created',
-            1 => 'In Progress',
-            2 => 'Completed',
-            3 => 'Cancelled',
-            default => 'Draft'
-        };
+        );
     }
 
     public function syncFactGrantRecipientRenewals($command = null)
     {
-        $sourceSystemKey =$this->getSourceSystemKey();
-        if ($command)$command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Grant Recipient Renewals Sync...");
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Fact_Grant_Recipient_Renewal');
 
-        // Resolve Watermark using the generic sync_log tracker
-        $watermark =$this->getWatermark('Fact_Grant_Recipient_Renewal');
-
-        // Query Source delta ordering by updated_at to ensure sequential watermark tracking
-        $query =$this->source->table('grant_recipient_renewals')
+        $query = $this->source->table('grant_recipient_renewals')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total =$query->count();
-        if ($total === 0) {
-            if ($command)$command->info("[" . now()->format('Y-m-d H:i:s') . "] Grant Recipient Renewals are up to date.");
-            return;
-        }
-
-        $bar =$command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar)$bar->start();
-
-        $highestTimestampSeen =$watermark;
-
-        // Process Chunk Loop
-        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-            foreach ($renewals as$row) {
-
-                // Resolve DWH Keys from parent dimension looking up current flag
-                $recipientKey =$this->dwh->table('Dim_Grant_Recipient')
+        return $this->executeSyncRunner(
+            'Fact_Grant_Recipient_Renewal',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $recipientKey = $this->dwh->table('Dim_Grant_Recipient')
                     ->where('Source_Recipient_Id', $row->grant_recipient_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Recipient_Key');
 
                 if (!$recipientKey) {
-                    if ($bar)$bar->advance();
-                    continue;
+                    return;
                 }
 
                 $this->dwh->table('Fact_Grant_Recipient_Renewal')->updateOrInsert(
                     [
                         'Source_Renewal_Id' => $row->id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
                         'Recipient_Key'                   => $recipientKey,
@@ -4175,7 +2823,6 @@ class DataWarehouseSyncService
                         'Flag_Overdue_Warning'            => $row->flag_overdue_warning,
                         'Q_Organisation_Category'         => $row->q_organisation_category,
                         'Q_Confirm_Details'               => $row->q_confirm_details,
-
                         'Q_Contracted_Deliveries'         => (empty($row->q_contracted_deliveries) || !json_validate($row->q_contracted_deliveries)) ? '[]' : $row->q_contracted_deliveries,
                         'Q_Confirm_Guidelines_Commitment' => $row->q_confirm_guidelines_commitment,
                         'Q_Confirm_Risk_Assessment'       => $row->q_confirm_risk_assessment,
@@ -4198,160 +2845,123 @@ class DataWarehouseSyncService
                         'Associated_TPs'                  => (empty($row->associated_tps) || !json_validate($row->associated_tps)) ? '[]' : $row->associated_tps,
                         'Q_Tfl_Funded'                    => $row->q_tfl_funded,
                         'Contact_Details_Confirmed'       => (empty($row->contact_details_confirmed) || !json_validate($row->contact_details_confirmed)) ? '[]' : $row->contact_details_confirmed,
-
                         'Source_Created_At'               => $row->created_at,
                         'Source_Updated_At'               => $row->updated_at,
-                        'updated_at'                      => now()
+                        'updated_at'                      => now(),
                     ]
                 );
 
-                if ($row->updated_at >$highestTimestampSeen) {
-                    $highestTimestampSeen =$row->updated_at;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                if ($bar)$bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Grant_Recipient_Renewal', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        // Record watermark state to sync_log
-        $this->updateWatermark('Fact_Grant_Recipient_Renewal',$highestTimestampSeen);
-
-        if ($bar) {
-            $bar->finish();$command->newLine();
-        }
-        return "Fact_Grant_Recipient_Renewal synced.";
+        );
     }
 
     public function syncFactInstructorRenewals($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Instructor Renewals Sync...");
-
         $watermark = $this->getWatermark('Fact_Instructor_Renewal');
 
         $query = $this->source->table('instructor_renewals')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Instructor Renewals are up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestampSeen = $watermark;
-
-        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-            foreach ($renewals as $row) {
-
+        return $this->executeSyncRunner(
+            'Fact_Instructor_Renewal',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
                 $instructorKey = $this->dwh->table('Dim_Instructor')
                     ->where('Source_Instructor_Id', $row->instructor_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Instructor_Key');
 
                 if (!$instructorKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $this->dwh->table('Fact_Instructor_Renewal')->updateOrInsert(
                     [
                         'Source_Renewal_Id' => $row->id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
-                        'Instructor_Key'                 => $instructorKey,
-                        'Status'                         => $row->status,
-                        'Renewal_Year'                   => $row->renewal_year,
-                        'Date_Due'                       => $row->date_due,
-                        'Date_Completed'                 => $row->date_completed,
-                        'Date_Approved'                  => $row->date_approved,
-                        'Flag_Reminder_Warning'          => $row->flag_reminder_warning,
-                        'Flag_Overdue_Warning'           => $row->flag_overdue_warning,
-                        'Q_Confirm_Registration_Details' => $row->q_confirm_registration_details,
-                        'Q_Confirm_Status'               => $row->q_confirm_status,
-                        'Q_Confirm_Delivering_Bikeability' => $row->q_confirm_delivering_bikeability,
-                        'Q_Confirm_Observed_By_IQA_Lead' => $row->q_confirm_observed_by_iqa_lead,
-                        'Q_Confirm_Completed_CPD'        => $row->q_confirm_completed_cpd,
-                        'Q_Confirm_Code_of_Practice'     => $row->q_confirm_code_of_practice,
-                        'Q_Confirm_Delivering_Other'     => $row->q_confirm_delivering_other,
-                        'Q_Confirm_Contact_Prefs'        => $row->q_confirm_contact_prefs,
-                        'Q_Confirm_Fee'                  => $row->q_confirm_fee,
-
-                        'Q_Delivery_Examples'            => (empty($row->q_delivery_examples) || !json_validate($row->q_delivery_examples)) ? '[]' : $row->q_delivery_examples,
-                        'Q_Delivery_Amount_Level_1'      => $row->q_delivery_amount_level_1,
-                        'Q_Delivery_Amount_Level_1_2'    => $row->q_delivery_amount_level_1_2,
-                        'Q_Delivery_Amount_Level_2'      => $row->q_delivery_amount_level_2,
-                        'Q_Delivery_Amount_Level_3'      => $row->q_delivery_amount_level_3,
-                        'Q_Delivery_Amount_Plus'         => $row->q_delivery_amount_plus,
-                        'Q_Professional_Development'     => (empty($row->q_professional_development) || !json_validate($row->q_professional_development)) ? '[]' : $row->q_professional_development,
-                        'Q_Strengths'                    => (empty($row->q_strengths) || !json_validate($row->q_strengths)) ? '[]' : $row->q_strengths,
-
-                        'Source_Created_At'              => $row->created_at,
-                        'Source_Updated_At'              => $row->updated_at,
-                        'updated_at'                     => now()
+                        'Instructor_Key'                  => $instructorKey,
+                        'Status'                          => $row->status,
+                        'Renewal_Year'                    => $row->renewal_year,
+                        'Date_Due'                        => $row->date_due,
+                        'Date_Completed'                  => $row->date_completed,
+                        'Date_Approved'                   => $row->date_approved,
+                        'Flag_Reminder_Warning'           => $row->flag_reminder_warning,
+                        'Flag_Overdue_Warning'            => $row->flag_overdue_warning,
+                        'Q_Confirm_Registration_Details'  => $row->q_confirm_registration_details,
+                        'Q_Confirm_Status'                => $row->q_confirm_status,
+                        'Q_Confirm_Delivering_Bikeability'=> $row->q_confirm_delivering_bikeability,
+                        'Q_Confirm_Observed_By_IQA_Lead'  => $row->q_confirm_observed_by_iqa_lead,
+                        'Q_Confirm_Completed_CPD'         => $row->q_confirm_completed_cpd,
+                        'Q_Confirm_Code_of_Practice'      => $row->q_confirm_code_of_practice,
+                        'Q_Confirm_Delivering_Other'      => $row->q_confirm_delivering_other,
+                        'Q_Confirm_Contact_Prefs'         => $row->q_confirm_contact_prefs,
+                        'Q_Confirm_Fee'                   => $row->q_confirm_fee,
+                        'Q_Delivery_Examples'             => (empty($row->q_delivery_examples) || !json_validate($row->q_delivery_examples)) ? '[]' : $row->q_delivery_examples,
+                        'Q_Delivery_Amount_Level_1'       => $row->q_delivery_amount_level_1,
+                        'Q_Delivery_Amount_Level_1_2'     => $row->q_delivery_amount_level_1_2,
+                        'Q_Delivery_Amount_Level_2'       => $row->q_delivery_amount_level_2,
+                        'Q_Delivery_Amount_Level_3'       => $row->q_delivery_amount_level_3,
+                        'Q_Delivery_Amount_Plus'          => $row->q_delivery_amount_plus,
+                        'Q_Professional_Development'      => (empty($row->q_professional_development) || !json_validate($row->q_professional_development)) ? '[]' : $row->q_professional_development,
+                        'Q_Strengths'                     => (empty($row->q_strengths) || !json_validate($row->q_strengths)) ? '[]' : $row->q_strengths,
+                        'Source_Created_At'               => $row->created_at,
+                        'Source_Updated_At'               => $row->updated_at,
+                        'updated_at'                      => now(),
                     ]
                 );
 
-                if ($row->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $row->updated_at;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Instructor_Renewal', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Instructor_Renewal', $highestTimestampSeen);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Instructor_Renewal synced.";
+        );
     }
 
     public function syncFactTrainingProviderRenewals($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Training Provider Renewals Sync...");
-
         $watermark = $this->getWatermark('Fact_Training_Provider_Renewal');
 
         $query = $this->source->table('training_provider_renewals')
             ->where('updated_at', '>', $watermark)
             ->orderBy('updated_at', 'asc');
 
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Training Provider Renewals are up to date.");
-            return;
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestampSeen = $watermark;
-
-        $query->chunk(500, function ($renewals) use ($sourceSystemKey, $bar, &$highestTimestampSeen) {
-            foreach ($renewals as $row) {
-
+        return $this->executeSyncRunner(
+            'Fact_Training_Provider_Renewal',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
                 $providerKey = $this->dwh->table('Dim_Training_Provider')
                     ->where('Source_Provider_Id', $row->training_provider_id)
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Provider_Key');
 
                 if (!$providerKey) {
-                    if ($bar) $bar->advance();
-                    continue;
+                    return;
                 }
 
                 $this->dwh->table('Fact_Training_Provider_Renewal')->updateOrInsert(
                     [
                         'Source_Renewal_Id' => $row->id,
-                        'Source_System_Key' => $sourceSystemKey
+                        'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
                         'Provider_Key'                        => $providerKey,
@@ -4365,7 +2975,6 @@ class DataWarehouseSyncService
                         'Flag_Overdue_Warning'                => $row->flag_overdue_warning,
                         'Q_Organisation_Category'             => $row->q_organisation_category,
                         'Q_Confirm_Details'                   => $row->q_confirm_details,
-
                         'Q_Contracted_Deliveries'             => (empty($row->q_contracted_deliveries) || !json_validate($row->q_contracted_deliveries)) ? '[]' : $row->q_contracted_deliveries,
                         'Q_Delivered_Places'                  => (empty($row->q_delivered_places) || !json_validate($row->q_delivered_places)) ? '[]' : $row->q_delivered_places,
                         'Q_Instructor_Types_Breakdown'        => (empty($row->q_instructor_types_breakdown) || !json_validate($row->q_instructor_types_breakdown)) ? '[]' : $row->q_instructor_types_breakdown,
@@ -4430,162 +3039,346 @@ class DataWarehouseSyncService
                         'Q_Adult_Training_Only'               => $row->q_adult_training_only,
                         'Q_Expected_Delivery'                 => (empty($row->q_expected_delivery) || !json_validate($row->q_expected_delivery)) ? '[]' : $row->q_expected_delivery,
                         'Q_Expected_Delivery_Empty'           => $row->q_expected_delivery_empty,
-
                         'Source_Created_At'                   => $row->created_at,
                         'Source_Updated_At'                   => $row->updated_at,
-                        'updated_at'                          => now()
+                        'updated_at'                          => now(),
                     ]
                 );
 
-                if ($row->updated_at > $highestTimestampSeen) {
-                    $highestTimestampSeen = $row->updated_at;
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
                 }
-
-                if ($bar) $bar->advance();
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Training_Provider_Renewal', $state->highestTimestamp, $count);
+                }
             }
-        });
-
-        $this->updateWatermark('Fact_Training_Provider_Renewal', $highestTimestampSeen);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-        return "Fact_Training_Provider_Renewal synced.";
+        );
     }
 
-    /**
-     * Sync Fact_Teacher_Trainer_Delivery, Modules, and Granular Metrics
-     */
     public function syncFactTeacherTrainerDeliveries($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Starting Facts - Teacher Trainer Deliveries Sync...");
-
-        $watermark = $this->getWatermark('Fact_Teacher_Trainer_Delivery') ?? '1900-01-01 00:00:00';
-
+        $watermark = $this->getWatermark('Fact_Teacher_Trainer_Delivery');
         $hasJsonColumn = $this->sourceHasColumn('teacher_trainer_deliveries', 'delivery_details');
 
         $query = $this->source->table('teacher_trainer_deliveries')
-            ->where('updated_at', '>', $watermark);
-
-        if ($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at')) {
-            $query->whereNull('deleted_at');
-        }
-
-        $total = $query->count();
-        if ($total === 0) {
-            if ($command) $command->info("Fact_Teacher_Trainer_Delivery is up to date.");
-            return "Fact_Teacher_Trainer_Delivery up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $highestTimestamp = $watermark;
-
-        // Use chunkById on primary key 'id' to prevent pagination drift
-        $this->source->table('teacher_trainer_deliveries')
             ->where('updated_at', '>', $watermark)
-            ->when($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at'), function ($q) {
-                $q->whereNull('deleted_at');
-            })
-            ->orderBy('id', 'asc')
-            ->chunkById(250, function ($rows) use ($sourceSystemKey, $hasJsonColumn, $bar, &$highestTimestamp) {
-                foreach ($rows as $row) {
-                    // 1. Resolve Dimension Keys
-                    $schoolKey = null;
-                    if (!empty($row->school_urn)) {
-                        $schoolKey = $this->dwh->table('Dim_School')
-                            ->where('School_Urn', $row->school_urn)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('School_Key');
-                    }
+            ->when($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
+            ->orderBy('id', 'asc');
 
-                    $trainerKey = null;
-                    if (!empty($row->school_urn)) {
-                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
-                            ->where('Main_School_Urn', $row->school_urn)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('Teacher_Trainer_Key');
-                    }
-
-                    // 2. Sync Header Fact
-                    $this->dwh->table('Fact_Teacher_Trainer_Delivery')->updateOrInsert(
-                        [
-                            'Source_TT_Delivery_Id' => $row->id,
-                            'Source_System_Key'     => $sourceSystemKey,
-                        ],
-                        [
-                            'School_Key'          => $schoolKey,
-                            'Teacher_Trainer_Key' => $trainerKey,
-                            'School_Urn'          => $row->school_urn,
-                            'Date_Delivery_Start' => $row->date_delivery_start,
-                            'Date_Delivery_End'   => $row->date_delivery_end,
-                            'Completion_Date'     => $row->completion_date,
-                            'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? 0),
-                            'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? 0),
-                            'Has_Survey'          => (bool) ($row->has_survey ?? 0),
-                            'Notes'               => $row->notes,
-                            'Updated_At'          => now(),
-                        ]
-                    );
-
-                    $ttDeliveryKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery')
-                        ->where('Source_TT_Delivery_Id', $row->id)
+        return $this->executeSyncRunner(
+            'Fact_Teacher_Trainer_Delivery',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey, $hasJsonColumn) {
+                $schoolKey = null;
+                if (!empty($row->school_urn)) {
+                    $schoolKey = $this->dwh->table('Dim_School')
+                        ->where('School_Urn', $row->school_urn)
                         ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('TT_Delivery_Key');
+                        ->value('School_Key');
+                }
 
-                    if (!$ttDeliveryKey) {
-                        if ($bar) $bar->advance();
-                        continue;
-                    }
+                $trainerKey = null;
+                if (!empty($row->school_urn)) {
+                    $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                        ->where('Main_School_Urn', $row->school_urn)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Teacher_Trainer_Key');
+                }
 
-                    // 3. Sync Modules & Metrics (Legacy JSON vs Relational Tables)
+                $this->dwh->table('Fact_Teacher_Trainer_Delivery')->updateOrInsert(
+                    [
+                        'Source_TT_Delivery_Id' => $row->id,
+                        'Source_System_Key'     => $sourceSystemKey,
+                    ],
+                    [
+                        'School_Key'          => $schoolKey,
+                        'Teacher_Trainer_Key' => $trainerKey,
+                        'School_Urn'          => $row->school_urn,
+                        'Date_Delivery_Start' => $row->date_delivery_start,
+                        'Date_Delivery_End'   => $row->date_delivery_end,
+                        'Completion_Date'     => $row->completion_date,
+                        'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? 0),
+                        'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? 0),
+                        'Has_Survey'          => (bool) ($row->has_survey ?? 0),
+                        'Notes'               => $row->notes,
+                        'Updated_At'          => now(),
+                    ]
+                );
+
+                $ttDeliveryKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery')
+                    ->where('Source_TT_Delivery_Id', $row->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('TT_Delivery_Key');
+
+                if ($ttDeliveryKey) {
                     if ($hasJsonColumn && !empty($row->delivery_details)) {
                         $this->syncModulesAndMetricsFromJson($row, $ttDeliveryKey, $sourceSystemKey);
                     } else {
                         $this->syncModulesAndMetricsFromRelational($row->id, $ttDeliveryKey, $sourceSystemKey);
                     }
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
                 }
-            });
 
-        $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Teacher_Trainer_Delivery, Modules, and Metrics synced successfully.";
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count);
+                }
+            }
+        );
     }
 
-    /**
-     * Path A: Parse Legacy delivery_details JSON column into Fact_Teacher_Trainer_Delivery_Module
-     * and generate synthetic metric rows into Fact_Teacher_Trainer_Delivery_Metric.
-     */
+    public function syncGetCyclingRiderCourses($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Fact_Get_Cycling_Rider_Course');
+
+        $query = $this->source->table('get_cycling_join_riders_courses')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc');
+
+        return $this->executeSyncRunner(
+            'Fact_Get_Cycling_Rider_Course',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $rider = $this->dwh->table('Dim_Get_Cycling_Rider')
+                    ->where('Source_Rider_Id', $row->rider_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->first(['GC_Rider_Key', 'School_Key']);
+
+                $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
+                    ->where('Source_Course_Id', $row->course_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('GC_Course_Key');
+
+                $trainerKey = null;
+                if (!empty($row->teacher_trainer_id)) {
+                    $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
+                        ->where('Source_Teacher_Trainer_Id', $row->teacher_trainer_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Teacher_Trainer_Key');
+                }
+
+                if ($rider && $courseKey) {
+                    $this->dwh->table('Fact_Get_Cycling_Rider_Course')->updateOrInsert(
+                        [
+                            'Source_Join_Id'    => $row->id,
+                            'Source_System_Key' => $sourceSystemKey,
+                        ],
+                        [
+                            'GC_Rider_Key'              => $rider->GC_Rider_Key,
+                            'GC_Course_Key'             => $courseKey,
+                            'Teacher_Trainer_Key'       => $trainerKey,
+                            'School_Key'                => $rider->School_Key,
+                            'Source_Rider_Id'           => $row->rider_id,
+                            'Source_Course_Id'          => $row->course_id,
+                            'Source_Teacher_Trainer_Id' => $row->teacher_trainer_id,
+                            'Does_Not_Wish_To_Continue' => (bool) ($row->does_not_wish_to_continue ?? 0),
+                            'Overall_Progress'          => $row->overall_progress,
+                            'Has_Survey_Completed'      => (bool) ($row->has_survey_completed ?? 0),
+                            'Source_Updated_At'         => $row->updated_at,
+                            'Updated_At'                => now(),
+                        ]
+                    );
+
+                    $rcKey = $this->dwh->table('Fact_Get_Cycling_Rider_Course')
+                        ->where('Source_Join_Id', $row->id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('GC_Rider_Course_Key');
+
+                    $activities = json_decode($row->activities, true) ?? [];
+                    if (is_array($activities) && $rcKey) {
+                        foreach ($activities as $act) {
+                            if (isset($act['id'])) {
+                                $this->dwh->table('Fact_Get_Cycling_Rider_Course_Activity')->updateOrInsert(
+                                    [
+                                        'GC_Rider_Course_Key' => $rcKey,
+                                        'Activity_Id'         => (int) $act['id'],
+                                    ],
+                                    [
+                                        'Source_Join_Id'    => $row->id,
+                                        'Source_System_Key' => $sourceSystemKey,
+                                        'Activity_Score'    => (int) ($act['value'] ?? 0),
+                                        'Updated_At'        => now(),
+                                    ]
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Get_Cycling_Rider_Course', $state->highestTimestamp, $count);
+                }
+            }
+        );
+    }
+
+    public function syncGetCyclingSurveys($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Fact_Get_Cycling_Survey_Response');
+
+        $query = $this->source->table('get_cycling_join_surveys_courses')
+            ->where('updated_at', '>', $watermark)
+            ->orderBy('id', 'asc');
+
+        return $this->executeSyncRunner(
+            'Fact_Get_Cycling_Survey_Response',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $schoolKey = null;
+                if (!empty($row->school_urn)) {
+                    $schoolKey = $this->dwh->table('Dim_School')
+                        ->where('School_Urn', (string) $row->school_urn)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('School_Key');
+                }
+
+                $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
+                    ->where('Source_Course_Id', $row->course_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('GC_Course_Key');
+
+                $surveyData = json_decode($row->survey, true) ?? [];
+                if (is_array($surveyData)) {
+                    foreach ($surveyData as $q) {
+                        $qId = (string) ($q['q_id'] ?? '');
+                        foreach ($q['options'] ?? [] as $opt) {
+                            $optId = (string) ($opt['id'] ?? '');
+                            $totalCount = (int) ($opt['total'] ?? 0);
+
+                            $this->dwh->table('Fact_Get_Cycling_Survey_Response')->updateOrInsert(
+                                [
+                                    'Source_Survey_Join_Id' => $row->id,
+                                    'Question_Id'           => $qId,
+                                    'Option_Id'             => $optId,
+                                    'Source_System_Key'     => $sourceSystemKey,
+                                ],
+                                [
+                                    'School_Key'       => $schoolKey,
+                                    'GC_Course_Key'    => $courseKey,
+                                    'School_Urn'       => (string) $row->school_urn,
+                                    'Source_Course_Id' => $row->course_id,
+                                    'Response_Count'   => $totalCount,
+                                    'Updated_At'       => now(),
+                                ]
+                            );
+                        }
+                    }
+                }
+
+                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
+                    $state->highestTimestamp = $row->updated_at;
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Get_Cycling_Survey_Response', $state->highestTimestamp, $count);
+                }
+            }
+        );
+    }
+
+    // =========================================================================
+    // INTERNAL HELPERS & METRIC PARSERS
+    // =========================================================================
+
+    protected function createNewVersion($table, $idCol, $idVal, $data, $sysKey, $startDate)
+    {
+        $data[$idCol] = $idVal;
+        $data['Source_System_Key'] = $sysKey;
+        $data['Valid_From_Date'] = $startDate;
+        $data['Valid_To_Date'] = '9999-12-31';
+        $data['Is_Current'] = 1;
+
+        $this->dwh->table($table)->insert($data);
+    }
+
+    protected function hasChanged($existing, $new)
+    {
+        foreach ($new as $key => $value) {
+            if ($existing->$key != $value) return true;
+        }
+        return false;
+    }
+
+    protected function getSourceSystemKey()
+    {
+        return $this->dwh->table('Dim_Source_System')->where('System_Name', 'link')->value('Source_System_Key');
+    }
+
+    private function getWatermark(string $tableName): string
+    {
+        return $this->dwh->table('Sync_Log')
+            ->where('Table_Name', $tableName)
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+    }
+
+    private function updateWatermark(string $tableName, string $highestTimestampSeen, int $recordsProcessed = 0): void
+    {
+        $this->dwh->table('Sync_Log')->updateOrInsert(
+            ['Table_Name' => $tableName],
+            [
+                'Last_Synced_At'    => $highestTimestampSeen,
+                'Records_Processed' => $recordsProcessed,
+            ]
+        );
+    }
+
+    private function resolveGrantKey($sourceGrantId, int $sourceSystemKey): ?int
+    {
+        if (!$sourceGrantId) return null;
+
+        return $this->dwh->table('Dim_Grant')
+            ->where('Source_Grant_Id', $sourceGrantId)
+            ->where('Source_System_Key', $sourceSystemKey)
+            ->value('Grant_Key');
+    }
+
+    private function sourceHasColumn(string $table, string $column): bool
+    {
+        static $schemaCache = [];
+        $cacheKey = "{$table}.{$column}";
+
+        if (isset($schemaCache[$cacheKey])) {
+            return $schemaCache[$cacheKey];
+        }
+
+        try {
+            $exists = Schema::connection('mysql_src')->hasColumn($table, $column);
+            $schemaCache[$cacheKey] = $exists;
+            return $exists;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
     protected function syncModulesAndMetricsFromJson($row, int $ttDeliveryKey, string $sourceSystemKey): void
     {
         $modules = json_decode($row->delivery_details, true) ?? [];
-        if (!is_array($modules)) {
-            return;
-        }
+        if (!is_array($modules)) return;
 
         foreach ($modules as $moduleIndex => $moduleEntry) {
             $moduleId    = $moduleEntry['module']['id'] ?? 'unknown';
             $moduleLabel = $moduleEntry['module']['label'] ?? null;
             $attended    = $moduleEntry['delivery']['attended'] ?? [];
 
-            // Creating a deterministic synthetic module ID combining delivery ID and index
             $syntheticModuleId = (int) ($row->id . sprintf('%03d', $moduleIndex));
 
-            // 1. Sync Module
             $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')->updateOrInsert(
                 [
                     'Source_TT_Delivery_Id' => $row->id,
@@ -4605,40 +3398,21 @@ class DataWarehouseSyncService
                 ->where('Module_Id', $moduleId)
                 ->value('TT_Delivery_Module_Key');
 
-            if (!$ttDeliveryModuleKey) {
-                continue;
-            }
+            if (!$ttDeliveryModuleKey) continue;
 
-            // 2. Unpack JSON sections into granular metric records
             $metricsList = [];
-
-            // Total
             if (isset($attended['total'])) {
                 $metricsList[] = ['Category' => 'attended', 'Sub_Category' => 'total', 'Metric_Value' => (int) $attended['total']];
             }
-
-            // Gender
             foreach ($attended['gender'] ?? [] as $sub => $val) {
-                if ($val !== null) {
-                    $metricsList[] = ['Category' => 'gender', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
-                }
+                if ($val !== null) $metricsList[] = ['Category' => 'gender', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
             }
-
-            // Year Group
             foreach ($attended['yeargroup'] ?? [] as $sub => $val) {
-                if ($val !== null) {
-                    $metricsList[] = ['Category' => 'yeargroup', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
-                }
+                if ($val !== null) $metricsList[] = ['Category' => 'yeargroup', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
             }
-
-            // Ethnicity
             foreach ($attended['ethnicity'] ?? [] as $sub => $val) {
-                if ($val !== null) {
-                    $metricsList[] = ['Category' => 'ethnicity', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
-                }
+                if ($val !== null) $metricsList[] = ['Category' => 'ethnicity', 'Sub_Category' => (string) $sub, 'Metric_Value' => (int) $val];
             }
-
-            // SEND & FSM
             if (isset($attended['send'])) {
                 $metricsList[] = ['Category' => 'send', 'Sub_Category' => 'send', 'Metric_Value' => (int) $attended['send']];
             }
@@ -4652,9 +3426,7 @@ class DataWarehouseSyncService
                 $metricsList[] = ['Category' => 'free_school_meals', 'Sub_Category' => 'free_school_meals_na', 'Metric_Value' => (int) $attended['free_school_meals_na']];
             }
 
-            // Insert/Update Metrics
             foreach ($metricsList as $idx => $m) {
-                // Generate deterministic synthetic ID from delivery, module, and sequence
                 $syntheticMetricId = (int) ($row->id . sprintf('%02d', crc32($moduleId) % 100) . sprintf('%02d', $idx));
 
                 $this->dwh->table('Fact_Teacher_Trainer_Delivery_Metric')->updateOrInsert(
@@ -4677,9 +3449,6 @@ class DataWarehouseSyncService
         }
     }
 
-    /**
-     * Path B: Sync from normalized relational tables (teacher_trainer_delivery_modules & teacher_trainer_delivery_metrics)
-     */
     protected function syncModulesAndMetricsFromRelational(int $sourceDeliveryId, int $ttDeliveryKey, string $sourceSystemKey): void
     {
         if (!$this->source->getSchemaBuilder()->hasTable('teacher_trainer_delivery_modules')) {
@@ -4691,7 +3460,6 @@ class DataWarehouseSyncService
             ->get();
 
         foreach ($modules as $module) {
-            // 1. Sync Module using Source_TT_Module_Id as the unique key
             $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')->updateOrInsert(
                 [
                     'Source_TT_Module_Id' => $module->id,
@@ -4706,7 +3474,6 @@ class DataWarehouseSyncService
                 ]
             );
 
-            // Look up by module id directly
             $ttDeliveryModuleKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery_Module')
                 ->where('Source_TT_Module_Id', $module->id)
                 ->where('Source_System_Key', $sourceSystemKey)
@@ -4716,7 +3483,6 @@ class DataWarehouseSyncService
                 continue;
             }
 
-            // 2. Sync Granular Metrics
             $metrics = $this->source->table('teacher_trainer_delivery_metrics')
                 ->where('tt_module_id', $module->id)
                 ->whereNotNull('value')
@@ -4743,331 +3509,563 @@ class DataWarehouseSyncService
         }
     }
 
-    /**
-     * 4. Sync Fact_Get_Cycling_Rider_Course & Activities (Normalized JSON)
-     */
-    public function syncGetCyclingRiderCourses($command = null)
+    private function mapEthnicityToColumn($input)
     {
-        $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Fact_Get_Cycling_Rider_Course & Activities...");
+        $key = strtolower(trim($input));
 
-        $watermark = $this->getWatermark('Fact_Get_Cycling_Rider_Course') ?? '1900-01-01 00:00:00';
-        $highestTimestamp = $watermark;
+        $code = match ($key) {
+            'wbri', 'whitebritish', 'white_british'                    => 'WBRI',
+            'wiri', 'white_irish'                                      => 'WIRI',
+            'wirt', 'white_traveller'                                  => 'WIRT',
+            'woth', 'white'                                            => 'WOTH',
+            'wrom', 'white_gypsy'                                      => 'WROM',
+            'mwbc', 'mixed_white_caribbean', 'mixed_white_black_carib' => 'MWBC',
+            'mwba', 'mixed_white_african'                              => 'MWBA',
+            'mwas', 'mixed_white_asian'                                => 'MWAS',
+            'moth', 'mixed'                                            => 'MOTH',
+            'aind', 'asian_indian', 'indian'                           => 'AIND',
+            'apkn', 'asian_pakistani'                                  => 'APKN',
+            'aban', 'asian_bangladeshi'                                => 'ABAN',
+            'chne', 'asian_chinese'                                    => 'CHNE',
+            'aoth', 'asian'                                            => 'AOTH',
+            'bcrb', 'black_caribbean'                                  => 'BCRB',
+            'bafr', 'black_african'                                    => 'BAFR',
+            'both', 'black'                                            => 'BOTH',
+            'ooth', 'other', 'other_arab'                              => 'OOTH',
+            'na', 'n', 'refused', 'prefer_not_to_say'                   => 'NA',
+            default                                                    => 'NA',
+        };
 
-        $total = $this->source->table('get_cycling_join_riders_courses')
-            ->where('updated_at', '>', $watermark)
-            ->count();
+        return match ($code) {
+            'WBRI'  => 'Count_Ethnicity_White_British',
+            'WIRI'  => 'Count_Ethnicity_White_Irish',
+            'WIRT'  => 'Count_Ethnicity_White_Traveller',
+            'WOTH'  => 'Count_Ethnicity_White_Other',
+            'WROM'  => 'Count_Ethnicity_Gypsy_Romany',
+            'MWBC'  => 'Count_Ethnicity_Mixed_White_Black_Carib',
+            'MWBA'  => 'Count_Ethnicity_Mixed_White_Black_African',
+            'MWAS'  => 'Count_Ethnicity_Mixed_White_Asian',
+            'MOTH'  => 'Count_Ethnicity_Mixed_Other',
+            'AIND'  => 'Count_Ethnicity_Asian_Indian',
+            'APKN'  => 'Count_Ethnicity_Asian_Pakistani',
+            'ABAN'  => 'Count_Ethnicity_Asian_Bangladeshi',
+            'CHNE'  => 'Count_Ethnicity_Asian_Chinese',
+            'AOTH'  => 'Count_Ethnicity_Asian_Other',
+            'BCRB'  => 'Count_Ethnicity_Black_Caribbean',
+            'BAFR'  => 'Count_Ethnicity_Black_African',
+            'BOTH'  => 'Count_Ethnicity_Black_Other',
+            'OOTH'  => 'Count_Ethnicity_Other_Any',
+            default => 'Count_Ethnicity_Not_Stated',
+        };
+    }
 
-        if ($total === 0) {
-            if ($command) $command->info("Fact_Get_Cycling_Rider_Course is up to date.");
-            return "Fact_Get_Cycling_Rider_Course up to date.";
+    private function initializeExtendedMetricArray()
+    {
+        return [
+            'Count_Female'                           => 0,
+            'Count_Male'                             => 0,
+            'Count_Gender_Other'                     => 0,
+            'Count_Gender_Not_Stated'                => 0,
+            'Count_Adults'                           => 0,
+            'Count_Teens'                            => 0,
+            'Count_Children'                         => 0,
+            'Count_Booked_Repeat_Type_Na'            => 0,
+            'Count_Booked_Repeat_Type_Unique'        => 0,
+            'Count_Booked_Repeat_Type_Repeat'        => 0,
+            'Count_Ethnicity_White_British'          => 0,
+            'Count_Ethnicity_White_Irish'            => 0,
+            'Count_Ethnicity_White_Other'            => 0,
+            'Count_Ethnicity_White_Traveller'        => 0,
+            'Count_Ethnicity_Gypsy_Romany'           => 0,
+            'Count_Ethnicity_Mixed_White_Black_Carib'=> 0,
+            'Count_Ethnicity_Mixed_White_Black_African'=> 0,
+            'Count_Ethnicity_Mixed_White_Asian'      => 0,
+            'Count_Ethnicity_Mixed_Other'            => 0,
+            'Count_Ethnicity_Asian_Indian'           => 0,
+            'Count_Ethnicity_Asian_Pakistani'        => 0,
+            'Count_Ethnicity_Asian_Bangladeshi'      => 0,
+            'Count_Ethnicity_Asian_Chinese'          => 0,
+            'Count_Ethnicity_Asian_Other'            => 0,
+            'Count_Ethnicity_Black_African'          => 0,
+            'Count_Ethnicity_Black_Caribbean'        => 0,
+            'Count_Ethnicity_Black_Other'            => 0,
+            'Count_Ethnicity_Other_Arab'             => 0,
+            'Count_Ethnicity_Other_Any'              => 0,
+            'Count_Ethnicity_Not_Stated'             => 0,
+            'Count_Pupil_Premium'                    => 0,
+            'Count_SEND'                             => 0,
+            'Count_SEND_Not_Stated'                  => 0,
+            'Count_Pupil_Premium_Not_Stated'         => 0,
+            'Count_Bikes_Swapped'                    => 0,
+            'Count_Bikes_Recycled'                   => 0,
+            'Count_Age_Range_18_24'                  => 0,
+            'Count_Age_Range_25_34'                  => 0,
+            'Count_Age_Range_35_44'                  => 0,
+            'Count_Age_Range_45_54'                  => 0,
+            'Count_Age_Range_55_64'                  => 0,
+            'Count_Age_Range_Over_65'                => 0,
+            'Count_Age_Range_Not_Stated'             => 0,
+        ];
+    }
+
+    private function getCourseDeliveryMetrics($course, $useLegacy)
+    {
+        if (is_null($useLegacy)) {
+            $useLegacy = $this->sourceHasColumn('deliveries', 'delivery_details');
         }
 
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
+        if ($useLegacy) {
+            return $this->extractFromLegacyJson($course);
+        }
 
-        $this->source->table('get_cycling_join_riders_courses')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-                foreach ($rows as $row) {
-                    // 1. Resolve Foreign Keys
-                    $rider = $this->dwh->table('Dim_Get_Cycling_Rider')
-                        ->where('Source_Rider_Id', $row->rider_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->first(['GC_Rider_Key', 'School_Key']);
+        return $this->extractFromNormalizedTables($course);
+    }
 
-                    $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
-                        ->where('Source_Course_Id', $row->course_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('GC_Course_Key');
+    private function extractFromLegacyJson($course)
+    {
+        $details = json_decode($course->delivery_details ?? '[]', true);
 
-                    $trainerKey = null;
-                    if (!empty($row->teacher_trainer_id)) {
-                        $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
-                            ->where('Source_Teacher_Trainer_Id', $row->teacher_trainer_id)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('Teacher_Trainer_Key');
-                    }
+        $metrics = array_merge($this->initializeExtendedMetricArray(), [
+            'Count_Booked_Provisional'       => 0,
+            'Count_Booked_Confirmed'         => 0,
+            'Count_Attended_Confirmed'       => 0,
+            'Count_Bikes_Swapped'            => 0,
+            'Count_Bikes_Recycled'           => 0,
+            'Extracted_Course_Level'         => null,
+            'Extracted_Year_Group'           => null,
+            'Count_Gender_Not_Stated'        => 0,
+            'Count_SEND'                     => 0,
+            'Count_Pupil_Premium'            => 0,
+            'Count_SEND_Not_Stated'          => 0,
+            'Count_Pupil_Premium_Not_Stated' => 0,
+        ]);
 
-                    if ($rider && $courseKey) {
-                        // 2. Upsert Header Fact
-                        $this->dwh->table('Fact_Get_Cycling_Rider_Course')->updateOrInsert(
-                            [
-                                'Source_Join_Id'    => $row->id,
-                                'Source_System_Key' => $sourceSystemKey,
-                            ],
-                            [
-                                'GC_Rider_Key'               => $rider->GC_Rider_Key,
-                                'GC_Course_Key'              => $courseKey,
-                                'Teacher_Trainer_Key'        => $trainerKey,
-                                'School_Key'                 => $rider->School_Key,
-                                'Source_Rider_Id'            => $row->rider_id,
-                                'Source_Course_Id'           => $row->course_id,
-                                'Source_Teacher_Trainer_Id'  => $row->teacher_trainer_id,
-                                'Does_Not_Wish_To_Continue'  => (bool)($row->does_not_wish_to_continue ?? 0),
-                                'Overall_Progress'           => $row->overall_progress,
-                                'Has_Survey_Completed'       => (bool)($row->has_survey_completed ?? 0),
-                                'Source_Updated_At'          => $row->updated_at,
-                                'Updated_At'                 => now(),
-                            ]
-                        );
+        foreach ($details as $entry) {
+            $isTargetModule = is_null($course->id) || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id);
 
-                        $rcKey = $this->dwh->table('Fact_Get_Cycling_Rider_Course')
-                            ->where('Source_Join_Id', $row->id)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('GC_Rider_Course_Key');
+            if ($isTargetModule) {
+                $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
+                $metrics['Extracted_Year_Group']   = $entry['delivery']['year_group'] ?? null;
 
-                        // 3. Normalize Activities JSON Array
-                        $activities = json_decode($row->activities, true) ?? [];
-                        if (is_array($activities) && $rcKey) {
-                            foreach ($activities as $act) {
-                                if (isset($act['id'])) {
-                                    $this->dwh->table('Fact_Get_Cycling_Rider_Course_Activity')->updateOrInsert(
-                                        [
-                                            'GC_Rider_Course_Key' => $rcKey,
-                                            'Activity_Id'         => (int)$act['id'],
-                                        ],
-                                        [
-                                            'Source_Join_Id'    => $row->id,
-                                            'Source_System_Key' => $sourceSystemKey,
-                                            'Activity_Score'    => (int)($act['value'] ?? 0),
-                                            'Updated_At'        => now(),
-                                        ]
-                                    );
-                                }
-                            }
-                        }
-                    }
+                $delivery = $entry['delivery'] ?? [];
+                $booked   = $delivery['booked'] ?? [];
 
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
+                $metrics['Count_Booked_Provisional'] = (int) ($booked['provisional'] ?? 0);
 
-                    if ($bar) $bar->advance();
+                if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
+                    $metrics['Count_Booked_Confirmed']   = (int) ($booked['total'] ?? 0);
+                    $metrics['Count_Attended_Confirmed'] = (int) ($delivery['attended']['total'] ?? 0);
                 }
-            });
 
-        $this->updateWatermark('Fact_Get_Cycling_Rider_Course', $highestTimestamp);
-
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
-        }
-
-        return "Fact_Get_Cycling_Rider_Course and Activities synced.";
-    }
-
-    /**
-     * 5. Sync Fact_Get_Cycling_Survey_Response (Normalized Survey JSON)
-     */
-    public function syncGetCyclingSurveys($command = null)
-    {
-        $sourceSystemKey = $this->getSourceSystemKey();
-        if ($command) $command->info("[" . now()->format('Y-m-d H:i:s') . "] Syncing Fact_Get_Cycling_Survey_Response...");
-
-        $watermark = $this->getWatermark('Fact_Get_Cycling_Survey_Response') ?? '1900-01-01 00:00:00';
-        $highestTimestamp = $watermark;
-
-        $total = $this->source->table('get_cycling_join_surveys_courses')
-            ->where('updated_at', '>', $watermark)
-            ->count();
-
-        if ($total === 0) {
-            if ($command) $command->info("Fact_Get_Cycling_Survey_Response is up to date.");
-            return "Fact_Get_Cycling_Survey_Response up to date.";
-        }
-
-        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
-        if ($bar) $bar->start();
-
-        $this->source->table('get_cycling_join_surveys_courses')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('id', 'asc')
-            ->chunkById(500, function ($rows) use ($sourceSystemKey, $bar, &$highestTimestamp) {
-                foreach ($rows as $row) {
-                    // Resolve Dimensions
-                    $schoolKey = null;
-                    if (!empty($row->school_urn)) {
-                        $schoolKey = $this->dwh->table('Dim_School')
-                            ->where('School_Urn', (string)$row->school_urn)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('School_Key');
-                    }
-
-                    $courseKey = $this->dwh->table('Dim_Get_Cycling_Course')
-                        ->where('Source_Course_Id', $row->course_id)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('GC_Course_Key');
-
-                    // Unpack nested survey JSON
-                    $surveyData = json_decode($row->survey, true) ?? [];
-                    if (is_array($surveyData)) {
-                        foreach ($surveyData as $q) {
-                            $qId = (string)($q['q_id'] ?? '');
-                            foreach ($q['options'] ?? [] as $opt) {
-                                $optId = (string)($opt['id'] ?? '');
-                                $totalCount = (int)($opt['total'] ?? 0);
-
-                                $this->dwh->table('Fact_Get_Cycling_Survey_Response')->updateOrInsert(
-                                    [
-                                        'Source_Survey_Join_Id' => $row->id,
-                                        'Question_Id'           => $qId,
-                                        'Option_Id'             => $optId,
-                                        'Source_System_Key'     => $sourceSystemKey,
-                                    ],
-                                    [
-                                        'School_Key'       => $schoolKey,
-                                        'GC_Course_Key'    => $courseKey,
-                                        'School_Urn'       => (string)$row->school_urn,
-                                        'Source_Course_Id' => $row->course_id,
-                                        'Response_Count'   => $totalCount,
-                                        'Updated_At'       => now(),
-                                    ]
-                                );
-                            }
-                        }
-                    }
-
-                    if ($row->updated_at > $highestTimestamp) {
-                        $highestTimestamp = $row->updated_at;
-                    }
-
-                    if ($bar) $bar->advance();
+                if (($entry['module']['id'] ?? '') === 'plus_family') {
+                    $metrics['Count_Adults']   = (int) ($delivery['adults'] ?? 0);
+                    $metrics['Count_Teens']    = (int) ($delivery['teens'] ?? 0);
+                    $metrics['Count_Children'] = (int) ($delivery['children'] ?? 0);
+                    break;
                 }
-            });
 
-        $this->updateWatermark('Fact_Get_Cycling_Survey_Response', $highestTimestamp);
+                $gender = $booked['gender'] ?? [];
+                foreach ($gender as $sub => $val) {
+                    if ($sub === 'female') $metrics['Count_Female'] += (int) $val;
+                    elseif ($sub === 'male') $metrics['Count_Male'] += (int) $val;
+                    elseif ($sub === 'other') $metrics['Count_Gender_Other'] += (int) $val;
+                    elseif ($sub === 'na') $metrics['Count_Gender_Not_Stated'] += (int) $val;
+                }
 
-        if ($bar) {
-            $bar->finish();
-            $command->newLine();
+                $ethnicity = $booked['ethnicity'] ?? [];
+                foreach ($ethnicity as $sub => $val) {
+                    $targetColumn = $this->mapEthnicityToColumn($sub);
+                    if (array_key_exists($targetColumn, $metrics)) {
+                        $metrics[$targetColumn] += (int) $val;
+                    } else {
+                        $metrics['Count_Ethnicity_Not_Stated'] += (int) $val;
+                    }
+                }
+
+                $ages = $booked['age_range'] ?? [];
+                foreach ($ages as $sub => $val) {
+                    $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
+                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int) $val;
+                }
+
+                $repeats = $booked['repeat_type'] ?? [];
+                foreach ($repeats as $sub => $val) {
+                    $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+                    if (array_key_exists($col, $metrics)) $metrics[$col] += (int) $val;
+                }
+
+                $metrics['Count_SEND']                     += (int) ($booked['send'] ?? 0);
+                $metrics['Count_Pupil_Premium']            += (int) ($booked['free_school_meals'] ?? 0);
+                $metrics['Count_SEND_Not_Stated']          += (int) ($booked['send_na'] ?? 0);
+                $metrics['Count_Pupil_Premium_Not_Stated'] += (int) ($booked['free_school_meals_na'] ?? 0);
+
+                $metrics['Count_Bikes_Swapped']  = (int) ($delivery['bikes_swapped'] ?? 0);
+                $metrics['Count_Bikes_Recycled'] = (int) ($delivery['bikes_recycled'] ?? 0);
+                break;
+            }
+        }
+        return $metrics;
+    }
+
+    private function extractFromNormalizedTables($course)
+    {
+        $metrics = array_merge($this->initializeExtendedMetricArray(), [
+            'Count_Booked_Provisional' => 0,
+            'Count_Booked_Confirmed'   => 0,
+            'Count_Attended_Confirmed' => 0,
+            'Count_Bikes_Swapped'      => 0,
+            'Count_Bikes_Recycled'     => 0,
+        ]);
+
+        $moduleQuery = $this->source->table('delivery_modules');
+        if (!is_null($course->id)) {
+            $moduleQuery->where('entity_id', $course->id);
+        } else {
+            $moduleQuery->where('delivery_id', $course->delivery_id);
         }
 
-        return "Fact_Get_Cycling_Survey_Response synced.";
-    }
+        $module = $moduleQuery->first();
+        if (!$module) return $metrics;
 
-    /**
-     * Helper to insert a new version of a record
-     */
-    protected function createNewVersion($table, $idCol, $idVal, $data, $sysKey, $startDate)
-    {
-        $data[$idCol] = $idVal;
-        $data['Source_System_Key'] = $sysKey;
-        $data['Valid_From_Date'] = $startDate;
-        $data['Valid_To_Date'] = '9999-12-31';
-        $data['Is_Current'] = 1;
+        $metrics['Count_Booked_Provisional'] = (int) $module->booked_provisional;
+        $metrics['Count_Booked_Confirmed']   = ($module->confirmed) ? (int) $module->booked_total : 0;
+        $metrics['Count_Attended_Confirmed'] = ($module->confirmed) ? (int) $module->attended_total : 0;
 
-        $this->dwh->table($table)->insert($data);
-    }
+        $metricRows = $this->source->table('delivery_metrics')
+            ->where('module_id', $module->id)
+            ->get();
 
-    /**
-     * Comparison helper to detect changes
-     */
-    protected function hasChanged($existing, $new)
-    {
-        foreach ($new as $key => $value) {
-            // Loose comparison to handle numeric strings vs integers
-            if ($existing->$key != $value) return true;
-        }
-        return false;
-    }
+        foreach ($metricRows as $row) {
+            $cat = strtolower($row->category);
+            $sub = strtolower($row->sub_category);
+            $val = (int) $row->value;
 
-    /**
-     * Helper to get the Source System Key for link
-     * Link will be the first and possibly only source system but this allows for
-     * any future that may involve other source systems
-     */
-    protected function getSourceSystemKey()
-    {
-        return $this->dwh->table('Dim_Source_System')->where('System_Name', 'link')->value('Source_System_Key');
-    }
+            if ($cat === 'booked_gender') {
+                if ($sub === 'male')   $metrics['Count_Male'] = $val;
+                if ($sub === 'female') $metrics['Count_Female'] = $val;
+                if ($sub === 'other')  $metrics['Count_Gender_Other'] = $val;
+                if ($sub === 'na')     $metrics['Count_Gender_Not_Stated'] = $val;
+            }
 
-    /**
-     * Resolves the last processed timestamp for a specific Data Warehouse table.
-     * Falls back to a safe historical date if no record exists.
-     *
-     * @param string $tableName
-     * @return string
-     */
-    private function getWatermark(string $tableName): string
-    {
-        return $this->dwh->table('Sync_Log')
-            ->where('Table_Name', $tableName)
-            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
-    }
+            if ($cat === 'booked_ethnicity') {
+                $col = $this->mapEthnicityToColumn($sub);
+                if (array_key_exists($col, $metrics)) {
+                    $metrics[$col] = $val;
+                } else {
+                    $metrics['Count_Ethnicity_Not_Stated'] += $val;
+                }
+            }
 
-    /**
-     * Updates the Sync Log tracking table with the highest timestamp processed.
-     *
-     * @param string $tableName
-     * @param string $highestTimestampSeen
-     * @return void
-     */
-    private function updateWatermark(string $tableName, string $highestTimestampSeen): void
-    {
-        $this->dwh->table('Sync_Log')->updateOrInsert(
-            ['Table_Name' => $tableName],
-            [
-                'Last_Synced_At' => $highestTimestampSeen
-            ]
-        );
-    }
+            if ($sub === 'bikes_swapped')  $metrics['Count_Bikes_Swapped'] += $val;
+            if ($sub === 'bikes_recycled') $metrics['Count_Bikes_Recycled'] += $val;
 
-    /**
-     * Resolves the internal DWH surrogate key for a given Source Grant ID.
-     * Returns null if the parent grant hasn't been synced yet (Referential Integrity Check).
-     *
-     * @param mixed $sourceGrantId
-     * @param int $sourceSystemKey
-     * @return int|null
-     */
-    private function resolveGrantKey($sourceGrantId, int $sourceSystemKey): ?int
-    {
-        if (!$sourceGrantId) {
-            return null;
+            if ($cat === 'booked_age_range') {
+                $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
+                $metrics[$col] = $val;
+            }
+
+            if ($cat === 'booked_repeat_type') {
+                $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+                $metrics[$col] = $val;
+            }
+
+            if ($cat === 'booked_demographics' || $cat === 'demographics') {
+                if (in_array($sub, ['send', 'booked_send'])) {
+                    $metrics['Count_SEND'] = $val;
+                } elseif (in_array($sub, ['send_na', 'booked_send_na'])) {
+                    $metrics['Count_SEND_Not_Stated'] = $val;
+                } elseif (in_array($sub, ['free_school_meals', 'pupil_premium', 'booked_free_school_meals'])) {
+                    $metrics['Count_Pupil_Premium'] = $val;
+                } elseif (in_array($sub, ['free_school_meals_na', 'pupil_premium_na'])) {
+                    $metrics['Count_Pupil_Premium_Not_Stated'] = $val;
+                }
+            }
         }
 
-        return $this->dwh->table('Dim_Grant')
-            ->where('Source_Grant_Id', $sourceGrantId)
-            ->where('Source_System_Key', $sourceSystemKey)
-            ->value('Grant_Key');
+        return $metrics;
     }
 
-    /**
-     * Safely checks if a specific column exists on a source system table.
-     * Utilizes static caching to prevent redundant schema queries during loops.
-     *
-     * @param string $table
-     * @param string $column
-     * @return bool
-     */
-    private function sourceHasColumn(string $table, string $column): bool
+    private function aggregateFromDWHConsents($deliveryKey)
     {
-        static $schemaCache = [];
+        $consents = $this->dwh->table('Dim_Consent')
+            ->where('Delivery_Key', $deliveryKey)
+            ->where('Attended', 1)
+            ->get();
 
-        $cacheKey = "{$table}.{$column}";
+        $m = $this->initializeExtendedMetricArray();
 
-        // If we have already checked this table/column during this run, return the cached result
-        if (isset($schemaCache[$cacheKey])) {
-            return $schemaCache[$cacheKey];
+        foreach ($consents as $consent) {
+            if ($consent->Gender === 'Female') $m['Count_Female']++;
+            elseif ($consent->Gender === 'Male') $m['Count_Male']++;
+
+            $column = $this->mapEthnicityToColumn($consent->Ethnicity);
+            if (isset($m[$column])) {
+                $m[$column]++;
+            } else {
+                $m['Count_Ethnicity_Not_Stated']++;
+            }
+
+            if ($consent->Is_Pupil_Premium) $m['Count_Pupil_Premium']++;
+            if ($consent->Is_SEND) $m['Count_SEND']++;
         }
 
-        try {
-            // Query the structural schema of the source database connection
-            $exists = Schema::connection('mysql_src')->hasColumn($table, $column);
-
-            $schemaCache[$cacheKey] = $exists;
-            return $exists;
-        } catch (\Exception $e) {
-            // Fallback to false if the network blips or structural access is restricted
-            return false;
-        }
+        return $m;
     }
 
-    /**
-     * Purge soft-deleted deliveries from the DWH and cascade across all dependent facts.
-     */
+    private function aggregateFromLegacyCharacteristics($jsonString)
+    {
+        $m = $this->initializeExtendedMetricArray();
+        $data = json_decode($jsonString ?? '[]', true);
+
+        if (!is_array($data) || empty($data)) return $m;
+
+        $block = $data[0] ?? [];
+        $gender = $block['gender'] ?? [];
+        foreach ($gender as $sub => $val) {
+            if ($sub === 'female') $m['Count_Female'] += (int) $val;
+            elseif ($sub === 'male') $m['Count_Male'] += (int) $val;
+        }
+
+        $booked = $block['booked'] ?? $block;
+        $ages = $booked['age_range'] ?? [];
+        foreach ($ages as $sub => $val) {
+            if ($sub === 'na') {
+                $m['Count_Age_Range_Not_Stated'] += (int) $val;
+            } elseif ($sub === 'over_65') {
+                $m['Count_Age_Range_Over_65'] += (int) $val;
+            } else {
+                $column = 'Count_Age_Range_' . $sub;
+                if (array_key_exists($column, $m)) $m[$column] += (int) $val;
+            }
+        }
+
+        $repeats = $booked['repeat_type'] ?? [];
+        foreach ($repeats as $sub => $val) {
+            $column = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+            if (array_key_exists($column, $m)) $m[$column] += (int) $val;
+        }
+
+        $ethnicity = $booked['ethnicity'] ?? [];
+        foreach ($ethnicity as $sub => $val) {
+            if ($sub === 'white_traveller') {
+                $m['Count_Ethnicity_White_Traveller'] += (int) $val;
+                continue;
+            }
+            $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
+            if (array_key_exists($column, $m)) {
+                $m[$column] += (int) $val;
+            } else {
+                $m['Count_Ethnicity_Other_Any'] += (int) $val;
+            }
+        }
+
+        $m['Count_SEND']                     += (int) ($booked['send'] ?? 0);
+        $m['Count_SEND_Not_Stated']          += (int) ($booked['send_na'] ?? 0);
+        $m['Count_Pupil_Premium']            += (int) ($booked['free_school_meals'] ?? 0);
+        $m['Count_Pupil_Premium_Not_Stated'] += (int) ($booked['free_school_meals_na'] ?? 0);
+
+        return $m;
+    }
+
+    private function aggregateFromSourceTable($tableName, $courseId)
+    {
+        $rows = $this->source->table($tableName)->where('course_id', $courseId)->get();
+        $m = $this->initializeExtendedMetricArray();
+
+        foreach ($rows as $row) {
+            $cat = strtolower($row->category);
+            $sub = strtolower($row->sub_category);
+            $val = (int) $row->value;
+
+            if ($cat === 'gender') {
+                if ($sub === 'female') $m['Count_Female'] += $val;
+                elseif ($sub === 'male') $m['Count_Male'] += $val;
+            }
+
+            if ($cat === 'age_range') {
+                if ($sub === 'na') {
+                    $m['Count_Age_Range_Not_Stated'] += $val;
+                } elseif ($sub === 'over_65') {
+                    $m['Count_Age_Range_Over_65'] += $val;
+                } else {
+                    $column = 'Count_Age_Range_' . $sub;
+                    if (array_key_exists($column, $m)) $m[$column] += $val;
+                }
+            }
+
+            if ($cat === 'repeat_type') {
+                $column = 'Count_Booked_Repeat_Type_' . ucfirst($sub);
+                if (array_key_exists($column, $m)) $m[$column] += $val;
+            }
+
+            if ($cat === 'ethnicity') {
+                if ($sub === 'white_traveller') {
+                    $m['Count_Ethnicity_White_Traveller'] += $val;
+                    continue;
+                }
+                $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
+                if (array_key_exists($column, $m)) {
+                    $m[$column] += $val;
+                } else {
+                    $m['Count_Ethnicity_Other_Any'] += $val;
+                }
+            }
+
+            if ($cat === 'pupil_premium') {
+                if ($sub === 'free_school_meals_na') {
+                    $m['Count_Pupil_Premium_Not_Stated'] += $val;
+                } else {
+                    $m['Count_Pupil_Premium'] += $val;
+                }
+            }
+
+            if ($cat === 'send') {
+                if ($sub === 'booked_send_na' || $sub === 'send_na') {
+                    $m['Count_SEND_Not_Stated'] += $val;
+                } else {
+                    $m['Count_SEND'] += $val;
+                }
+            }
+        }
+        return $m;
+    }
+
+    private function aggregateHandsupFromLegacyJson($jsonString, $m)
+    {
+        $questions = json_decode($jsonString ?? '[]', true);
+        foreach ($questions as $q) {
+            $qid = $q['question_id'] ?? null;
+            foreach ($q['option'] ?? [] as $opt) {
+                $m = $this->mapHandsupToBucket($qid, $opt['id'], $opt['total'], $m);
+            }
+        }
+        return $m;
+    }
+
+    private function aggregateHandsupFromSourceRows($results, $m)
+    {
+        foreach ($results as $res) {
+            $m = $this->mapHandsupToBucket($res->question_id, $res->option_id, $res->total, $m);
+        }
+        return $m;
+    }
+
+    private function initializeHandsupMetrics()
+    {
+        return [
+            'Exp_Enjoyed' => 0, 'Exp_Did_Not_Enjoy' => 0, 'Exp_Not_Sure' => 0, 'Exp_Absent' => 0,
+            'Base_Yes' => 0, 'Base_No' => 0, 'Base_Not_Sure' => 0,
+            'Safe_More' => 0, 'Safe_Less' => 0, 'Safe_No_Diff' => 0, 'Safe_Not_Sure' => 0,
+            'Conf_More' => 0, 'Conf_Less' => 0, 'Conf_No_Diff' => 0, 'Conf_Not_Sure' => 0,
+        ];
+    }
+
+    private function mapHandsupToBucket($qid, $oid, $val, $m)
+    {
+        $val = (int) $val;
+        if (in_array($oid, [1, 15, 33, 51, 60, 69])) $m['Exp_Enjoyed'] += $val;
+        if (in_array($oid, [2, 16, 34, 52, 61, 70])) $m['Exp_Did_Not_Enjoy'] += $val;
+        if (in_array($oid, [3, 17, 35, 53, 62, 71])) $m['Exp_Not_Sure'] += $val;
+        if (in_array($oid, [4, 18, 36, 54, 63, 72])) $m['Exp_Absent'] += $val;
+
+        if (in_array($oid, [19, 37])) $m['Base_Yes'] += $val;
+        if (in_array($oid, [20, 38])) $m['Base_No'] += $val;
+        if (in_array($oid, [21, 39])) $m['Base_Not_Sure'] += $val;
+
+        if (in_array($oid, [5, 23, 41])) $m['Safe_More'] += $val;
+        if (in_array($oid, [6, 24, 42])) $m['Safe_Less'] += $val;
+        if (in_array($oid, [7, 25, 43])) $m['Safe_No_Diff'] += $val;
+        if (in_array($oid, [8, 26, 44])) $m['Safe_Not_Sure'] += $val;
+
+        if (in_array($oid, [10, 28, 46, 55, 64])) $m['Conf_More'] += $val;
+        if (in_array($oid, [11, 29, 47, 56, 65])) $m['Conf_Less'] += $val;
+        if (in_array($oid, [12, 30, 48, 57, 66])) $m['Conf_No_Diff'] += $val;
+        if (in_array($oid, [13, 31, 49, 58, 67])) $m['Conf_Not_Sure'] += $val;
+
+        return $m;
+    }
+
+    private function mapSurveyByCourse($label, $data)
+    {
+        $mapped = [
+            'q1a_freq_school'         => null,
+            'q1b_freq_leisure'        => null,
+            'q1c_freq_exercise'       => null,
+            'q2a_conf_use_cycle'      => null,
+            'q2b_conf_cycle_roads'    => null,
+            'q3a_enc_use_cycle'       => null,
+            'q3b_enc_cycle_roads'     => null,
+            'q4_safety_roads'         => null,
+            'q5_child_desire'         => null,
+            'q6_encouragement_factors'=> null,
+            'q7_conf_change'          => null,
+            'q8_physical_activity'    => null,
+        ];
+
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $mapped['q6_encouragement_factors'] = json_encode($value);
+                continue;
+            }
+
+            if (str_contains($value, '_q1a_')) $mapped['q1a_freq_school'] = $this->extractOption($value);
+            if (str_contains($value, '_q1b_')) $mapped['q1b_freq_leisure'] = $this->extractOption($value);
+            if (str_contains($value, '_q1c_')) $mapped['q1c_freq_exercise'] = $this->extractOption($value);
+
+            if (str_contains($value, '_q2a_')) $mapped['q2a_conf_use_cycle'] = $this->extractOption($value);
+            if (str_contains($value, '_q2b_')) $mapped['q2b_conf_cycle_roads'] = $this->extractOption($value);
+            if (str_contains($value, '_q3a_')) $mapped['q3a_enc_use_cycle'] = $this->extractOption($value);
+            if (str_contains($value, '_q3b_')) $mapped['q3b_enc_cycle_roads'] = $this->extractOption($value);
+
+            if (str_contains($value, '_q4_') && !str_contains($value, '_q4a_')) {
+                $mapped['q4_safety_roads'] = $this->extractOption($value);
+            }
+
+            if (str_contains($value, '_q4_o') || str_contains($value, '_q4a_o') || str_contains($value, '_q5_o')) {
+                if (!str_contains($value, 'level_2_q4') && !str_contains($value, 'level_3_q4')) {
+                    $mapped['q5_child_desire'] = $this->extractOption($value);
+                }
+            }
+
+            if (str_contains($value, '_q7_')) $mapped['q7_conf_change'] = $this->extractOption($value);
+
+            if (str_contains($value, '_q6_o') || str_contains($value, '_q6a_o') || str_contains($value, '_q8_o')) {
+                $mapped['q8_physical_activity'] = $this->extractOption($value);
+            }
+        }
+
+        return $mapped;
+    }
+
+    private function extractOption($string)
+    {
+        $parts = explode('_', $string);
+        return end($parts);
+    }
+
+    private function extractOptionInt($prefix, $code)
+    {
+        if (empty($code)) return null;
+
+        $pattern = '/' . preg_quote($prefix, '/') . '(\d+)/';
+        if (preg_match($pattern, $code, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function mapDeliveryStatus($statusId)
+    {
+        return match ($statusId) {
+            0       => 'Delivery Created',
+            1       => 'In Progress',
+            2       => 'Completed',
+            3       => 'Cancelled',
+            default => 'Draft',
+        };
+    }
+
     public function purgeSoftDeletedDeliveries($command = null, int $chunkSize = 500, bool $dryRun = false): string
     {
         $sourceSystemKey = $this->getSourceSystemKey();
@@ -5076,112 +4074,76 @@ class DataWarehouseSyncService
             $command->info("[" . now()->format('Y-m-d H:i:s') . "] Scanning source system for soft-deleted deliveries...");
         }
 
-        // 1. Verify source table has soft delete support
         if (!$this->sourceHasColumn('deliveries', 'deleted_at')) {
-            if ($command) {
-                $command->warn("Source table 'deliveries' has no 'deleted_at' column.");
-            }
             return "Skipped: 'deliveries.deleted_at' column does not exist.";
         }
 
-        // 2. Identify soft-deleted count in source system
-        $totalFoundOnSource = $this->source->table('deliveries')
-            ->whereNotNull('deleted_at')
-            ->count();
-
+        $totalFoundOnSource = $this->source->table('deliveries')->whereNotNull('deleted_at')->count();
         if ($totalFoundOnSource === 0) {
-            if ($command) {
-                $command->info("No soft-deleted deliveries found in source database.");
-            }
             return "No soft-deleted deliveries found.";
         }
 
-        if ($command) {
-            $modeNotice = $dryRun ? ' [DRY RUN]' : '';
-            $command->comment("Found {$totalFoundOnSource} soft-deleted deliveries on source{$modeNotice}. Verifying against DWH...");
-        }
-
-        // Initialize progress bar only during real execution
-        $bar = ($command && !$dryRun)
-            ? $command->getOutput()->createProgressBar($totalFoundOnSource)
-            : null;
-
-        if ($bar) {
-            $bar->start();
-        }
+        $bar = ($command && !$dryRun) ? $command->getOutput()->createProgressBar($totalFoundOnSource) : null;
+        if ($bar) $bar->start();
 
         $purgedCount = 0;
 
-        // 3. Process source soft-deletes in chunks
-        $this->source->table('deliveries')
-            ->whereNotNull('deleted_at')
-            ->select('id')
-            ->orderBy('id', 'asc')
-            ->chunk($chunkSize, function ($sourceRows) use ($sourceSystemKey, &$purgedCount, $command, $dryRun, $bar) {
-                $deletedIds = $sourceRows->pluck('id')->toArray();
-                $batchSourceCount = count($deletedIds);
+        try {
+            $this->source->table('deliveries')
+                ->whereNotNull('deleted_at')
+                ->select('id')
+                ->orderBy('id', 'asc')
+                ->chunk($chunkSize, function ($sourceRows) use ($sourceSystemKey, &$purgedCount, $command, $dryRun, $bar) {
+                    $deletedIds = $sourceRows->pluck('id')->toArray();
 
-                // Locate matching dimension records currently residing in the DWH
-                $dwhDeliveries = $this->dwh->table('Dim_Delivery_Header')
-                    ->where('Source_System_Key', $sourceSystemKey)
-                    ->whereIn('Source_Delivery_Id', $deletedIds)
-                    ->select(['Delivery_Key', 'Source_Delivery_Id'])
-                    ->get();
+                    $dwhDeliveries = $this->dwh->table('Dim_Delivery_Header')
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->whereIn('Source_Delivery_Id', $deletedIds)
+                        ->select(['Delivery_Key', 'Source_Delivery_Id'])
+                        ->get();
 
-                if ($dwhDeliveries->isNotEmpty()) {
-                    $deliveryKeys = $dwhDeliveries->pluck('Delivery_Key')->toArray();
-                    $batchCount   = count($deliveryKeys);
+                    if ($dwhDeliveries->isNotEmpty()) {
+                        $deliveryKeys = $dwhDeliveries->pluck('Delivery_Key')->toArray();
+                        $batchCount   = count($deliveryKeys);
 
-                    if ($dryRun) {
-                        if ($command) {
-                            $sampleKeys = implode(', ', array_slice($deliveryKeys, 0, 5));
-                            $command->warn("[DRY RUN] Would purge {$batchCount} deliveries in current chunk (Sample Keys: {$sampleKeys}...)");
+                        if ($dryRun) {
+                            $purgedCount += $batchCount;
+                        } else {
+                            $this->dwh->transaction(function () use ($deliveryKeys) {
+                                $this->dwh->table('Fact_Course_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Instructor_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Rider_Instructor_Feedback')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Rider_Activity_Outcome')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Course_Activity_Outcome_Summary')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Parent_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_HandsUp_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Fact_Follow_Up_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Dim_Consent')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Dim_Course')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                                $this->dwh->table('Dim_Delivery_Header')->whereIn('Delivery_Key', $deliveryKeys)->delete();
+                            });
+
+                            $purgedCount += $batchCount;
                         }
-                        $purgedCount += $batchCount;
-                    } else {
-                        // 4. Cascade delete across all linked facts and dimensions inside a transaction
-                        $this->dwh->transaction(function () use ($deliveryKeys) {
-                            // Dependent Fact Tables
-                            $this->dwh->table('Fact_Course_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Instructor_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Rider_Instructor_Feedback')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Rider_Activity_Outcome')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Course_Activity_Outcome_Summary')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Parent_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_HandsUp_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Fact_Follow_Up_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-
-                            // Linked Child Dimensions
-                            $this->dwh->table('Dim_Consent')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            $this->dwh->table('Dim_Course')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-
-                            // Master Header Dimension
-                            $this->dwh->table('Dim_Delivery_Header')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                        });
-
-                        $purgedCount += $batchCount;
                     }
-                }
 
-                // Advance the progress bar by the number of source records scanned
-                if ($bar) {
-                    $bar->advance($batchSourceCount);
-                }
-            });
+                    if ($bar) $bar->advance(count($deletedIds));
+                });
 
-        if ($bar) {
-            $bar->finish();
-            $command->newLine(2);
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine(2);
+            }
+
+            return "Purged {$purgedCount} ghost delivery records and dependent facts.";
+
+        } catch (Throwable $e) {
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+            $this->slack->sendSyncError('Purge Soft-Deleted Deliveries', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
         }
-
-        $action = $dryRun ? 'Identified' : 'Successfully purged';
-        $message = "{$action} {$purgedCount} ghost delivery records and their dependent facts from the DWH.";
-
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] {$message}");
-        }
-
-        return $message;
     }
-
 }
