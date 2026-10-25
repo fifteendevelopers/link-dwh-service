@@ -80,12 +80,21 @@ class DataWarehouseSyncService
                 $bar->start();
             }
 
-            $state = (object) ['new' => 0, 'updated' => 0, 'highestTimestamp' => null];
+            $state = (object) [
+                'new'              => 0,
+                'updated'          => 0,
+                'highestTimestamp' => null,
+                'highestId'        => null,
+            ];
 
             if ($isBuilder) {
                 $queryOrCollection->chunk(500, function ($rows) use (&$processedCount, &$failedRecords, $bar, $processRow, $state) {
                     foreach ($rows as $row) {
                         try {
+                            if (isset($row->id) && (is_null($state->highestId) || $row->id > $state->highestId)) {
+                                $state->highestId = (int) $row->id;
+                            }
+
                             $processRow($row, $state);
                             $processedCount++;
                         } catch (Throwable $rowError) {
@@ -102,6 +111,9 @@ class DataWarehouseSyncService
             } else {
                 foreach ($queryOrCollection as $row) {
                     try {
+                        if (isset($row->id) && (is_null($state->highestId) || $row->id > $state->highestId)) {
+                            $state->highestId = (int) $row->id;
+                        }
                         $processRow($row, $state);
                         $processedCount++;
                     } catch (Throwable $rowError) {
@@ -345,7 +357,7 @@ class DataWarehouseSyncService
                 }
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Training_Provider', now()->toDateTimeString(), $count);
+                $this->updateWatermark('Dim_Training_Provider', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -448,7 +460,7 @@ class DataWarehouseSyncService
                 );
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Organisation', now()->toDateTimeString(), $count);
+                $this->updateWatermark('Dim_Organisation', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -501,7 +513,7 @@ class DataWarehouseSyncService
                 }
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Grant_Recipient', now()->toDateTimeString(), $count);
+                $this->updateWatermark('Dim_Grant_Recipient', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -541,7 +553,7 @@ class DataWarehouseSyncService
                 );
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Grant', now()->toDateTimeString(), $count);
+                $this->updateWatermark('Dim_Grant', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -602,7 +614,7 @@ class DataWarehouseSyncService
                 );
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Instructor', now()->toDateTimeString(), $count);
+                $this->updateWatermark('Dim_Instructor', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -723,7 +735,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Delivery_Header', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Delivery_Header', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -814,7 +826,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Course', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Course', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -912,7 +924,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Rider', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Rider', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1024,7 +1036,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Consent', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Consent', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1088,7 +1100,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Teacher_Trainer', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Teacher_Trainer', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1179,7 +1191,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Get_Cycling_Rider', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Get_Cycling_Rider', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1227,7 +1239,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Dim_Get_Cycling_Rider_Note', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_Get_Cycling_Rider_Note', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1577,7 +1589,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Rider_Course', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Rider_Course', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1688,7 +1700,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Rider_Activity_Outcome', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Rider_Activity_Outcome', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -1789,7 +1801,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Rider_Instructor_Feedback', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Rider_Instructor_Feedback', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2035,7 +2047,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Financials', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Financials', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2119,7 +2131,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Reallocations', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Reallocations', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2202,7 +2214,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Amendments', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Amendments', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2349,7 +2361,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Claims', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Claims', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2432,7 +2444,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Allocation_Dft', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Allocation_Dft', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2487,7 +2499,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Instructor_Delivery', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Instructor_Delivery', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2703,7 +2715,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Parent_Survey', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Parent_Survey', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2813,7 +2825,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Follow_Up_Survey', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Follow_Up_Survey', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2892,7 +2904,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Grant_Recipient_Renewal', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Grant_Recipient_Renewal', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -2964,7 +2976,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Instructor_Renewal', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Instructor_Renewal', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -3086,7 +3098,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Training_Provider_Renewal', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Training_Provider_Renewal', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -3163,7 +3175,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -3255,7 +3267,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Get_Cycling_Rider_Course', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Get_Cycling_Rider_Course', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -3322,7 +3334,7 @@ class DataWarehouseSyncService
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Get_Cycling_Survey_Response', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Fact_Get_Cycling_Survey_Response', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -3363,14 +3375,24 @@ class DataWarehouseSyncService
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
     }
 
-    private function updateWatermark(string $tableName, string $highestTimestampSeen, int $recordsProcessed = 0): void
-    {
+    private function updateWatermark(
+        string $tableName,
+        string $highestTimestampSeen,
+        int $recordsProcessed = 0,
+        ?int $highestIdSeen = null
+    ): void {
+        $payload = [
+            'Last_Synced_At'    => $highestTimestampSeen,
+            'Records_Processed' => $recordsProcessed,
+        ];
+
+        if ($highestIdSeen !== null) {
+            $payload['Last_Source_Id'] = $highestIdSeen;
+        }
+
         $this->dwh->table('Sync_Log')->updateOrInsert(
             ['Table_Name' => $tableName],
-            [
-                'Last_Synced_At'    => $highestTimestampSeen,
-                'Records_Processed' => $recordsProcessed,
-            ]
+            $payload
         );
     }
 
