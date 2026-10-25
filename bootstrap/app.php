@@ -16,6 +16,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'dwh.auth' => \App\Http\Middleware\ValidateDwhConsumer::class,
         ]);
+
+        $middleware->redirectGuestsTo(fn () => route('dwh.login'));
+
+        $middleware->redirectUsersTo(fn () => route('dwh.dashboard'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

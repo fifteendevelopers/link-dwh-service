@@ -31,7 +31,8 @@ class DataWarehouseSyncService
                $command,
                $queryOrCollection,
         callable $processRow,
-        ?callable $onComplete = null
+        ?callable $onComplete = null,
+        string $primaryKeyFallback = 'id'
     ): string {
         $startTime = microtime(true);
         $bar = null;
@@ -42,6 +43,28 @@ class DataWarehouseSyncService
             // Determine if input is a builder or an already-resolved collection
             $isBuilder = $queryOrCollection instanceof \Illuminate\Database\Query\Builder
                 || $queryOrCollection instanceof \Illuminate\Database\Eloquent\Builder;
+
+            // Apply secondary tie-breaker if builder, not already sorted by it, and column exists
+            if ($isBuilder) {
+                $baseQuery = $queryOrCollection instanceof \Illuminate\Database\Eloquent\Builder
+                    ? $queryOrCollection->getQuery()
+                    : $queryOrCollection;
+
+                $orders = $baseQuery->orders ?? [];
+                $orderedCols = array_column($orders, 'column');
+
+                // Strip alias/table prefix if present (e.g., 'instructors as i' -> 'instructors')
+                $rawTable = preg_split('/\s+as\s+/i', (string) $baseQuery->from)[0] ?? $baseQuery->from;
+
+                // Only append if not already in the ORDER BY clause AND physically exists on table
+                if (
+                    !in_array($primaryKeyFallback, $orderedCols, true) &&
+                    !in_array("{$rawTable}.{$primaryKeyFallback}", $orderedCols, true) &&
+                    $baseQuery->getConnection()->getSchemaBuilder()->hasColumn($rawTable, $primaryKeyFallback)
+                ) {
+                    $queryOrCollection->orderBy("{$rawTable}.{$primaryKeyFallback}", 'asc');
+                }
+            }
 
             $total = $isBuilder ? $queryOrCollection->count() : count($queryOrCollection);
 

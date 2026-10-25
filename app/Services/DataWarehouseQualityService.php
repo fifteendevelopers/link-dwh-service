@@ -76,13 +76,29 @@ class DataWarehouseQualityService
                 'dwh_deleted_col' => null,
             ],
             'Instructor Provider Links' => [
-                'source_table'       => 'join_instructors_training_providers',
-                'source_id_col'      => null,
-                'source_deleted_col' => null, // Set to null to include all records
-                'dwh_table'          => 'Fact_Instructor_Training_Provider',
-                'dwh_source_id_col'  => null,
-                'dwh_deleted_col'    => null, // Set to null to include all records
-                'composite'          => true,
+                'composite'             => true,
+                'source_table'          => 'join_instructors_training_providers',
+                'source_composite_cols' => ['instructor_id', 'training_provider_id'],
+                'source_deleted_col'    => null,
+
+                'dwh_table'             => 'Fact_Instructor_Training_Provider',
+                'dwh_composite_cols'    => ['Dim_Instructor.Source_Instructor_Id', 'Dim_Training_Provider.Source_Provider_Id'],
+                'dwh_deleted_col'       => null,
+
+                'dwh_query_modifier'    => function ($query) {
+                    $query->join('Dim_Instructor', 'Fact_Instructor_Training_Provider.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
+                        ->join('Dim_Training_Provider', 'Fact_Instructor_Training_Provider.Provider_Key', '=', 'Dim_Training_Provider.Provider_Key');
+                },
+            ],
+            'Instructor Renewals' => [
+                'composite'             => false,
+                'source_table'          => 'instructor_renewals',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+
+                'dwh_table'             => 'Fact_Instructor_Renewal',
+                'dwh_source_id_col'     => 'Source_Renewal_Id',
+                'dwh_deleted_col'       => null,
             ],
             'Grants' => [
                 'source_table'       => 'grants',
@@ -143,12 +159,16 @@ class DataWarehouseQualityService
 
         $results = [];
 
-        foreach ($entities as $label => $config) {
-            $check = !empty($config['composite'])
-                ? $this->auditCompositePivot($config, $sampleLimit)
-                : $this->auditEntity($config, $sampleLimit);
+        foreach ($entities as $name => $cfg) {
+            $isComposite = !empty($cfg['composite'])
+                || !empty($cfg['source_composite_cols'])
+                || (isset($cfg['type']) && $cfg['type'] === 'composite');
 
-            $results[$label] = $check;
+            if ($isComposite) {
+                $results[$name] = $this->auditCompositeKey($cfg, $sampleLimit);
+            } else {
+                $results[$name] = $this->auditEntity($cfg, $sampleLimit);
+            }
         }
 
         return $results;
@@ -215,19 +235,64 @@ class DataWarehouseQualityService
     /**
      * Pivot/Bridge table comparison (e.g. Instructor - Provider link).
      */
-    protected function auditCompositePivot(array $cfg, int $sampleLimit): array
+    protected function auditCompositeKey(array $cfg, int $sampleLimit = 5): array
     {
-        $srcLinks = $this->source->table($cfg['source_table'])
-            ->selectRaw("CONCAT(instructor_id, '-', training_provider_id) as link_key")
+        $separator = $cfg['composite_delimiter'] ?? '-';
+
+        // Helper to safely quote identifiers with or without table prefixes (e.g., Table.Column)
+        $wrapCol = function (string $col): string {
+            $parts = explode('.', trim($col));
+            return implode('.', array_map(fn($part) => "`" . str_replace('`', '', $part) . "`", $parts));
+        };
+
+        // 1. Resolve source composite columns
+        $srcCols = (array) ($cfg['source_composite_cols'] ?? $cfg['source_id_col']);
+        $srcCols = array_map('trim', explode(',', implode(',', $srcCols)));
+
+        // 2. Resolve DWH composite columns
+        $dwhCols = (array) ($cfg['dwh_composite_cols'] ?? $cfg['dwh_source_id_col']);
+        $dwhCols = array_map('trim', explode(',', implode(',', $dwhCols)));
+
+        // 3. Build dynamic CONCAT_WS SQL expressions
+        $srcColsSql = implode(', ', array_map($wrapCol, $srcCols));
+        $dwhColsSql = implode(', ', array_map($wrapCol, $dwhCols));
+
+        // 4. Source Query
+        $srcQuery = $this->source->table($cfg['source_table']);
+
+        if (!empty($cfg['source_deleted_col'])) {
+            $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
+        }
+
+        if (!empty($cfg['source_query_modifier']) && is_callable($cfg['source_query_modifier'])) {
+            $cfg['source_query_modifier']($srcQuery);
+        }
+
+        $srcLinks = $srcQuery
+            ->selectRaw("CONCAT_WS('{$separator}', {$srcColsSql}) as link_key")
             ->pluck('link_key')
+            ->map(fn($val) => (string) $val)
             ->toArray();
 
-        $dwhLinks = $this->dwh->table($cfg['dwh_table'])
-            ->where('Source_System_Key', $this->sourceSystemKey)
-            ->selectRaw("CONCAT(Source_Instructor_Id, '-', Source_Provider_Id) as link_key")
+        // 5. DWH Query with Join Modifiers
+        $dwhQuery = $this->dwh->table($cfg['dwh_table'])
+            ->where("{$cfg['dwh_table']}.Source_System_Key", $this->sourceSystemKey);
+
+        if (!empty($cfg['dwh_deleted_col'])) {
+            $dwhQuery->whereNull("{$cfg['dwh_table']}.{$cfg['dwh_deleted_col']}");
+        }
+
+        if (!empty($cfg['dwh_query_modifier']) && is_callable($cfg['dwh_query_modifier'])) {
+            $cfg['dwh_query_modifier']($dwhQuery);
+        }
+
+        $dwhLinks = $dwhQuery
+            ->selectRaw("CONCAT_WS('{$separator}', {$dwhColsSql}) as link_key")
             ->pluck('link_key')
+            ->map(fn($val) => (string) $val)
             ->toArray();
 
+        // 6. Parity Verification
         $dwhLookup = array_flip($dwhLinks);
 
         $missing = [];
@@ -246,7 +311,7 @@ class DataWarehouseQualityService
             'dwh_count'     => $dwhCount,
             'match'         => ($sourceCount === $dwhCount && $missingCount === 0),
             'missing_count' => $missingCount,
-            'missing_ids'   => array_slice($missing, 0, $sampleLimit), // <-- added here
+            'missing_ids'   => array_slice($missing, 0, $sampleLimit),
         ];
     }
 
