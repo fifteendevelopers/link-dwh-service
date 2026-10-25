@@ -343,6 +343,9 @@ class DataWarehouseSyncService
                     $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
                     $state->updated++;
                 }
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Training_Provider', now()->toDateTimeString(), $count);
             }
         );
     }
@@ -443,6 +446,9 @@ class DataWarehouseSyncService
                         'Organisation_Name' => $org->name,
                     ]
                 );
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Organisation', now()->toDateTimeString(), $count);
             }
         );
     }
@@ -493,6 +499,9 @@ class DataWarehouseSyncService
                     $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
                     $state->updated++;
                 }
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Grant_Recipient', now()->toDateTimeString(), $count);
             }
         );
     }
@@ -530,6 +539,9 @@ class DataWarehouseSyncService
                         'Grant_Source'            => $grant->grant_source,
                     ]
                 );
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Grant', now()->toDateTimeString(), $count);
             }
         );
     }

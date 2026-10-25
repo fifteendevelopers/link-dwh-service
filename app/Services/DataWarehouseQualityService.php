@@ -207,13 +207,13 @@ class DataWarehouseQualityService
             $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
         }
 
-        if (!empty($config['audit_watermark'])) {
-            $watermark = $this->getWatermark($config['dwh_table']);
+        if (!empty($cfg['audit_watermark'])) {
+            $watermark = $this->getWatermark($cfg['dwh_table']);
 
-            if ($watermark && $this->source->getSchemaBuilder()->hasColumn($config['source_table'], 'created_at')) {
-                $srcQuery->where(function ($q) use ($config, $watermark) {
-                    $q->where($config['source_table'] . '.created_at', '<=', $watermark)
-                        ->orWhereNull($config['source_table'] . '.created_at');
+            if ($watermark && $this->source->getSchemaBuilder()->hasColumn($cfg['source_table'], 'created_at')) {
+                $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                    $q->where($cfg['source_table'] . '.created_at', '<=', $watermark)
+                        ->orWhereNull($cfg['source_table'] . '.created_at');
                 });
             }
         }
