@@ -21,6 +21,13 @@ class DataWarehouseQualityService
             ->value('Source_System_Key') ?? 1);
     }
 
+    private function getWatermark(string $tableName): string
+    {
+        return $this->dwh->table('Sync_Log')
+            ->where('Table_Name', $tableName)
+            ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+    }
+
     /**
      * Run all entity integrity checks and return a structured summary.
      */
@@ -34,6 +41,7 @@ class DataWarehouseQualityService
                 'dwh_table' => 'Dim_Delivery_Header',
                 'dwh_source_id_col' => 'Source_Delivery_Id',
                 'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
             ],
             'Consents' => [
                 'source_table'       => 'consents',
@@ -42,6 +50,7 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Consent',
                 'dwh_source_id_col'  => 'Source_Consent_Id',
                 'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
             ],
             'Courses' => [
                 'source_table'       => 'courses',
@@ -54,6 +63,7 @@ class DataWarehouseQualityService
                     $query->join('Dim_Delivery_Header', 'Dim_Course.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
                         ->whereNotNull('Dim_Course.Source_Course_Id');
                 },
+                'audit_watermark'    => true,
             ],
             'Training Providers' => [
                 'source_table' => 'training_providers',
@@ -66,6 +76,7 @@ class DataWarehouseQualityService
                     // Only compare against the active version for SCD Type 2
                     $query->where('Dim_Training_Provider.Is_Current', 1);
                 },
+                'audit_watermark'    => true,
             ],
             'Instructors' => [
                 'source_table' => 'instructors',
@@ -74,6 +85,7 @@ class DataWarehouseQualityService
                 'dwh_table' => 'Dim_Instructor',
                 'dwh_source_id_col' => 'Instructor_Number',
                 'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
             ],
             'Instructor Provider Links' => [
                 'composite'             => true,
@@ -89,6 +101,7 @@ class DataWarehouseQualityService
                     $query->join('Dim_Instructor', 'Fact_Instructor_Training_Provider.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
                         ->join('Dim_Training_Provider', 'Fact_Instructor_Training_Provider.Provider_Key', '=', 'Dim_Training_Provider.Provider_Key');
                 },
+                'audit_watermark'    => false,
             ],
             'Instructor Renewals' => [
                 'composite'             => false,
@@ -99,6 +112,7 @@ class DataWarehouseQualityService
                 'dwh_table'             => 'Fact_Instructor_Renewal',
                 'dwh_source_id_col'     => 'Source_Renewal_Id',
                 'dwh_deleted_col'       => null,
+                'audit_watermark'    => true,
             ],
             'Grants' => [
                 'source_table'       => 'grants',
@@ -107,6 +121,7 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Grant',
                 'dwh_source_id_col'  => 'Source_Grant_Id',
                 'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
             ],
             'Grant Recipients' => [
                 'source_table'       => 'grant_recipients',
@@ -118,6 +133,7 @@ class DataWarehouseQualityService
                 'dwh_query_modifier' => function ($query) {
                     $query->where('Dim_Grant_Recipient.Is_Current', 1);
                 },
+                'audit_watermark'    => true,
             ],
             'Organisations' => [
                 'source_table'       => 'organisations',
@@ -126,6 +142,7 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Organisation',
                 'dwh_source_id_col'  => 'Source_Organisation_Id',
                 'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
             ],
             'Riders' => [
                 'source_table'       => 'riders',
@@ -134,6 +151,7 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Rider',
                 'dwh_source_id_col'  => 'Source_Rider_Id',
                 'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
             ],
             'Schools' => [
                 'source_table'       => 'vendor_edubase',
@@ -146,6 +164,7 @@ class DataWarehouseQualityService
                     // If Dim_School tracks SCD Type 2 versions or has a default fallback row:
                     $query->whereNotNull('Dim_School.School_Urn');
                 },
+                'audit_watermark'    => true,
             ],
             'Teacher Trainers' => [
                 'source_table'       => 'teacher_trainers',
@@ -154,7 +173,9 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Teacher_Trainer',
                 'dwh_source_id_col'  => 'Source_Teacher_Trainer_Id',
                 'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
             ],
+
         ];
 
         $results = [];
@@ -179,11 +200,22 @@ class DataWarehouseQualityService
      */
     protected function auditEntity(array $cfg, int $sampleLimit): array
     {
-        // 1. Build Source Query
+        // Build Source Query
         $srcQuery = $this->source->table($cfg['source_table']);
 
         if (!empty($cfg['source_deleted_col'])) {
             $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
+        }
+
+        if (!empty($config['audit_watermark'])) {
+            $watermark = $this->getWatermark($config['dwh_table']);
+
+            if ($watermark && $this->source->getSchemaBuilder()->hasColumn($config['source_table'], 'created_at')) {
+                $srcQuery->where(function ($q) use ($config, $watermark) {
+                    $q->where($config['source_table'] . '.created_at', '<=', $watermark)
+                        ->orWhereNull($config['source_table'] . '.created_at');
+                });
+            }
         }
 
         if (!empty($cfg['source_query_modifier']) && is_callable($cfg['source_query_modifier'])) {
