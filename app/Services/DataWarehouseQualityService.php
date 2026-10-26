@@ -235,13 +235,13 @@ class DataWarehouseQualityService
                 },
                 'dwh_table'             => 'Fact_Instructor_Delivery',
                 'dwh_composite_cols'    => ['Dim_Delivery_Header.Source_Delivery_Id', 'Dim_Instructor.Source_Instructor_Id'],
-                'dwh_deleted_col'       => 'Source_Deleted_At', // Excludes soft-deleted DWH entries
+                'dwh_deleted_col'       => 'Source_Deleted_At',
                 'dwh_query_modifier'    => function ($query) {
                     $query->join('Dim_Delivery_Header', 'Fact_Instructor_Delivery.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
                         ->join('Dim_Instructor', 'Fact_Instructor_Delivery.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
                         ->whereNull('Dim_Delivery_Header.Source_Deleted_At');
                 },
-                'audit_watermark'       => true,
+                'audit_watermark'       => false, // Disabled: avoids false positives from null/inconsistent pivot timestamps
             ],
             'Instructor Feedback Lookup' => [
                 'source_table'       => 'instructor_feedback_LOOKUP',
