@@ -224,7 +224,7 @@ class SyncToDataWarehouse extends Command
             }
 
             /** Call "Pruning" action - this requires a specific call to action the pruning */
-            if ($table === 'prune_fact_instructor_delivery') {
+            if ($table === 'all' || $table === 'prune_fact_instructor_delivery') {
                 $runSyncStep('Prune Orphaned Pivot Records', function () use ($syncService) {
                     $stats = $syncService->pruneOrphanedFactInstructorDeliveryPivotRecords($this);
                     $pruned = $stats['Fact_Instructor_Delivery'] ?? 0;
