@@ -12,6 +12,8 @@ class DataWarehouseQualityService
     protected $dwh;
     protected int $sourceSystemKey;
 
+    protected array $timestampColCache = [];
+
     public function __construct()
     {
         $this->source = DB::connection('mysql_src');
@@ -26,6 +28,24 @@ class DataWarehouseQualityService
         return $this->dwh->table('Sync_Log')
             ->where('Table_Name', $tableName)
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
+    }
+
+    /**
+     * Resolve the available timestamp column(s) on a source table.
+     * Returns ['updated_at' => bool, 'created_at' => bool]
+     */
+    protected function getSourceTimestampColumns(string $tableName): array
+    {
+        if (isset($this->timestampColCache[$tableName])) {
+            return $this->timestampColCache[$tableName];
+        }
+
+        $schema = $this->source->getSchemaBuilder();
+
+        return $this->timestampColCache[$tableName] = [
+            'has_updated_at' => $schema->hasColumn($tableName, 'updated_at'),
+            'has_created_at' => $schema->hasColumn($tableName, 'created_at'),
+        ];
     }
 
     /**
@@ -54,7 +74,7 @@ class DataWarehouseQualityService
                     $query->join('Dim_Delivery_Header', 'Dim_Course.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
                         ->whereNotNull('Dim_Course.Source_Course_Id');
                 },
-                'audit_watermark'    => true,
+                'audit_watermark'    => false, // Full table is synced; avoid false negatives from in-flight daytime updates
             ],
             'Deliveries' => [
                 'source_table' => 'deliveries',
@@ -211,13 +231,13 @@ class DataWarehouseQualityService
                 'audit_watermark'       => true,
             ],
             'Instructor Feedback Lookup' => [
-                'source_table' => 'instructor_feedback_LOOKUP',
-                'source_id_col' => 'id',
+                'source_table'       => 'instructor_feedback_LOOKUP',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Instructor_Feedback_Lookup',
-                'dwh_source_id_col' => 'Feedback_Lookup_Key',
-                'dwh_deleted_col' => null,
-                'audit_watermark'    => true,
+                'dwh_table'          => 'Dim_Instructor_Feedback_Lookup',
+                'dwh_source_id_col'  => 'Feedback_Lookup_Key',
+                'dwh_deleted_col'    => null,
+                'audit_watermark'    => false, // Pure lookup dictionary: no timestamps in source
             ],
             'Instructor Provider Links' => [
                 'composite'             => true,
@@ -253,11 +273,10 @@ class DataWarehouseQualityService
                 'source_query_modifier' => function ($query) {
                     $query->join('instructors', 'instructor_qualifications.instructor_id', '=', 'instructors.id');
                 },
-
                 'dwh_table'             => 'Fact_Instructor_Qualification',
                 'dwh_source_id_col'     => 'Source_Qual_Id',
                 'dwh_deleted_col'       => null,
-                'audit_watermark'       => true,
+                'audit_watermark'       => false,
             ],
             'Organisations' => [
                 'source_table'       => 'organisations',
@@ -342,7 +361,7 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Training_Organisation',
                 'dwh_source_id_col'  => 'Source_Organisation_Id',
                 'dwh_deleted_col'    => null,
-                'audit_watermark'    => true,
+                'audit_watermark'    => false,
             ],
             'Training Providers' => [
                 'source_table' => 'training_providers',
@@ -402,11 +421,32 @@ class DataWarehouseQualityService
         if (!empty($cfg['audit_watermark'])) {
             $watermark = $this->getWatermark($cfg['dwh_table']);
 
-            if ($watermark && $this->source->getSchemaBuilder()->hasColumn($cfg['source_table'], 'created_at')) {
-                $srcQuery->where(function ($q) use ($cfg, $watermark) {
-                    $q->where($cfg['source_table'] . '.created_at', '<=', $watermark)
-                        ->orWhereNull($cfg['source_table'] . '.created_at');
-                });
+            if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+                $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
+                $hasUpdated = $tsInfo['has_updated_at'];
+                $hasCreated = $tsInfo['has_created_at'];
+
+                if ($hasUpdated && $hasCreated) {
+                    // Both exist: check updated_at first, fallback to created_at if updated_at is null
+                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                        $q->where("{$cfg['source_table']}.updated_at", '<=', $watermark)
+                            ->orWhere(function ($fallback) use ($cfg, $watermark) {
+                                $fallback->whereNull("{$cfg['source_table']}.updated_at")
+                                    ->where("{$cfg['source_table']}.created_at", '<=', $watermark);
+                            });
+                    });
+                } elseif ($hasUpdated) {
+                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                        $q->where("{$cfg['source_table']}.updated_at", '<=', $watermark)
+                            ->orWhereNull("{$cfg['source_table']}.updated_at");
+                    });
+                } elseif ($hasCreated) {
+                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                        $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
+                            ->orWhereNull("{$cfg['source_table']}.created_at");
+                    });
+                }
+                // If neither exists, no watermark filter is applied, preventing SQL 1054 errors.
             }
         }
 

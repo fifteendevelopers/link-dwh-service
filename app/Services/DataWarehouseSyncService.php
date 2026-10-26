@@ -952,14 +952,13 @@ class DataWarehouseSyncService
         $query = $this->source->table('courses')
             ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
             ->where(function ($q) use ($watermark) {
-                $q->where('courses.updated_at', '>', $watermark)
-                    ->orWhere(function ($sub) use ($watermark) {
-                        $sub->whereNull('courses.updated_at')
-                            ->where(function ($nested) use ($watermark) {
-                                $nested->where('courses.created_at', '>', $watermark)
-                                    ->orWhereNull('courses.created_at');
-                            });
-                    });
+                $q->where(function ($sub) use ($watermark) {
+                    $sub->where('updated_at', '>', $watermark)
+                        ->orWhere(function ($nested) use ($watermark) {
+                            $nested->whereNull('updated_at')
+                                ->where('created_at', '>', $watermark);
+                        });
+                });
             });
 
         if ($hasCourseSoftDeletes) {
@@ -1021,7 +1020,11 @@ class DataWarehouseSyncService
 
                 $rowTimestamp = $course->updated_at ?? $course->created_at ?? null;
                 if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
-                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : \Carbon\Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+
+                if ($course->id && (is_null($state->highestId) || $course->id > $state->highestId)) {
+                    $state->highestId = $course->id;
                 }
             },
             function ($state, $count) {
