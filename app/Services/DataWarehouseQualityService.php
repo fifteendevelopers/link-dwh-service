@@ -1,6 +1,5 @@
 <?php
 
-
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
@@ -12,7 +11,8 @@ class DataWarehouseQualityService
     protected $dwh;
     protected int $sourceSystemKey;
 
-    protected array $timestampColCache = [];
+    protected array $sourceTimestampCache = [];
+    protected array $dwhTimestampCache = [];
 
     public function __construct()
     {
@@ -31,20 +31,38 @@ class DataWarehouseQualityService
     }
 
     /**
-     * Resolve the available timestamp column(s) on a source table.
-     * Returns ['updated_at' => bool, 'created_at' => bool]
+     * Resolve available timestamp column(s) on a source table.
+     * Returns ['has_updated_at' => bool, 'has_created_at' => bool]
      */
     protected function getSourceTimestampColumns(string $tableName): array
     {
-        if (isset($this->timestampColCache[$tableName])) {
-            return $this->timestampColCache[$tableName];
+        if (isset($this->sourceTimestampCache[$tableName])) {
+            return $this->sourceTimestampCache[$tableName];
         }
 
         $schema = $this->source->getSchemaBuilder();
 
-        return $this->timestampColCache[$tableName] = [
+        return $this->sourceTimestampCache[$tableName] = [
             'has_updated_at' => $schema->hasColumn($tableName, 'updated_at'),
             'has_created_at' => $schema->hasColumn($tableName, 'created_at'),
+        ];
+    }
+
+    /**
+     * Resolve available timestamp column(s) on a DWH table.
+     * Returns ['has_created_at' => bool, 'has_updated_at' => bool]
+     */
+    protected function getDwhTimestampColumns(string $tableName): array
+    {
+        if (isset($this->dwhTimestampCache[$tableName])) {
+            return $this->dwhTimestampCache[$tableName];
+        }
+
+        $schema = $this->dwh->getSchemaBuilder();
+
+        return $this->dwhTimestampCache[$tableName] = [
+            'has_created_at' => $schema->hasColumn($tableName, 'Source_Created_At'),
+            'has_updated_at' => $schema->hasColumn($tableName, 'Source_Updated_At'),
         ];
     }
 
@@ -74,69 +92,67 @@ class DataWarehouseQualityService
                     $query->join('Dim_Delivery_Header', 'Dim_Course.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
                         ->whereNotNull('Dim_Course.Source_Course_Id');
                 },
-                'audit_watermark'    => false, // Full table is synced; avoid false negatives from in-flight daytime updates
+                'audit_watermark'    => false, // Full table synced; avoid false negatives from daytime row updates
             ],
             'Deliveries' => [
-                'source_table' => 'deliveries',
-                'source_id_col' => 'id',
+                'source_table'       => 'deliveries',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Delivery_Header',
-                'dwh_source_id_col' => 'Source_Delivery_Id',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_Delivery_Header',
+                'dwh_source_id_col'  => 'Source_Delivery_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'External Systems' => [
-                'source_table' => 'external_systems',
-                'source_id_col' => 'id',
+                'source_table'       => 'external_systems',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_External_Systems',
-                'dwh_source_id_col' => 'Source_External_System_Id',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_External_Systems',
+                'dwh_source_id_col'  => 'Source_External_System_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Get Cycling Courses' => [
-                'source_table' => 'get_cycling_courses',
-                'source_id_col' => 'id',
+                'source_table'       => 'get_cycling_courses',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Get_Cycling_Course',
-                'dwh_source_id_col' => 'Source_Course_Id',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_Get_Cycling_Course',
+                'dwh_source_id_col'  => 'Source_Course_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Get Cycling Riders' => [
-                'source_table' => 'get_cycling_riders',
-                'source_id_col' => 'id',
+                'source_table'       => 'get_cycling_riders',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Get_Cycling_Rider',
-                'dwh_source_id_col' => 'Source_Rider_Id',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_Get_Cycling_Rider',
+                'dwh_source_id_col'  => 'Source_Rider_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Get Cycling Rider Courses' => [
                 'source_table'          => 'get_cycling_join_riders_courses',
                 'source_id_col'         => 'id',
                 'source_query_modifier' => function ($query) {
-                    // Exclude orphaned bridge rows referencing hard-deleted parent riders
                     $query->join('get_cycling_riders', 'get_cycling_join_riders_courses.rider_id', '=', 'get_cycling_riders.id');
                 },
-
                 'dwh_table'             => 'Fact_Get_Cycling_Rider_Course',
                 'dwh_source_id_col'     => 'Source_Join_Id',
                 'audit_watermark'       => true,
             ],
             'Get Cycling Rider Notes' => [
-                'source_table' => 'get_cycling_rider_notes',
-                'source_id_col' => 'id',
+                'source_table'       => 'get_cycling_rider_notes',
+                'source_id_col'      => 'id',
                 'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Get_Cycling_Rider_Note',
-                'dwh_source_id_col' => 'Source_Note_Id',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_Get_Cycling_Rider_Note',
+                'dwh_source_id_col'  => 'Source_Note_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Grants' => [
                 'source_table'       => 'grants',
                 'source_id_col'      => 'id',
-                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'source_deleted_col' => null,
                 'dwh_table'          => 'Dim_Grant',
                 'dwh_source_id_col'  => 'Source_Grant_Id',
                 'dwh_deleted_col'    => null,
@@ -145,7 +161,7 @@ class DataWarehouseQualityService
             'Grant Claims' => [
                 'source_table'       => 'grant_claims',
                 'source_id_col'      => 'id',
-                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'source_deleted_col' => null,
                 'dwh_table'          => 'Fact_Grant_Claims',
                 'dwh_source_id_col'  => 'Source_Claim_Id',
                 'dwh_deleted_col'    => null,
@@ -154,7 +170,7 @@ class DataWarehouseQualityService
             'Grant Reallocations' => [
                 'source_table'       => 'grant_reallocations',
                 'source_id_col'      => 'id',
-                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'source_deleted_col' => null,
                 'dwh_table'          => 'Fact_Grant_Reallocations',
                 'dwh_source_id_col'  => 'Source_Reallocation_Id',
                 'dwh_deleted_col'    => null,
@@ -173,23 +189,22 @@ class DataWarehouseQualityService
                 'audit_watermark'    => true,
             ],
             'Grant Recipient Renewals' => [
-                'composite'             => false,
-                'source_table'          => 'grant_recipient_renewals',
-                'source_id_col'         => 'id',
-                'source_deleted_col'    => null,
-
-                'dwh_table'             => 'Fact_Grant_Recipient_Renewal',
-                'dwh_source_id_col'     => 'Source_Renewal_Id',
-                'dwh_deleted_col'       => null,
+                'composite'          => false,
+                'source_table'       => 'grant_recipient_renewals',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Fact_Grant_Recipient_Renewal',
+                'dwh_source_id_col'  => 'Source_Renewal_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Instructors' => [
-                'source_table' => 'instructors',
-                'source_id_col' => 'instructor_number',
+                'source_table'       => 'instructors',
+                'source_id_col'      => 'instructor_number',
                 'source_deleted_col' => 'deleted_at',
-                'dwh_table' => 'Dim_Instructor',
-                'dwh_source_id_col' => 'Instructor_Number',
-                'dwh_deleted_col' => null,
+                'dwh_table'          => 'Dim_Instructor',
+                'dwh_source_id_col'  => 'Instructor_Number',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Instructor Courses' => [
@@ -197,20 +212,18 @@ class DataWarehouseQualityService
                 'source_table'          => 'join_instructors_courses',
                 'source_composite_cols' => ['instructor_id', 'course_id'],
                 'source_deleted_col'    => null,
-
                 'dwh_table'             => 'Fact_Instructor_Course',
                 'dwh_composite_cols'    => ['Dim_Instructor.Source_Instructor_Id', 'Dim_Course.Source_Course_Id'],
                 'dwh_deleted_col'       => null,
-
                 'dwh_query_modifier'    => function ($query) {
                     $query->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
                         ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key');
                 },
-                'audit_watermark'    => false,
+                'audit_watermark'       => false,
             ],
             'Instructor Deliveries' => [
                 'composite'             => true,
-                'use_straight_join'     => true, // <-- Activates STRAIGHT_JOIN on DWH select
+                'use_straight_join'     => true,
                 'source_table'          => 'join_deliveries_instructors',
                 'source_composite_cols' => ['join_deliveries_instructors.delivery_id', 'join_deliveries_instructors.instructor_id'],
                 'source_deleted_col'    => 'deleted_at',
@@ -220,9 +233,9 @@ class DataWarehouseQualityService
                         ->whereNull('deliveries.deleted_at')
                         ->whereNull('instructors.deleted_at');
                 },
-
                 'dwh_table'             => 'Fact_Instructor_Delivery',
                 'dwh_composite_cols'    => ['Dim_Delivery_Header.Source_Delivery_Id', 'Dim_Instructor.Source_Instructor_Id'],
+                'dwh_deleted_col'       => 'Source_Deleted_At', // Excludes soft-deleted DWH entries
                 'dwh_query_modifier'    => function ($query) {
                     $query->join('Dim_Delivery_Header', 'Fact_Instructor_Delivery.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
                         ->join('Dim_Instructor', 'Fact_Instructor_Delivery.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
@@ -237,33 +250,30 @@ class DataWarehouseQualityService
                 'dwh_table'          => 'Dim_Instructor_Feedback_Lookup',
                 'dwh_source_id_col'  => 'Feedback_Lookup_Key',
                 'dwh_deleted_col'    => null,
-                'audit_watermark'    => false, // Pure lookup dictionary: no timestamps in source
+                'audit_watermark'    => false,
             ],
             'Instructor Provider Links' => [
                 'composite'             => true,
                 'source_table'          => 'join_instructors_training_providers',
                 'source_composite_cols' => ['instructor_id', 'training_provider_id'],
                 'source_deleted_col'    => null,
-
                 'dwh_table'             => 'Fact_Instructor_Training_Provider',
                 'dwh_composite_cols'    => ['Dim_Instructor.Source_Instructor_Id', 'Dim_Training_Provider.Source_Provider_Id'],
                 'dwh_deleted_col'       => null,
-
                 'dwh_query_modifier'    => function ($query) {
                     $query->join('Dim_Instructor', 'Fact_Instructor_Training_Provider.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
                         ->join('Dim_Training_Provider', 'Fact_Instructor_Training_Provider.Provider_Key', '=', 'Dim_Training_Provider.Provider_Key');
                 },
-                'audit_watermark'    => false,
+                'audit_watermark'       => false,
             ],
             'Instructor Renewals' => [
-                'composite'             => false,
-                'source_table'          => 'instructor_renewals',
-                'source_id_col'         => 'id',
-                'source_deleted_col'    => null,
-
-                'dwh_table'             => 'Fact_Instructor_Renewal',
-                'dwh_source_id_col'     => 'Source_Renewal_Id',
-                'dwh_deleted_col'       => null,
+                'composite'          => false,
+                'source_table'       => 'instructor_renewals',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Fact_Instructor_Renewal',
+                'dwh_source_id_col'  => 'Source_Renewal_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
             'Instructor Qualifications' => [
@@ -292,7 +302,6 @@ class DataWarehouseQualityService
                 'source_id_col'         => 'id',
                 'source_deleted_col'    => null,
                 'source_query_modifier' => function ($query) {
-                    // Enforce referential integrity against parent tables without discarding soft-deleted deliveries
                     $query->join('courses', 'parent_survey.course_id', '=', 'courses.id')
                         ->join('deliveries', 'parent_survey.delivery_id', '=', 'deliveries.id');
                 },
@@ -315,22 +324,19 @@ class DataWarehouseQualityService
                 'source_table'          => 'join_riders_courses',
                 'source_composite_cols' => ['rider_id', 'course_id'],
                 'source_deleted_col'    => null,
-
                 'dwh_table'             => 'Fact_Rider_Course',
                 'dwh_composite_cols'    => ['Source_Rider_Id', 'Source_Course_Id'],
                 'dwh_deleted_col'       => null,
-
                 'audit_watermark'       => true,
             ],
             'Schools' => [
                 'source_table'       => 'vendor_edubase',
-                'source_id_col'      => 'urn', // Maps on School_Urn natural key
+                'source_id_col'      => 'urn',
                 'source_deleted_col' => null,
                 'dwh_table'          => 'Dim_School',
                 'dwh_source_id_col'  => 'School_Urn',
                 'dwh_deleted_col'    => null,
                 'dwh_query_modifier' => function ($query) {
-                    // If Dim_School tracks SCD Type 2 versions or has a default fallback row:
                     $query->whereNotNull('Dim_School.School_Urn');
                 },
                 'audit_watermark'    => true,
@@ -364,27 +370,25 @@ class DataWarehouseQualityService
                 'audit_watermark'    => false,
             ],
             'Training Providers' => [
-                'source_table' => 'training_providers',
-                'source_id_col' => 'id',
-                'source_deleted_col' => 'deleted_at',
-                'dwh_table' => 'Dim_Training_Provider',
-                'dwh_source_id_col' => 'Source_Provider_Id',
-                'dwh_deleted_col' => 'Source_Deleted_At',
+                'source_table'          => 'training_providers',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => 'deleted_at',
+                'dwh_table'             => 'Dim_Training_Provider',
+                'dwh_source_id_col'     => 'Source_Provider_Id',
+                'dwh_deleted_col'       => 'Source_Deleted_At',
                 'dwh_query_modifier'    => function ($query) {
-                    // Only compare against the active version for SCD Type 2
                     $query->where('Dim_Training_Provider.Is_Current', 1);
                 },
-                'audit_watermark'    => true,
+                'audit_watermark'       => true,
             ],
             'Training Provider Renewals' => [
-                'composite'             => false,
-                'source_table'          => 'training_provider_renewals',
-                'source_id_col'         => 'id',
-                'source_deleted_col'    => null,
-
-                'dwh_table'             => 'Fact_Training_Provider_Renewal',
-                'dwh_source_id_col'     => 'Source_Renewal_Id',
-                'dwh_deleted_col'       => null,
+                'composite'          => false,
+                'source_table'       => 'training_provider_renewals',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Fact_Training_Provider_Renewal',
+                'dwh_source_id_col'  => 'Source_Renewal_Id',
+                'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ]
         ];
@@ -411,42 +415,34 @@ class DataWarehouseQualityService
      */
     protected function auditEntity(array $cfg, int $sampleLimit): array
     {
-        // Build Source Query
+        $watermark = null;
+        if (!empty($cfg['audit_watermark'])) {
+            $watermark = $this->getWatermark($cfg['dwh_table']);
+        }
+
+        // 1. Build Source Query
         $srcQuery = $this->source->table($cfg['source_table']);
 
         if (!empty($cfg['source_deleted_col'])) {
             $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
         }
 
-        if (!empty($cfg['audit_watermark'])) {
-            $watermark = $this->getWatermark($cfg['dwh_table']);
+        if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+            $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
 
-            if ($watermark && $watermark !== '1900-01-01 00:00:00') {
-                $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
-                $hasUpdated = $tsInfo['has_updated_at'];
-                $hasCreated = $tsInfo['has_created_at'];
-
-                if ($hasUpdated && $hasCreated) {
-                    // Both exist: check updated_at first, fallback to created_at if updated_at is null
-                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
-                        $q->where("{$cfg['source_table']}.updated_at", '<=', $watermark)
-                            ->orWhere(function ($fallback) use ($cfg, $watermark) {
-                                $fallback->whereNull("{$cfg['source_table']}.updated_at")
-                                    ->where("{$cfg['source_table']}.created_at", '<=', $watermark);
-                            });
-                    });
-                } elseif ($hasUpdated) {
-                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
-                        $q->where("{$cfg['source_table']}.updated_at", '<=', $watermark)
-                            ->orWhereNull("{$cfg['source_table']}.updated_at");
-                    });
-                } elseif ($hasCreated) {
-                    $srcQuery->where(function ($q) use ($cfg, $watermark) {
-                        $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
-                            ->orWhereNull("{$cfg['source_table']}.created_at");
-                    });
-                }
-                // If neither exists, no watermark filter is applied, preventing SQL 1054 errors.
+            // Primary: created_at -> Fallback: updated_at
+            if ($tsInfo['has_created_at'] && $tsInfo['has_updated_at']) {
+                $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                    $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
+                        ->orWhere(function ($fallback) use ($cfg, $watermark) {
+                            $fallback->whereNull("{$cfg['source_table']}.created_at")
+                                ->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
+                        });
+                });
+            } elseif ($tsInfo['has_created_at']) {
+                $srcQuery->where("{$cfg['source_table']}.created_at", '<=', $watermark);
+            } elseif ($tsInfo['has_updated_at']) {
+                $srcQuery->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
             }
         }
 
@@ -464,6 +460,26 @@ class DataWarehouseQualityService
 
         if (!empty($cfg['dwh_deleted_col'])) {
             $dwhQuery->whereNull("{$cfg['dwh_table']}.{$cfg['dwh_deleted_col']}");
+        }
+
+        // Apply symmetric watermark filter AFTER $dwhQuery is initialized
+        if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+            $dwhTsInfo = $this->getDwhTimestampColumns($cfg['dwh_table']);
+            $dwhTable = $cfg['dwh_table'];
+
+            if ($dwhTsInfo['has_created_at'] && $dwhTsInfo['has_updated_at']) {
+                $dwhQuery->where(function ($q) use ($dwhTable, $watermark) {
+                    $q->where("{$dwhTable}.Source_Created_At", '<=', $watermark)
+                        ->orWhere(function ($fallback) use ($dwhTable, $watermark) {
+                            $fallback->whereNull("{$dwhTable}.Source_Created_At")
+                                ->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
+                        });
+                });
+            } elseif ($dwhTsInfo['has_created_at']) {
+                $dwhQuery->where("{$dwhTable}.Source_Created_At", '<=', $watermark);
+            } elseif ($dwhTsInfo['has_updated_at']) {
+                $dwhQuery->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
+            }
         }
 
         if (!empty($cfg['dwh_query_modifier']) && is_callable($cfg['dwh_query_modifier'])) {
@@ -502,8 +518,8 @@ class DataWarehouseQualityService
     protected function auditCompositeKey(array $cfg, int $sampleLimit = 5): array
     {
         $separator = $cfg['composite_delimiter'] ?? '-';
+        $watermark = !empty($cfg['audit_watermark']) ? $this->getWatermark($cfg['dwh_table']) : null;
 
-        // Helper to safely quote identifiers with or without table prefixes (e.g., Table.Column)
         $wrapCol = function (string $col): string {
             $parts = explode('.', trim($col));
             return implode('.', array_map(fn($part) => "`" . str_replace('`', '', $part) . "`", $parts));
@@ -528,15 +544,21 @@ class DataWarehouseQualityService
             $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
         }
 
-        if (!empty($cfg['audit_watermark'])) {
-            $watermark = $this->getWatermark($cfg['dwh_table']);
-            $tsCol = $cfg['source_timestamp_col'] ?? 'updated_at';
+        if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+            $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
 
-            if ($watermark && $watermark !== '1900-01-01 00:00:00') {
-                $srcQuery->where(function ($q) use ($cfg, $tsCol, $watermark) {
-                    $q->where("{$cfg['source_table']}.{$tsCol}", '<=', $watermark)
-                        ->orWhereNull("{$cfg['source_table']}.{$tsCol}");
+            if ($tsInfo['has_created_at'] && $tsInfo['has_updated_at']) {
+                $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                    $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
+                        ->orWhere(function ($fallback) use ($cfg, $watermark) {
+                            $fallback->whereNull("{$cfg['source_table']}.created_at")
+                                ->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
+                        });
                 });
+            } elseif ($tsInfo['has_created_at']) {
+                $srcQuery->where("{$cfg['source_table']}.created_at", '<=', $watermark);
+            } elseif ($tsInfo['has_updated_at']) {
+                $srcQuery->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
             }
         }
 
@@ -556,6 +578,25 @@ class DataWarehouseQualityService
 
         if (!empty($cfg['dwh_deleted_col'])) {
             $dwhQuery->whereNull("{$cfg['dwh_table']}.{$cfg['dwh_deleted_col']}");
+        }
+
+        if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+            $dwhTsInfo = $this->getDwhTimestampColumns($cfg['dwh_table']);
+            $dwhTable = $cfg['dwh_table'];
+
+            if ($dwhTsInfo['has_created_at'] && $dwhTsInfo['has_updated_at']) {
+                $dwhQuery->where(function ($q) use ($dwhTable, $watermark) {
+                    $q->where("{$dwhTable}.Source_Created_At", '<=', $watermark)
+                        ->orWhere(function ($fallback) use ($dwhTable, $watermark) {
+                            $fallback->whereNull("{$dwhTable}.Source_Created_At")
+                                ->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
+                        });
+                });
+            } elseif ($dwhTsInfo['has_created_at']) {
+                $dwhQuery->where("{$dwhTable}.Source_Created_At", '<=', $watermark);
+            } elseif ($dwhTsInfo['has_updated_at']) {
+                $dwhQuery->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
+            }
         }
 
         if (!empty($cfg['dwh_query_modifier']) && is_callable($cfg['dwh_query_modifier'])) {
@@ -593,11 +634,8 @@ class DataWarehouseQualityService
         ];
     }
 
-    // In app/Services/DataWarehouseQualityService.php
-
     /**
-     * Runs a post-audit diagnostic on the source connection to detect orphaned
-     * or soft-deleted parent relationships in join_instructors_training_providers.
+     * Diagnostic on the source connection to detect orphaned/soft-deleted relations.
      */
     public function auditInstructorProviderOrphans(): array
     {
@@ -647,5 +685,4 @@ class DataWarehouseQualityService
             'records' => $rows->toArray(),
         ];
     }
-
 }
