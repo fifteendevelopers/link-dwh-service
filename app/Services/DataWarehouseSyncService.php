@@ -484,6 +484,7 @@ class DataWarehouseSyncService
 
         $query = $this->source->table('vendor_edubase')
             ->select($selectFields)
+            ->whereNotNull('urn')
             ->where(function ($q) use ($watermark) {
                 $q->where('updated_at', '>', $watermark)
                     ->orWhere(function ($sub) use ($watermark) {
@@ -494,7 +495,7 @@ class DataWarehouseSyncService
                             });
                     });
             })
-            ->orderBy('id', 'asc');
+            ->orderBy('urn', 'asc');
 
         return $this->executeSyncRunner(
             'Dim_School',
@@ -506,13 +507,14 @@ class DataWarehouseSyncService
                     $imdDecile = (int) round((float) $school->deprivation_index);
                 }
 
+                // Match by natural business key: School_Urn + Source_System_Key
                 $this->dwh->table('Dim_School')->updateOrInsert(
                     [
-                        'Source_School_Id'  => $school->id,
+                        'School_Urn'        => $school->urn,
                         'Source_System_Key' => $sourceSystemKey,
                     ],
                     [
-                        'School_Urn'                      => $school->urn,
+                        'Source_School_Id'                => $school->id,
                         'School_Name'                     => $school->establishment_name,
                         'La_Code'                         => $school->la_code,
                         'La_Name'                         => $school->la_name,
@@ -527,17 +529,26 @@ class DataWarehouseSyncService
                         'Urban_Rural_Code'                => $school->urban_rural_code,
                         'Rural_Urban_Classification'      => $school->urban_rural_name,
                         'Imd_Decile'                      => $imdDecile,
+                        'updated_at'                      => now(),
                     ]
                 );
 
+                // Watermark tracking
                 $rowTimestamp = $school->updated_at ?? $school->created_at ?? null;
                 if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
-                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : \Carbon\Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
+
+                // Track highest URN for Sync_Log.Last_Source_Id
+                if ($school->urn && (is_null($state->highestId) || $school->urn > $state->highestId)) {
+                    $state->highestId = $school->urn;
+                }
+
+                return true;
             },
             function ($state, $count) use ($watermark) {
                 if ($state->highestTimestamp && $state->highestTimestamp > $watermark) {
-                    $this->updateWatermark('Dim_School', $state->highestTimestamp, $count, $state->highestId);
+                    $this->updateWatermark('Dim_School', $state->highestTimestamp, $state->highestId, $count);
                 }
             }
         );
@@ -1867,59 +1878,93 @@ class DataWarehouseSyncService
         $sourceSystemKey = $this->getSourceSystemKey();
         $watermark = $this->getWatermark('Fact_Rider_Course');
 
+        // Incremental: only check updated_at when watermark exists.
+        // Legacy NULL rows are already backfilled and will not be re-scanned.
         $query = $this->source->table('join_riders_courses')
             ->when($watermark, function ($q) use ($watermark) {
-                $q->where(function ($sub) use ($watermark) {
-                    $sub->where('updated_at', '>', $watermark)
-                        ->orWhere('created_at', '>', $watermark)
-                        ->orWhereNull('created_at')
-                        ->orWhereNull('updated_at');
-                });
+                $q->where('updated_at', '>', $watermark);
             })
             ->orderBy('rider_id', 'asc')
             ->orderBy('course_id', 'asc');
 
-        return $this->executeSyncRunner(
-            'Fact_Rider_Course',
-            $command,
-            $query,
-            function ($rc, $state) use ($sourceSystemKey) {
+        $total = $query->count();
+        if ($total === 0) {
+            return "Fact_Rider_Course: Nothing to sync.";
+        }
+
+        $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+        $bar?->start();
+
+        $highestTimestamp = $watermark;
+        $highestRiderId = null;
+        $totalProcessed = 0;
+
+        // Chunk through source records in memory batches
+        $query->chunk(1500, function ($rows) use (&$highestTimestamp, &$highestRiderId, &$totalProcessed, $sourceSystemKey, $bar) {
+            $batch = [];
+
+            foreach ($rows as $rc) {
                 $finalAttendance = (!empty($rc->attended_override) && $rc->attended_override == 1)
                     ? $rc->attended_override
                     : ($rc->attended ?? 1);
 
-                $this->dwh->table('Fact_Rider_Course')->updateOrInsert(
-                    [
-                        'Source_Rider_Id'   => $rc->rider_id,
-                        'Source_Course_Id'  => $rc->course_id,
-                        'Source_System_Key' => $sourceSystemKey,
-                    ],
-                    [
-                        'Status'               => $rc->status ?? 0,
-                        'Attended'             => $finalAttendance,
-                        'Withdrawn'            => $rc->withdrawn ?? 0,
-                        'Withdrawal_Reason'    => $rc->withdrawal_reason,
-                        'Has_Completed_Course' => $rc->has_completed_course ?? 0,
-                        'Has_Survey_Completed' => $rc->has_survey_completed ?? 0,
-                        'Course_Complete_Date' => $rc->course_complete_date,
-                        'Source_Created_At'    => $rc->created_at,
-                        'Source_Updated_At'    => $rc->updated_at,
-                        'Updated_At'           => now(),
-                    ]
-                );
+                $batch[] = [
+                    'Source_Rider_Id'      => $rc->rider_id,
+                    'Source_Course_Id'     => $rc->course_id,
+                    'Source_System_Key'    => $sourceSystemKey,
+                    'Status'               => $rc->status ?? 0,
+                    'Attended'             => (bool) $finalAttendance,
+                    'Withdrawn'            => (bool) ($rc->withdrawn ?? 0),
+                    'Withdrawal_Reason'    => $rc->withdrawal_reason,
+                    'Has_Completed_Course' => (bool) ($rc->has_completed_course ?? 0),
+                    'Has_Survey_Completed' => (bool) ($rc->has_survey_completed ?? 0),
+                    'Course_Complete_Date' => $rc->course_complete_date,
+                    'Source_Created_At'    => $rc->created_at,
+                    'Source_Updated_At'    => $rc->updated_at,
+                    'Updated_At'           => now(),
+                ];
 
-                $rowTimestamp = $rc->updated_at ?? $rc->created_at ?? null;
-                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
-                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                $ts = $rc->updated_at ?? $rc->created_at;
+                if ($ts && (is_null($highestTimestamp) || $ts > $highestTimestamp)) {
+                    $highestTimestamp = is_string($ts) ? $ts : \Carbon\Carbon::parse($ts)->toDateTimeString();
                 }
-            },
-            function ($state, $count) {
-                if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Rider_Course', $state->highestTimestamp, $count, $state->highestId);
+
+                if ($rc->rider_id && (is_null($highestRiderId) || $rc->rider_id > $highestRiderId)) {
+                    $highestRiderId = $rc->rider_id;
                 }
-            },
-            'rider_id'
-        );
+            }
+
+            // Native MySQL bulk upsert: 1 query per 1,500 rows
+            $this->dwh->table('Fact_Rider_Course')->upsert(
+                $batch,
+                ['Source_Rider_Id', 'Source_Course_Id'], // Composite unique/primary key
+                [
+                    'Status',
+                    'Attended',
+                    'Withdrawn',
+                    'Withdrawal_Reason',
+                    'Has_Completed_Course',
+                    'Has_Survey_Completed',
+                    'Course_Complete_Date',
+                    'Source_Created_At',
+                    'Source_Updated_At',
+                    'Updated_At',
+                ]
+            );
+
+            $count = count($batch);
+            $totalProcessed += $count;
+            $bar?->advance($count);
+        });
+
+        $bar?->finish();
+        $command?->newLine();
+
+        if ($highestTimestamp) {
+            $this->updateWatermark('Fact_Rider_Course', $highestTimestamp, $totalProcessed, $highestRiderId);
+        }
+
+        return "Fact_Rider_Course synced {$totalProcessed} records.";
     }
 
     public function syncFactRiderActivityOutcomes($command = null)

@@ -488,6 +488,18 @@ class DataWarehouseQualityService
             $srcQuery->whereNull("{$cfg['source_table']}.{$cfg['source_deleted_col']}");
         }
 
+        if (!empty($cfg['audit_watermark'])) {
+            $watermark = $this->getWatermark($cfg['dwh_table']);
+            $tsCol = $cfg['source_timestamp_col'] ?? 'updated_at';
+
+            if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+                $srcQuery->where(function ($q) use ($cfg, $tsCol, $watermark) {
+                    $q->where("{$cfg['source_table']}.{$tsCol}", '<=', $watermark)
+                        ->orWhereNull("{$cfg['source_table']}.{$tsCol}");
+                });
+            }
+        }
+
         if (!empty($cfg['source_query_modifier']) && is_callable($cfg['source_query_modifier'])) {
             $cfg['source_query_modifier']($srcQuery);
         }
