@@ -66,6 +66,10 @@ class SyncToDataWarehouse extends Command
                 $runSyncStep('Instructor Feedback lookup', fn() => $syncService->syncInstructorFeedbackLookups($this));
             }
 
+            if ($table === 'all' || $table === 'qualifications') {
+                $runSyncStep('Qualifications', fn() => $syncService->syncQualifications($this));
+            }
+
             if ($table === 'all' || $table === 'providers') {
                 $runSyncStep('Training Providers', fn() => $syncService->syncTrainingProviders($this));
             }
@@ -76,6 +80,10 @@ class SyncToDataWarehouse extends Command
 
             if ($table === 'all' || $table === 'schools') {
                 $runSyncStep('Schools', fn() => $syncService->syncSchools($this));
+            }
+
+            if ($table === 'all' || $table === 'training_organisations') {
+                $runSyncStep('Dim_Training_Organisation', fn() => $syncService->syncTrainingOrganisations($this));
             }
 
             if ($table === 'all' || $table === 'organisations') {
@@ -175,6 +183,10 @@ class SyncToDataWarehouse extends Command
                 $runSyncStep('Fact Instructor Delivery', fn() => $syncService->syncFactInstructorDeliveries($this));
             }
 
+            if ($table === 'all' || $table === 'fact_instructor_qualifications') {
+                $runSyncStep('Fact Instructor Qualification', fn() => $syncService->syncFactInstructorQualifications($this));
+            }
+
             if ($table === 'all' || $table === 'fact_parent_survey') {
                 $runSyncStep('Fact Parent Survey', fn() => $syncService->syncFactParentSurvey($this));
             }
@@ -209,6 +221,15 @@ class SyncToDataWarehouse extends Command
 
             if ($table === 'all' || $table === 'fact_get_cycling_survey_courses') {
                 $runSyncStep('Fact Get Cycling Survey Courses', fn() => $syncService->syncGetCyclingSurveys($this));
+            }
+
+            /** Call "Pruning" action - this requires a specific call to action the pruning */
+            if ($table === 'prune_fact_instructor_delivery') {
+                $runSyncStep('Prune Orphaned Pivot Records', function () use ($syncService) {
+                    $stats = $syncService->pruneOrphanedFactInstructorDeliveryPivotRecords($this);
+                    $pruned = $stats['Fact_Instructor_Delivery'] ?? 0;
+                    return "Pruned {$pruned} ghost records from Fact_Instructor_Delivery.";
+                });
             }
 
             // =========================================================

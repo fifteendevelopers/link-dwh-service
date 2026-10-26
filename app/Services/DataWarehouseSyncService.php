@@ -51,18 +51,29 @@ class DataWarehouseSyncService
                     : $queryOrCollection;
 
                 $orders = $baseQuery->orders ?? [];
-                $orderedCols = array_column($orders, 'column');
 
-                // Strip alias/table prefix if present (e.g., 'instructors as i' -> 'instructors')
-                $rawTable = preg_split('/\s+as\s+/i', (string) $baseQuery->from)[0] ?? $baseQuery->from;
+                // Collect existing ordered column names stripped of table/alias prefixes
+                $orderedCols = array_map(function ($col) {
+                    $parts = explode('.', $col);
+                    return end($parts);
+                }, array_column($orders, 'column'));
 
-                // Only append if not already in the ORDER BY clause AND physically exists on table
+                // Determine alias if used (e.g. 'join_riders_courses as jrc' -> alias is 'jrc', table is 'join_riders_courses')
+                $fromString = (string) $baseQuery->from;
+                if (preg_match('/^(.*?)\s+as\s+(.*)$/i', $fromString, $matches)) {
+                    $rawTable = trim($matches[1]);
+                    $tableAlias = trim($matches[2]);
+                } else {
+                    $rawTable = $fromString;
+                    $tableAlias = $fromString;
+                }
+
+                // Only append tie-breaker if column is not already ordered and exists on source
                 if (
                     !in_array($primaryKeyFallback, $orderedCols, true) &&
-                    !in_array("{$rawTable}.{$primaryKeyFallback}", $orderedCols, true) &&
                     $baseQuery->getConnection()->getSchemaBuilder()->hasColumn($rawTable, $primaryKeyFallback)
                 ) {
-                    $queryOrCollection->orderBy("{$rawTable}.{$primaryKeyFallback}", 'asc');
+                    $queryOrCollection->orderBy("{$tableAlias}.{$primaryKeyFallback}", 'asc');
                 }
             }
 
@@ -184,7 +195,7 @@ class DataWarehouseSyncService
             'Dim_External_Systems',
             $command,
             $sourceExtSystems,
-            function ($sys) use ($sourceSystemKey) {
+            function ($sys, $state) use ($sourceSystemKey) {
                 $this->dwh->table('Dim_External_Systems')->updateOrInsert(
                     [
                         'Source_External_System_Id' => $sys->id,
@@ -200,6 +211,23 @@ class DataWarehouseSyncService
                         'updated_at'                => $sys->updated_at ?? now(),
                     ]
                 );
+
+                if (isset($sys->id) && (is_null($state->highestId) || $sys->id > $state->highestId)) {
+                    $state->highestId = (int) $sys->id;
+                }
+
+                $rowTimestamp = $sys->updated_at ?? $sys->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+            },
+            function ($state, $count) {
+                $this->updateWatermark(
+                    'Dim_External_Systems',
+                    $state->highestTimestamp ?? now()->toDateTimeString(),
+                    $count,
+                    $state->highestId
+                );
             }
         );
     }
@@ -212,7 +240,7 @@ class DataWarehouseSyncService
             'Dim_Course_Activity',
             $command,
             $sourceActivities,
-            function ($activity) {
+            function ($activity, $state) {
                 $this->dwh->table('Dim_Course_Activity')->updateOrInsert(
                     ['Source_Activity_Id' => $activity->id],
                     [
@@ -224,6 +252,13 @@ class DataWarehouseSyncService
                         'updated_at'           => now(),
                     ]
                 );
+
+                if (isset($activity->id) && (is_null($state->highestId) || $activity->id > $state->highestId)) {
+                    $state->highestId = (int) $activity->id;
+                }
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Course_Activity', now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -250,7 +285,7 @@ class DataWarehouseSyncService
             'Dim_Instructor_Feedback_Lookup',
             $command,
             $sourceLookups,
-            function ($row) {
+            function ($row, $state) {
                 $this->dwh->table('Dim_Instructor_Feedback_Lookup')->updateOrInsert(
                     ['Feedback_Lookup_Key' => (int) $row->source_feedback_id],
                     [
@@ -263,6 +298,69 @@ class DataWarehouseSyncService
                         'updated_at'     => now(),
                     ]
                 );
+
+                if (isset($row->source_feedback_id) && (is_null($state->highestId) || $row->source_feedback_id > $state->highestId)) {
+                    $state->highestId = (int) $row->source_feedback_id;
+                }
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Instructor_Feedback_Lookup', now()->toDateTimeString(), $count, $state->highestId);
+            }
+        );
+    }
+
+    public function syncQualifications($command = null)
+    {
+        // 1. Canonical Master Qualification Catalog
+        $masterCatalog = [
+            'P'          => 'NSI Provisional',
+            'A'          => 'NSI Assistant Instructor',
+            'Q'          => 'NSI Qualified',
+            'T'          => 'NSI Trainer',
+            'L3ADCTI'    => '1st4sport L3 Award Developing Cycle Training Instructors',
+            'L2AICTR'    => '1st4sport L2 Award Instructing Cycle Training',
+            '23QICTAWA2' => '1st4sport L2 Award Instructing Cycle Training (23QICTAWA2)',
+            '24QCTACT3'  => '1st4sport L3 Cert Tutors and Assessors (24QCTACT3)',
+        ];
+
+        // Seed master definitions first
+        foreach ($masterCatalog as $code => $name) {
+            $this->dwh->table('Dim_Qualification')->updateOrInsert(
+                ['Qualification_Code' => $code],
+                [
+                    'Qualification_Name' => $name,
+                    'updated_at'         => now(),
+                    'created_at'         => now(),
+                ]
+            );
+        }
+
+        // 2. Discover any additional distinct codes/names from the source operational table
+        $sourceQuals = $this->source->table('instructor_qualifications')
+            ->whereNotNull('qualification_code')
+            ->where('qualification_code', '!=', '')
+            ->select(['qualification_code', 'qualification_name'])
+            ->distinct()
+            ->get();
+
+        return $this->executeSyncRunner(
+            'Dim_Qualification',
+            $command,
+            $sourceQuals,
+            function ($row, $state) {
+                $code = strtoupper(trim($row->qualification_code));
+                $name = trim($row->qualification_name ?? '') ?: $code;
+
+                $this->dwh->table('Dim_Qualification')->updateOrInsert(
+                    ['Qualification_Code' => $code],
+                    [
+                        'Qualification_Name' => $name,
+                        'updated_at'         => now(),
+                    ]
+                );
+            },
+            function ($state, $count) {
+                $this->updateWatermark('Dim_Qualification', now()->toDateTimeString(), $count);
             }
         );
     }
@@ -355,6 +453,10 @@ class DataWarehouseSyncService
                     $this->createNewVersion('Dim_Training_Provider', 'Source_Provider_Id', $provider->id, $incomingData, $sourceSystemKey, $today);
                     $state->updated++;
                 }
+
+                if (isset($provider->id) && (is_null($state->highestId) || $provider->id > $state->highestId)) {
+                    $state->highestId = (int) $provider->id;
+                }
             },
             function ($state, $count) {
                 $this->updateWatermark('Dim_Training_Provider', now()->toDateTimeString(), $count, $state->highestId);
@@ -373,7 +475,7 @@ class DataWarehouseSyncService
             'id', 'urn', 'establishment_name', 'la_code', 'la_name', 'postcode',
             'lsoa_code', 'lsoa_name', 'msoa_code', 'msoa_name',
             'parliamentary_constituency_code', 'parliamentary_constituency_name',
-            'status', 'urban_rural_code', 'urban_rural_name', 'updated_at',
+            'status', 'urban_rural_code', 'urban_rural_name', 'created_at', 'updated_at',
         ];
 
         if ($hasDeprivationIndex) {
@@ -382,7 +484,16 @@ class DataWarehouseSyncService
 
         $query = $this->source->table('vendor_edubase')
             ->select($selectFields)
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -419,13 +530,69 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($school->updated_at && (!$state->highestTimestamp || $school->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $school->updated_at;
+                $rowTimestamp = $school->updated_at ?? $school->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) use ($watermark) {
                 if ($state->highestTimestamp && $state->highestTimestamp > $watermark) {
-                    $this->updateWatermark('Dim_School', $state->highestTimestamp, $count);
+                    $this->updateWatermark('Dim_School', $state->highestTimestamp, $count, $state->highestId);
+                }
+            }
+        );
+    }
+
+    public function syncTrainingOrganisations($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Dim_Training_Organisation');
+
+        $query = $this->source->table('vendor_training_organisations')
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
+
+        return $this->executeSyncRunner(
+            'Dim_Training_Organisation',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                $this->dwh->table('Dim_Training_Organisation')->updateOrInsert(
+                    [
+                        'Source_Organisation_Id' => $row->id,
+                        'Source_System_Key'      => $sourceSystemKey,
+                    ],
+                    [
+                        'Organisation_Type'  => $row->organisation_type,
+                        'Organisation_Name'  => $row->organisation_name,
+                        'Organisation_Email' => $row->organisation_email,
+                        'Status_Level_2'     => (bool) ($row->status_level_2 ?? false),
+                        'Status_Level_3'     => (bool) ($row->status_level_3 ?? false),
+                        'Legacy_Ito_Id'      => $row->legacy_ito_id,
+                        'Rdc_Code'           => $row->rdc_code,
+                        'Source_Created_At'  => $row->created_at,
+                        'Source_Updated_At'  => $row->updated_at,
+                        'updated_at'         => now(),
+                    ]
+                );
+
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Training_Organisation', $state->highestTimestamp, $count, $state->highestId);
                 }
             }
         );
@@ -442,7 +609,7 @@ class DataWarehouseSyncService
             'Dim_Organisation',
             $command,
             $sourceOrgs,
-            function ($org) use ($sourceSystemKey) {
+            function ($org, $state) use ($sourceSystemKey) {
                 $providerKey = $this->dwh->table('Dim_Training_Provider')
                     ->where('Source_Provider_Id', $org->training_provider_id)
                     ->where('Source_System_Key', $sourceSystemKey)
@@ -458,6 +625,10 @@ class DataWarehouseSyncService
                         'Organisation_Name' => $org->name,
                     ]
                 );
+
+                if (isset($org->id) && (is_null($state->highestId) || $org->id > $state->highestId)) {
+                    $state->highestId = (int) $org->id;
+                }
             },
             function ($state, $count) {
                 $this->updateWatermark('Dim_Organisation', now()->toDateTimeString(), $count, $state->highestId);
@@ -511,6 +682,10 @@ class DataWarehouseSyncService
                     $this->createNewVersion('Dim_Grant_Recipient', 'Source_Recipient_Id', $recipient->id, $incomingData, $sourceSystemKey, $today);
                     $state->updated++;
                 }
+
+                if (isset($recipient->id) && (is_null($state->highestId) || $recipient->id > $state->highestId)) {
+                    $state->highestId = (int) $recipient->id;
+                }
             },
             function ($state, $count) {
                 $this->updateWatermark('Dim_Grant_Recipient', now()->toDateTimeString(), $count, $state->highestId);
@@ -527,7 +702,7 @@ class DataWarehouseSyncService
             'Dim_Grant',
             $command,
             $sourceGrants,
-            function ($grant) use ($sourceSystemKey) {
+            function ($grant, $state) use ($sourceSystemKey) {
                 $recipientKey = $this->dwh->table('Dim_Grant_Recipient')
                     ->where('Source_Recipient_Id', $grant->grant_recipient_id)
                     ->where('Source_System_Key', $sourceSystemKey)
@@ -551,6 +726,10 @@ class DataWarehouseSyncService
                         'Grant_Source'            => $grant->grant_source,
                     ]
                 );
+
+                if (isset($grant->id) && (is_null($state->highestId) || $grant->id > $state->highestId)) {
+                    $state->highestId = (int) $grant->id;
+                }
             },
             function ($state, $count) {
                 $this->updateWatermark('Dim_Grant', now()->toDateTimeString(), $count, $state->highestId);
@@ -567,7 +746,7 @@ class DataWarehouseSyncService
             'Dim_Instructor',
             $command,
             $query,
-            function ($instructor) use ($sourceSystemKey) {
+            function ($instructor, $state) use ($sourceSystemKey) {
                 $this->dwh->table('Dim_Instructor')->updateOrInsert(
                     [
                         'Source_Instructor_Id' => $instructor->id,
@@ -612,9 +791,14 @@ class DataWarehouseSyncService
                         'updated_at'                             => now(),
                     ]
                 );
+
+                $rowTimestamp = $instructor->updated_at ?? $instructor->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
             },
             function ($state, $count) {
-                $this->updateWatermark('Dim_Instructor', now()->toDateTimeString(), $count, $state->highestId);
+                $this->updateWatermark('Dim_Instructor', $state->highestTimestamp ?? now()->toDateTimeString(), $count, $state->highestId);
             }
         );
     }
@@ -641,8 +825,13 @@ class DataWarehouseSyncService
             ])
             ->where(function ($q) use ($watermark) {
                 $q->where('deliveries.updated_at', '>', $watermark)
-                    ->orWhere('deliveries.deleted_at', '>', $watermark)
-                    ->orWhereNull('deliveries.updated_at');
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('deliveries.updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('deliveries.created_at', '>', $watermark)
+                                    ->orWhereNull('deliveries.created_at');
+                            });
+                    });
             })
             ->orderBy('id', 'asc');
 
@@ -729,8 +918,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($delivery->updated_at && (!$state->highestTimestamp || $delivery->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $delivery->updated_at;
+                $rowTimestamp = $delivery->updated_at ?? $delivery->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -746,23 +936,21 @@ class DataWarehouseSyncService
         $sourceSystemKey = $this->getSourceSystemKey();
         $watermark = Carbon::parse($this->getWatermark('Dim_Course'))->subSeconds(5)->toDateTimeString();
 
-        $hasCourseSoftDeletes   = $this->sourceHasColumn('courses', 'deleted_at');
-        $hasDeliverySoftDeletes = $this->sourceHasColumn('deliveries', 'deleted_at');
+        $hasCourseSoftDeletes = $this->sourceHasColumn('courses', 'deleted_at');
 
         $query = $this->source->table('courses')
             ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
-            ->where(function ($q) use ($watermark, $hasCourseSoftDeletes) {
+            ->where(function ($q) use ($watermark) {
                 $q->where('courses.updated_at', '>', $watermark)
-                    ->orWhereNull('courses.updated_at');
-
-                if ($hasCourseSoftDeletes) {
-                    $q->orWhere('courses.deleted_at', '>', $watermark);
-                }
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('courses.updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('courses.created_at', '>', $watermark)
+                                    ->orWhereNull('courses.created_at');
+                            });
+                    });
             });
 
-//        if ($hasDeliverySoftDeletes) {
-//            $query->whereNull('deliveries.deleted_at');
-//        }
         if ($hasCourseSoftDeletes) {
             $query->whereNull('courses.deleted_at');
         }
@@ -774,7 +962,7 @@ class DataWarehouseSyncService
             'courses.confirmed_by', 'courses.confirmed_by_email', 'courses.confirmed_at',
             'courses.provisional_booked', 'courses.booked', 'courses.adults', 'courses.children',
             'courses.attendees_overridden_metadata', 'courses.attendees_overridden_by',
-            'courses.attendees_overridden_at', 'courses.updated_at',
+            'courses.attendees_overridden_at', 'courses.created_at', 'courses.updated_at',
         ])->orderBy('courses.id', 'asc');
 
         $result = $this->executeSyncRunner(
@@ -789,7 +977,7 @@ class DataWarehouseSyncService
                     ->first();
 
                 if (!$delivery) {
-                    return; // Skip courses referencing missing/soft-deleted deliveries
+                    return; // Skip courses referencing missing or unmapped deliveries
                 }
 
                 $this->dwh->table('Dim_Course')->updateOrInsert(
@@ -820,8 +1008,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($course->updated_at && (!$state->highestTimestamp || $course->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $course->updated_at;
+                $rowTimestamp = $course->updated_at ?? $course->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -831,26 +1020,72 @@ class DataWarehouseSyncService
             }
         );
 
-        // Finalize Parent-Child Course Links
         try {
-            $childCourses = $this->source->table('courses')
-                ->whereNotNull('parent_course_id')
-                ->select(['id', 'parent_course_id'])
-                ->get();
+            $command->comment("Dim_Courses step 2. Resolving parent-child course hierarchy...");
 
-            foreach ($childCourses as $child) {
-                $parentKey = $this->dwh->table('Dim_Course')
-                    ->where('Source_Course_Id', $child->parent_course_id)
-                    ->where('Source_System_Key', $sourceSystemKey)
-                    ->value('Course_Key');
+            $sameHost = ($this->source->getConfig('host') === $this->dwh->getConfig('host')
+                && $this->source->getConfig('port') === $this->dwh->getConfig('port'));
 
-                if ($parentKey) {
-                    $this->dwh->table('Dim_Course')
-                        ->where('Source_Course_Id', $child->id)
+            if ($sameHost) {
+                // High-performance single cross-db JOIN UPDATE (takes < 200ms)
+                $srcDb = $this->source->getDatabaseName();
+
+                $updated = $this->dwh->statement("
+            UPDATE Dim_Course child
+            JOIN {$srcDb}.courses src
+              ON child.Source_Course_Id = src.id
+            JOIN Dim_Course parent
+              ON src.parent_course_id = parent.Source_Course_Id
+             AND parent.Source_System_Key = child.Source_System_Key
+            SET child.Parent_Course_Key = parent.Course_Key
+            WHERE child.Source_System_Key = ?
+              AND src.parent_course_id IS NOT NULL
+              AND (child.Parent_Course_Key IS NULL OR child.Parent_Course_Key != parent.Course_Key)
+        ", [$sourceSystemKey]);
+
+            } else {
+                // Network-isolated / cross-host safe: In-memory mapping + chunked batch updates
+                $childCourses = $this->source->table('courses')
+                    ->whereNotNull('parent_course_id')
+                    ->select(['id', 'parent_course_id'])
+                    ->get();
+
+                if ($childCourses->isNotEmpty()) {
+                    // 1. Fetch entire lookup map in a single query: [Source_Course_Id => Course_Key]
+                    $courseKeyMap = $this->dwh->table('Dim_Course')
                         ->where('Source_System_Key', $sourceSystemKey)
-                        ->update(['Parent_Course_Key' => $parentKey]);
+                        ->pluck('Course_Key', 'Source_Course_Id')
+                        ->toArray();
+
+                    // 2. Group child course IDs by resolved Parent_Course_Key in memory
+                    $groupedByParent = [];
+                    foreach ($childCourses as $child) {
+                        $parentKey = $courseKeyMap[$child->parent_course_id] ?? null;
+                        if ($parentKey) {
+                            $groupedByParent[$parentKey][] = $child->id;
+                        }
+                    }
+
+                    // 3. Execute grouped batch updates (e.g. 1 query per parent instead of 8,000 queries)
+                    $this->dwh->transaction(function () use ($groupedByParent, $sourceSystemKey) {
+                        foreach ($groupedByParent as $parentKey => $childSourceIds) {
+                            foreach (array_chunk($childSourceIds, 1000) as $chunkIds) {
+                                $this->dwh->table('Dim_Course')
+                                    ->where('Source_System_Key', $sourceSystemKey)
+                                    ->whereIn('Source_Course_Id', $chunkIds)
+                                    ->where(function ($q) use ($parentKey) {
+                                        $q->whereNull('Parent_Course_Key')
+                                            ->orWhere('Parent_Course_Key', '!=', $parentKey);
+                                    })
+                                    ->update(['Parent_Course_Key' => $parentKey]);
+                            }
+                        }
+                    });
                 }
             }
+
+            $command->comment("Dim_Courses step 2. Completed parent-child course hierarchy resolution");
+
         } catch (Throwable $e) {
             $this->slack->sendSyncError('Dim_Course (Parent Hierarchy)', $e->getMessage());
         }
@@ -864,12 +1099,19 @@ class DataWarehouseSyncService
         $watermark = Carbon::parse($this->getWatermark('Dim_Rider'))->subSeconds(5)->toDateTimeString();
 
         $query = Rider::select([
-            'id', 'school_urn', 'ethnicity', 'gender', 'free_school_meals', 'send_code', 'updated_at',
+            'id', 'school_urn', 'ethnicity', 'gender', 'free_school_meals', 'send_code', 'created_at', 'updated_at',
         ])
             ->where(function ($q) use ($watermark) {
-                $q->where('updated_at', '>', $watermark)->orWhereNull('updated_at');
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
             })
-            ->orderBy('updated_at', 'asc');
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Dim_Rider',
@@ -918,8 +1160,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($rider->updated_at && (!$state->highestTimestamp || $rider->updated_at->toDateTimeString() > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $rider->updated_at->toDateTimeString();
+                $rowTimestamp = $rider->updated_at ?? $rider->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -946,9 +1189,15 @@ class DataWarehouseSyncService
             ->where(function ($q) use ($watermark) {
                 $q->where('updated_at', '>', $watermark)
                     ->orWhere('deleted_at', '>', $watermark)
-                    ->orWhereNull('updated_at');
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
             })
-            ->orderBy('id', 'asc'); // Deterministic ordering avoiding null/stale updated_at drift
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Dim_Consent',
@@ -969,7 +1218,6 @@ class DataWarehouseSyncService
                     ->where('Source_System_Key', $sourceSystemKey)
                     ->value('Delivery_Key');
 
-                // Referential integrity check - track orphan if parent is missing
                 if (!$riderKey || !$deliveryKey) {
                     $state->skipped_unmapped++;
                     return;
@@ -1024,9 +1272,9 @@ class DataWarehouseSyncService
                     ])
                 );
 
-                // Watermark progression across updates and deletions
                 $activeTimestamp = max(
                     $consent->updated_at ?? '1900-01-01 00:00:00',
+                    $consent->created_at ?? '1900-01-01 00:00:00',
                     $consent->deleted_at ?? '1900-01-01 00:00:00'
                 );
 
@@ -1048,7 +1296,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Dim_Teacher_Trainer');
 
         $query = $this->source->table('teacher_trainers')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -1094,8 +1351,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -1115,7 +1373,7 @@ class DataWarehouseSyncService
             'Dim_Get_Cycling_Course',
             $command,
             $courses,
-            function ($c) use ($sourceSystemKey) {
+            function ($c, $state) use ($sourceSystemKey) {
                 $this->dwh->table('Dim_Get_Cycling_Course')->updateOrInsert(
                     [
                         'Source_Course_Id'  => $c->id,
@@ -1127,6 +1385,23 @@ class DataWarehouseSyncService
                         'Updated_At'  => now(),
                     ]
                 );
+
+                if (isset($c->id) && (is_null($state->highestId) || $c->id > $state->highestId)) {
+                    $state->highestId = (int) $c->id;
+                }
+
+                $rowTimestamp = $c->updated_at ?? $c->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+            },
+            function ($state, $count) {
+                $this->updateWatermark(
+                    'Dim_Get_Cycling_Course',
+                    $state->highestTimestamp ?? now()->toDateTimeString(),
+                    $count,
+                    $state->highestId
+                );
             }
         );
     }
@@ -1137,7 +1412,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Dim_Get_Cycling_Rider');
 
         $query = $this->source->table('get_cycling_riders')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -1185,8 +1469,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -1203,7 +1488,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Dim_Get_Cycling_Rider_Note');
 
         $query = $this->source->table('get_cycling_rider_notes')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -1233,8 +1527,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -1343,10 +1638,27 @@ class DataWarehouseSyncService
                 ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
                 ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
                 ->where(function ($q) use ($watermark) {
-                    $q->where('deliveries.updated_at', '>', $watermark)
-                        ->orWhere('courses.updated_at', '>', $watermark)
-                        ->orWhere('jrc.updated_at', '>', $watermark)
-                        ->orWhereNull('deliveries.updated_at');
+                    $q->where(function ($deliv) use ($watermark) {
+                        $deliv->where('deliveries.updated_at', '>', $watermark)
+                            ->orWhere('deliveries.created_at', '>', $watermark)
+                            ->orWhereNull('deliveries.updated_at');
+                    })
+                        ->orWhere(function ($course) use ($watermark) {
+                            $course->where('courses.updated_at', '>', $watermark)
+                                ->orWhere('courses.created_at', '>', $watermark)
+                                ->orWhere(function ($cNull) {
+                                    $cNull->whereNotNull('courses.id')
+                                        ->whereNull('courses.updated_at');
+                                });
+                        })
+                        ->orWhere(function ($riderCourse) use ($watermark) {
+                            $riderCourse->where('jrc.updated_at', '>', $watermark)
+                                ->orWhere('jrc.created_at', '>', $watermark)
+                                ->orWhere(function ($jrcNull) {
+                                    $jrcNull->whereNotNull('jrc.course_id')
+                                        ->whereNull('jrc.updated_at');
+                                });
+                        });
                 })
                 ->distinct()
                 ->pluck('deliveries.id')
@@ -1373,19 +1685,23 @@ class DataWarehouseSyncService
                         'deliveries.id as delivery_id',
                         'deliveries.date_delivery_start',
                         'deliveries.consent_src_characteristics',
+                        'deliveries.created_at as delivery_created',
                         'deliveries.updated_at as delivery_updated',
                         'courses.id as course_id',
                         'courses.start_date as course_start',
+                        'courses.created_at as course_created',
                         'courses.updated_at as course_updated',
-                        DB::raw('MAX(jrc.updated_at) as rider_course_updated'),
+                        DB::raw('MAX(COALESCE(jrc.updated_at, jrc.created_at)) as rider_course_updated'),
                     ])
                     ->groupBy([
                         'deliveries.id',
                         'deliveries.date_delivery_start',
                         'deliveries.consent_src_characteristics',
+                        'deliveries.created_at',
                         'deliveries.updated_at',
                         'courses.id',
                         'courses.start_date',
+                        'courses.created_at',
                         'courses.updated_at',
                     ]);
 
@@ -1401,7 +1717,9 @@ class DataWarehouseSyncService
                 foreach ($records as $record) {
                     $activeTimestamp = max(
                         $record->delivery_updated ?? '1900-01-01 00:00:00',
+                        $record->delivery_created ?? '1900-01-01 00:00:00',
                         $record->course_updated ?? '1900-01-01 00:00:00',
+                        $record->course_created ?? '1900-01-01 00:00:00',
                         $record->rider_course_updated ?? '1900-01-01 00:00:00'
                     );
 
@@ -1463,7 +1781,6 @@ class DataWarehouseSyncService
                         continue;
                     }
 
-                    // Attendance fallback
                     $isDigitised = ((int) ($delivery->Digitisation_Booking ?? 0) === 1) || !is_null($record->course_id);
                     $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
 
@@ -1551,8 +1868,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Rider_Course');
 
         $query = $this->source->table('join_riders_courses')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->when($watermark, function ($q) use ($watermark) {
+                $q->where(function ($sub) use ($watermark) {
+                    $sub->where('updated_at', '>', $watermark)
+                        ->orWhere('created_at', '>', $watermark)
+                        ->orWhereNull('created_at')
+                        ->orWhereNull('updated_at');
+                });
+            })
+            ->orderBy('rider_id', 'asc')
+            ->orderBy('course_id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Rider_Course',
@@ -1583,15 +1908,17 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($rc->updated_at && (!$state->highestTimestamp || $rc->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $rc->updated_at;
+                $rowTimestamp = $rc->updated_at ?? $rc->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
                     $this->updateWatermark('Fact_Rider_Course', $state->highestTimestamp, $count, $state->highestId);
                 }
-            }
+            },
+            'rider_id'
         );
     }
 
@@ -1608,9 +1935,19 @@ class DataWarehouseSyncService
             ->whereNotNull('jrc.outcomes')
             ->where('jrc.outcomes', '!=', '[]')
             ->where('jrc.outcomes', '!=', '')
-            ->where('jrc.updated_at', '>', $watermark)
-            ->select(['jrc.rider_id', 'jrc.course_id', 'jrc.outcomes', 'jrc.updated_at'])
-            ->orderBy('jrc.updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->select(['jrc.rider_id', 'jrc.course_id', 'jrc.outcomes', 'jrc.created_at', 'jrc.updated_at'])
+            ->orderBy('jrc.rider_id', 'asc')
+            ->orderBy('jrc.course_id', 'asc');
 
         $outcomesLookup = [
             1 => ['code' => 'O', 'grade' => 'On my own'],
@@ -1694,15 +2031,17 @@ class DataWarehouseSyncService
                     );
                 }
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
                     $this->updateWatermark('Fact_Rider_Activity_Outcome', $state->highestTimestamp, $count, $state->highestId);
                 }
-            }
+            },
+            'rider_id'
         );
     }
 
@@ -1719,14 +2058,24 @@ class DataWarehouseSyncService
             ->whereNotNull('jrc.instructor_feedback')
             ->where('jrc.instructor_feedback', '!=', '[]')
             ->where('jrc.instructor_feedback', '!=', '')
-            ->where('jrc.updated_at', '>', $watermark);
+            ->where(function ($q) use ($watermark) {
+                $q->where('jrc.updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('jrc.updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('jrc.created_at', '>', $watermark)
+                                    ->orWhereNull('jrc.created_at');
+                            });
+                    });
+            });
 
         if ($this->sourceHasColumn('join_riders_courses', 'deleted_at')) {
             $query->whereNull('jrc.deleted_at');
         }
 
-        $query->select(['jrc.rider_id', 'jrc.course_id', 'jrc.instructor_feedback', 'jrc.updated_at'])
-            ->orderBy('jrc.updated_at', 'asc');
+        $query->select(['jrc.rider_id', 'jrc.course_id', 'jrc.instructor_feedback', 'jrc.created_at', 'jrc.updated_at'])
+            ->orderBy('jrc.rider_id', 'asc')
+            ->orderBy('jrc.course_id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Rider_Instructor_Feedback',
@@ -1795,15 +2144,17 @@ class DataWarehouseSyncService
                     );
                 }
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
                     $this->updateWatermark('Fact_Rider_Instructor_Feedback', $state->highestTimestamp, $count, $state->highestId);
                 }
-            }
+            },
+            'rider_id'
         );
     }
 
@@ -1841,7 +2192,8 @@ class DataWarehouseSyncService
                 pl_ac4_on_own, pl_ac4_practice, pl_ac4_assistance, pl_ac4_not_seen,
                 pl_ac5_on_own, pl_ac5_practice, pl_ac5_assistance, pl_ac5_not_seen,
                 pf_ac1_on_own, pf_ac1_practice, pf_ac1_assistance, pf_ac1_not_seen,
-                pf_ac2_on_own, pf_ac2_practice, pf_ac2_assistance, pf_ac2_not_seen
+                pf_ac2_on_own, pf_ac2_practice, pf_ac2_assistance, pf_ac2_not_seen,
+                Updated_At
             )
             SELECT
                 fao.Delivery_Key, fao.Course_Key, a.Course_Code,
@@ -1960,7 +2312,8 @@ class DataWarehouseSyncService
                 SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 1 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 2 THEN 1 ELSE 0 END),
                 SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 3 THEN 1 ELSE 0 END),
-                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END)
+                SUM(CASE WHEN a.Activity_Code = 'pf-ac2' AND fao.Outcome_Score = 4 THEN 1 ELSE 0 END),
+                NOW()
             FROM Fact_Rider_Activity_Outcome fao
             JOIN Dim_Course_Activity a ON fao.Activity_Key = a.Activity_Key
             GROUP BY fao.Delivery_Key, fao.Course_Key, a.Course_Code
@@ -1981,8 +2334,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Financials');
 
         $query = $this->source->table('grant_format_dft')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Grant_Financials',
@@ -2041,8 +2403,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($fmt->updated_at && (!$state->highestTimestamp || $fmt->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $fmt->updated_at;
+                $rowTimestamp = $fmt->updated_at ?? $fmt->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2059,8 +2422,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Reallocations');
 
         $query = $this->source->table('grant_reallocations')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Grant_Reallocations',
@@ -2125,8 +2497,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($ra->updated_at && (!$state->highestTimestamp || $ra->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $ra->updated_at;
+                $rowTimestamp = $ra->updated_at ?? $ra->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2143,8 +2516,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Amendments');
 
         $query = $this->source->table('grant_amendments')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Grant_Amendments',
@@ -2208,8 +2590,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($am->updated_at && (!$state->highestTimestamp || $am->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $am->updated_at;
+                $rowTimestamp = $am->updated_at ?? $am->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2226,8 +2609,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Claims');
 
         $query = $this->source->table('grant_claims')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Grant_Claims',
@@ -2355,8 +2747,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($cl->updated_at && (!$state->highestTimestamp || $cl->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $cl->updated_at;
+                $rowTimestamp = $cl->updated_at ?? $cl->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2373,7 +2766,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Allocation_Dft');
 
         $query = $this->source->table('grant_format_dft')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->whereNull('deleted_at')
             ->orderBy('id', 'asc');
 
@@ -2438,8 +2840,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2456,8 +2859,18 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Instructor_Delivery');
 
         $query = $this->source->table('join_deliveries_instructors')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('delivery_id', 'asc')
+            ->orderBy('instructor_id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Instructor_Delivery',
@@ -2493,15 +2906,17 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($alloc->updated_at && (!$state->highestTimestamp || $alloc->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $alloc->updated_at;
+                $rowTimestamp = $alloc->updated_at ?? $alloc->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
                     $this->updateWatermark('Fact_Instructor_Delivery', $state->highestTimestamp, $count, $state->highestId);
                 }
-            }
+            },
+            'delivery_id'
         );
     }
 
@@ -2601,9 +3016,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Parent_Survey');
 
         $query = $this->source->table('parent_survey')
-            ->where('status', 1)
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Parent_Survey',
@@ -2663,6 +3086,7 @@ class DataWarehouseSyncService
                     'Likert_Improve_Road_Awareness'        => $pivoted['oq11'] ?? null,
                     'Likert_Improve_Environment_Awareness' => $pivoted['oq12'] ?? null,
                     'Likert_Help_Socialise'                => $pivoted['oq13'] ?? null,
+                    'Likert_Help_Socialise'                => $pivoted['oq13'] ?? null,
                     'Likert_Make_Children_Happy'           => $pivoted['oq14'] ?? null,
                     'Likert_Keep_Children_Occupied'        => $pivoted['oq15'] ?? null,
                     'Likert_Encourage_Children_Outside'    => $pivoted['oq16'] ?? null,
@@ -2709,8 +3133,9 @@ class DataWarehouseSyncService
                     ])
                 );
 
-                if ($survey->updated_at && (!$state->highestTimestamp || $survey->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $survey->updated_at;
+                $rowTimestamp = $survey->updated_at ?? $survey->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2730,18 +3155,36 @@ class DataWarehouseSyncService
             if ($useLegacySurvey) {
                 $courseData = $this->source->table('courses')
                     ->whereNotNull('survey_details')
-                    ->where('updated_at', '>', $watermark)
-                    ->select('id', 'updated_at')
+                    ->where(function ($q) use ($watermark) {
+                        $q->where('updated_at', '>', $watermark)
+                            ->orWhere(function ($sub) use ($watermark) {
+                                $sub->whereNull('updated_at')
+                                    ->where(function ($nested) use ($watermark) {
+                                        $nested->where('created_at', '>', $watermark)
+                                            ->orWhereNull('created_at');
+                                    });
+                            });
+                    })
+                    ->select('id', 'created_at', 'updated_at')
                     ->get();
                 $courseIds = $courseData->pluck('id');
-                $maxTimestamp = $courseData->max('updated_at');
+                $maxTimestamp = $courseData->map(fn($r) => $r->updated_at ?? $r->created_at)->max();
             } else {
                 $resultData = $this->source->table('course_survey_results')
-                    ->where('updated_at', '>', $watermark)
-                    ->select('course_id', 'updated_at')
+                    ->where(function ($q) use ($watermark) {
+                        $q->where('updated_at', '>', $watermark)
+                            ->orWhere(function ($sub) use ($watermark) {
+                                $sub->whereNull('updated_at')
+                                    ->where(function ($nested) use ($watermark) {
+                                        $nested->where('created_at', '>', $watermark)
+                                            ->orWhereNull('created_at');
+                                    });
+                            });
+                    })
+                    ->select('course_id', 'created_at', 'updated_at')
                     ->get();
                 $courseIds = $resultData->pluck('course_id')->distinct();
-                $maxTimestamp = $resultData->max('updated_at');
+                $maxTimestamp = $resultData->map(fn($r) => $r->updated_at ?? $r->created_at)->max();
             }
 
             return $this->executeSyncRunner(
@@ -2789,8 +3232,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Follow_Up_Survey');
 
         $query = $this->source->table('parent_follow_up_surveys')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Follow_Up_Survey',
@@ -2819,8 +3271,9 @@ class DataWarehouseSyncService
                     ])
                 );
 
-                if ($survey->updated_at && (!$state->highestTimestamp || $survey->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $survey->updated_at;
+                $rowTimestamp = $survey->updated_at ?? $survey->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2837,8 +3290,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Grant_Recipient_Renewal');
 
         $query = $this->source->table('grant_recipient_renewals')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Grant_Recipient_Renewal',
@@ -2898,8 +3360,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2916,8 +3379,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Instructor_Renewal');
 
         $query = $this->source->table('instructor_renewals')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Instructor_Renewal',
@@ -2970,8 +3442,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -2988,8 +3461,17 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Training_Provider_Renewal');
 
         $query = $this->source->table('training_provider_renewals')
-            ->where('updated_at', '>', $watermark)
-            ->orderBy('updated_at', 'asc');
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
             'Fact_Training_Provider_Renewal',
@@ -3092,8 +3574,9 @@ class DataWarehouseSyncService
                     ]
                 );
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -3108,12 +3591,21 @@ class DataWarehouseSyncService
     {
         $sourceSystemKey = $this->getSourceSystemKey();
         $watermark = $this->getWatermark('Fact_Teacher_Trainer_Delivery');
-        $hasJsonColumn = $this->sourceHasColumn('teacher_trainer_deliveries', 'delivery_details');
 
         $query = $this->source->table('teacher_trainer_deliveries')
-            ->where('updated_at', '>', $watermark)
-            ->when($this->sourceHasColumn('teacher_trainer_deliveries', 'deleted_at'), fn($q) => $q->whereNull('deleted_at'))
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
+
+        $hasJsonColumn = $this->source->getSchemaBuilder()->hasColumn('teacher_trainer_deliveries', 'delivery_details');
 
         return $this->executeSyncRunner(
             'Fact_Teacher_Trainer_Delivery',
@@ -3128,14 +3620,7 @@ class DataWarehouseSyncService
                         ->value('School_Key');
                 }
 
-                $trainerKey = null;
-                if (!empty($row->school_urn)) {
-                    $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
-                        ->where('Main_School_Urn', $row->school_urn)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('Teacher_Trainer_Key');
-                }
-
+                // Upsert fact header using actual table column names
                 $this->dwh->table('Fact_Teacher_Trainer_Delivery')->updateOrInsert(
                     [
                         'Source_TT_Delivery_Id' => $row->id,
@@ -3143,16 +3628,16 @@ class DataWarehouseSyncService
                     ],
                     [
                         'School_Key'          => $schoolKey,
-                        'Teacher_Trainer_Key' => $trainerKey,
                         'School_Urn'          => $row->school_urn,
                         'Date_Delivery_Start' => $row->date_delivery_start,
                         'Date_Delivery_End'   => $row->date_delivery_end,
                         'Completion_Date'     => $row->completion_date,
-                        'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? 0),
-                        'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? 0),
-                        'Has_Survey'          => (bool) ($row->has_survey ?? 0),
+                        'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? false),
+                        'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? false),
+                        'Has_Survey'          => (bool) ($row->has_survey ?? false),
                         'Notes'               => $row->notes,
-                        'Updated_At'          => now(),
+                        'created_at'          => $row->created_at ?? now(),
+                        'updated_at'          => $row->updated_at ?? now(),
                     ]
                 );
 
@@ -3169,13 +3654,16 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : \Carbon\Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
+
+                return true;
             },
             function ($state, $count) {
                 if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count, $state->highestId);
+                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count);
                 }
             }
         );
@@ -3187,7 +3675,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Get_Cycling_Rider_Course');
 
         $query = $this->source->table('get_cycling_join_riders_courses')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -3208,7 +3705,7 @@ class DataWarehouseSyncService
                 $trainerKey = null;
                 if (!empty($row->teacher_trainer_id)) {
                     $trainerKey = $this->dwh->table('Dim_Teacher_Trainer')
-                        ->where('Source_Teacher_Trainer_Id', $row->teacher_trainer_id)
+                        ->where('Source_Teacher_Trainer_Id', (int) $row->teacher_trainer_id)
                         ->where('Source_System_Key', $sourceSystemKey)
                         ->value('Teacher_Trainer_Key');
                 }
@@ -3261,8 +3758,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -3279,7 +3777,16 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Get_Cycling_Survey_Response');
 
         $query = $this->source->table('get_cycling_join_surveys_courses')
-            ->where('updated_at', '>', $watermark)
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -3328,8 +3835,9 @@ class DataWarehouseSyncService
                     }
                 }
 
-                if ($row->updated_at && (!$state->highestTimestamp || $row->updated_at > $state->highestTimestamp)) {
-                    $state->highestTimestamp = $row->updated_at;
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
                 }
             },
             function ($state, $count) {
@@ -4123,84 +4631,196 @@ class DataWarehouseSyncService
         };
     }
 
-    public function purgeSoftDeletedDeliveries($command = null, int $chunkSize = 500, bool $dryRun = false): string
+    public function syncFactInstructorQualifications($command = null)
     {
         $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Fact_Instructor_Qualification');
 
-        if ($command) {
-            $command->info("[" . now()->format('Y-m-d H:i:s') . "] Scanning source system for soft-deleted deliveries...");
-        }
+        // 1. Build Delta Query from Source
+        $query = $this->source->table('instructor_qualifications')
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
 
-        if (!$this->sourceHasColumn('deliveries', 'deleted_at')) {
-            return "Skipped: 'deliveries.deleted_at' column does not exist.";
-        }
+        return $this->executeSyncRunner(
+            'Fact_Instructor_Qualification',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey) {
+                // A. Resolve Instructor Surrogate Key
+                $instructorKey = $this->dwh->table('Dim_Instructor')
+                    ->where('Source_Instructor_Id', $row->instructor_id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('Instructor_Key');
 
-        $totalFoundOnSource = $this->source->table('deliveries')->whereNotNull('deleted_at')->count();
-        if ($totalFoundOnSource === 0) {
-            return "No soft-deleted deliveries found.";
-        }
+                if (!$instructorKey) {
+                    return; // Drop orphaned rows referencing missing instructors
+                }
 
-        $bar = ($command && !$dryRun) ? $command->getOutput()->createProgressBar($totalFoundOnSource) : null;
-        if ($bar) $bar->start();
+                // B. Resolve / Upsert Qualification Dimension Key
+                $qualCode = trim($row->qualification_code ?? '');
+                $qualKey = null;
 
-        $purgedCount = 0;
+                if (!empty($qualCode)) {
+                    $this->dwh->table('Dim_Qualification')->updateOrInsert(
+                        ['Qualification_Code' => $qualCode],
+                        [
+                            'Qualification_Name' => $row->qualification_name ?? $qualCode,
+                            'updated_at'         => now(),
+                        ]
+                    );
 
-        try {
-            $this->source->table('deliveries')
-                ->whereNotNull('deleted_at')
-                ->select('id')
-                ->orderBy('id', 'asc')
-                ->chunk($chunkSize, function ($sourceRows) use ($sourceSystemKey, &$purgedCount, $command, $dryRun, $bar) {
-                    $deletedIds = $sourceRows->pluck('id')->toArray();
+                    $qualKey = $this->dwh->table('Dim_Qualification')
+                        ->where('Qualification_Code', $qualCode)
+                        ->value('Qualification_Key');
+                }
 
-                    $dwhDeliveries = $this->dwh->table('Dim_Delivery_Header')
+                // C. Resolve Training Organisation Key (maps to Dim_Organisation)
+                $orgKey = null;
+                if (!empty($row->training_organisation_id)) {
+                    $orgKey = $this->dwh->table('Dim_Organisation')
+                        ->where('Source_Organisation_Id', $row->training_organisation_id)
                         ->where('Source_System_Key', $sourceSystemKey)
-                        ->whereIn('Source_Delivery_Id', $deletedIds)
-                        ->select(['Delivery_Key', 'Source_Delivery_Id'])
+                        ->value('Organisation_Key');
+                }
+
+                // D. Upsert into Fact_Instructor_Qualification
+                $this->dwh->table('Fact_Instructor_Qualification')->updateOrInsert(
+                    [
+                        'Source_Qual_Id'    => $row->id,
+                        'Source_System_Key' => $sourceSystemKey,
+                    ],
+                    [
+                        'Instructor_Key'                    => $instructorKey,
+                        'Qualification_Key'                 => $qualKey,
+                        'Training_Organisation_Key'         => $orgKey,
+                        'Source_Instructor_Id'              => $row->instructor_id,
+                        'Source_Training_Org_Id'            => $row->training_organisation_id,
+                        'Source_Qualification_Code'         => $row->qualification_code,
+                        'Event_Number'                      => $row->event_number,
+                        'Status'                            => $row->status,
+                        'Latest_Status_Date'                => $row->latest_status_date,
+                        'Registration_Date'                 => $row->registration_date,
+                        'Verified_Lxp_Date'                 => $row->verified_lxp_date,
+                        'Theory_Complete_Date'              => $row->theory_complete_date,
+                        'Date_Provisional_Complete'         => $row->date_provisional_complete,
+                        'Provisional_Email_Sent'            => $row->provisional_email_sent,
+                        'Pca_Complete_Date'                 => $row->pca_complete_date,
+                        'Qual_Cert_Due_Date'                => $row->qual_cert_due_date,
+                        'Qualification_Complete_Email_Sent' => $row->qualification_complete_email_sent,
+                        'Withdrawn_Date'                    => $row->withdrawn_date,
+                        'Migrated_Email_Sent'               => $row->migrated_email_sent,
+                        'Date_Certified'                    => $row->date_certified,
+                        'Expiry_Date'                       => $row->expiry_date,
+                        'Expiry_Warning_Sent'               => $row->expiry_warning_sent,
+                        'Source_Created_At'                 => $row->created_at,
+                        'Source_Updated_At'                 => $row->updated_at,
+                        'updated_at'                        => now(),
+                    ]
+                );
+
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Fact_Instructor_Qualification', $state->highestTimestamp, $count, $state->highestId);
+                }
+            }
+        );
+    }
+
+    /**
+     * Post Sync processes to prune Pivot table entries in DWH that no longer exist in Source
+     * : in most pivot tables in link the entry is hard-deleted NOT soft deleted so that hard delete
+     *   action must sync in DWH
+     */
+    public function pruneOrphanedFactInstructorDeliveryPivotRecords($command = null): array
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $stats = [
+            'Fact_Instructor_Delivery' => 0,
+        ];
+
+        // Check if both DBs are on the same MySQL instance
+        $sameHost = ($this->source->getConfig('host') === $this->dwh->getConfig('host')
+            && $this->source->getConfig('port') === $this->dwh->getConfig('port'));
+
+        if ($sameHost) {
+            // High-performance single SQL DELETE across databases
+            $srcDb = $this->source->getDatabaseName();
+
+            $deleted = $this->dwh->statement("
+            DELETE fid
+            FROM Fact_Instructor_Delivery fid
+            JOIN Dim_Delivery_Header ddh ON fid.Delivery_Key = ddh.Delivery_Key
+            JOIN Dim_Instructor di ON fid.Instructor_Key = di.Instructor_Key
+            LEFT JOIN {$srcDb}.join_deliveries_instructors jdi
+                ON ddh.Source_Delivery_Id = jdi.delivery_id
+                AND di.Source_Instructor_Id = jdi.instructor_id
+                AND jdi.deleted_at IS NULL
+            WHERE fid.Source_System_Key = ?
+              AND jdi.delivery_id IS NULL
+        ", [$sourceSystemKey]);
+
+            $stats['Fact_Instructor_Delivery'] = $deleted;
+        } else {
+            // Network-isolated / cross-server safe chunked approach
+            // We only inspect deliveries modified in the last 30 days to keep daily runs fast
+            $activeDeliveries = $this->source->table('deliveries')
+                ->where('updated_at', '>=', now()->subDays(30))
+                ->pluck('id');
+
+            if ($activeDeliveries->isNotEmpty()) {
+                foreach ($activeDeliveries->chunk(500) as $chunkIds) {
+                    // Fetch actual active source pairs for this slice
+                    $srcPairs = $this->source->table('join_deliveries_instructors')
+                        ->whereIn('delivery_id', $chunkIds)
+                        ->whereNull('deleted_at')
+                        ->selectRaw("CONCAT_WS('-', delivery_id, instructor_id) as link_key")
+                        ->pluck('link_key')
+                        ->flip()
+                        ->toArray();
+
+                    // Check DWH state for these deliveries
+                    $dwhRows = $this->dwh->table('Fact_Instructor_Delivery as fid')
+                        ->join('Dim_Delivery_Header as ddh', 'fid.Delivery_Key', '=', 'ddh.Delivery_Key')
+                        ->join('Dim_Instructor as di', 'fid.Instructor_Key', '=', 'di.Instructor_Key')
+                        ->where('fid.Source_System_Key', $sourceSystemKey)
+                        ->whereIn('ddh.Source_Delivery_Id', $chunkIds)
+                        ->select([
+                            'fid.Delivery_Key',
+                            'fid.Instructor_Key',
+                            'ddh.Source_Delivery_Id',
+                            'di.Source_Instructor_Id'
+                        ])
                         ->get();
 
-                    if ($dwhDeliveries->isNotEmpty()) {
-                        $deliveryKeys = $dwhDeliveries->pluck('Delivery_Key')->toArray();
-                        $batchCount   = count($deliveryKeys);
-
-                        if ($dryRun) {
-                            $purgedCount += $batchCount;
-                        } else {
-                            $this->dwh->transaction(function () use ($deliveryKeys) {
-                                $this->dwh->table('Fact_Course_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Instructor_Delivery')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Rider_Instructor_Feedback')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Rider_Activity_Outcome')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Course_Activity_Outcome_Summary')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Parent_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_HandsUp_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Fact_Follow_Up_Survey')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Dim_Consent')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Dim_Course')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                                $this->dwh->table('Dim_Delivery_Header')->whereIn('Delivery_Key', $deliveryKeys)->delete();
-                            });
-
-                            $purgedCount += $batchCount;
+                    foreach ($dwhRows as $row) {
+                        $key = "{$row->Source_Delivery_Id}-{$row->Source_Instructor_Id}";
+                        if (!isset($srcPairs[$key])) {
+                            $this->dwh->table('Fact_Instructor_Delivery')
+                                ->where('Delivery_Key', $row->Delivery_Key)
+                                ->where('Instructor_Key', $row->Instructor_Key)
+                                ->where('Source_System_Key', $sourceSystemKey)
+                                ->delete();
+                            $stats['Fact_Instructor_Delivery']++;
                         }
                     }
-
-                    if ($bar) $bar->advance(count($deletedIds));
-                });
-
-            if ($bar) {
-                $bar->finish();
-                $command?->newLine(2);
+                }
             }
-
-            return "Purged {$purgedCount} ghost delivery records and dependent facts.";
-
-        } catch (Throwable $e) {
-            if ($bar) {
-                $bar->finish();
-                $command?->newLine();
-            }
-            $this->slack->sendSyncError('Purge Soft-Deleted Deliveries', $e->getMessage(), [], $e->getTraceAsString());
-            throw $e;
         }
+
+        return $stats;
     }
 }

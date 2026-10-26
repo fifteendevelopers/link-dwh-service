@@ -226,6 +226,61 @@
                 </tbody>
             </table>
         </div>
+        <div class="mt-8 bg-white dark:bg-gray-900 shadow rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <div>
+                    <h3 class="text-base font-semibold text-gray-900 dark:text-white">DWH Table Sync Log & Watermarks</h3>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Current high-water marks and record counters per synchronized entity.</p>
+                </div>
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+            {{ $syncLogs->count() }} Entities Monitored
+        </span>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800 text-sm text-left">
+                    <thead class="bg-gray-50 dark:bg-gray-800/50 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <tr>
+                        <th scope="col" class="px-6 py-3">Table Name</th>
+                        <th scope="col" class="px-6 py-3">Last Sync Watermark</th>
+                        <th scope="col" class="px-6 py-3 text-right">Last Source ID</th>
+                        <th scope="col" class="px-6 py-3 text-right">Records Processed</th>
+                    </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-800 font-mono text-xs">
+                    @forelse($syncLogs as $log)
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/40 transition">
+                            <td class="px-6 py-3 font-semibold text-gray-900 dark:text-gray-100">
+                                {{ $log->Table_Name }}
+                            </td>
+                            <td class="px-6 py-3 text-gray-600 dark:text-gray-400">
+                                @if(!empty($log->Last_Synced_At))
+                                    <span class="bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded text-gray-800 dark:text-gray-200">
+                                    {{ $log->Last_Synced_At }}
+                                </span>
+                                @else
+                                    <span class="text-gray-400 italic">None (Full Scan)</span>
+                                @endif
+                            </td>
+                            <td class="px-6 py-3 text-right text-gray-600 dark:text-gray-300">
+                                {{ $log->Last_Source_Id }}
+                            </td>
+                            <td class="px-6 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">
+                                {{ number_format($log->Records_Processed ?? 0) }}
+                            </td>
+                        </tr>
+                    @empty
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-gray-500 italic">
+                                No sync log entries recorded yet.
+                            </td>
+                        </tr>
+                    @endforelse
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
 
     </main>
 </div>

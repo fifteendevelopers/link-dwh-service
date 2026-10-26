@@ -34,15 +34,6 @@ class DataWarehouseQualityService
     public function auditAll(?OutputInterface $output = null, int $sampleLimit = 5): array
     {
         $entities = [
-            'Deliveries' => [
-                'source_table' => 'deliveries',
-                'source_id_col' => 'id',
-                'source_deleted_col' => null,
-                'dwh_table' => 'Dim_Delivery_Header',
-                'dwh_source_id_col' => 'Source_Delivery_Id',
-                'dwh_deleted_col' => null,
-                'audit_watermark'    => true,
-            ],
             'Consents' => [
                 'source_table'       => 'consents',
                 'source_id_col'      => 'id',
@@ -65,17 +56,111 @@ class DataWarehouseQualityService
                 },
                 'audit_watermark'    => true,
             ],
-            'Training Providers' => [
-                'source_table' => 'training_providers',
+            'Deliveries' => [
+                'source_table' => 'deliveries',
                 'source_id_col' => 'id',
-                'source_deleted_col' => 'deleted_at',
-                'dwh_table' => 'Dim_Training_Provider',
-                'dwh_source_id_col' => 'Source_Provider_Id',
-                'dwh_deleted_col' => 'Source_Deleted_At',
-                'dwh_query_modifier'    => function ($query) {
-                    // Only compare against the active version for SCD Type 2
-                    $query->where('Dim_Training_Provider.Is_Current', 1);
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_Delivery_Header',
+                'dwh_source_id_col' => 'Source_Delivery_Id',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'External Systems' => [
+                'source_table' => 'external_systems',
+                'source_id_col' => 'id',
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_External_Systems',
+                'dwh_source_id_col' => 'Source_External_System_Id',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'Get Cycling Courses' => [
+                'source_table' => 'get_cycling_courses',
+                'source_id_col' => 'id',
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_Get_Cycling_Course',
+                'dwh_source_id_col' => 'Source_Course_Id',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'Get Cycling Riders' => [
+                'source_table' => 'get_cycling_riders',
+                'source_id_col' => 'id',
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_Get_Cycling_Rider',
+                'dwh_source_id_col' => 'Source_Rider_Id',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'Get Cycling Rider Courses' => [
+                'source_table'          => 'get_cycling_join_riders_courses',
+                'source_id_col'         => 'id',
+                'source_query_modifier' => function ($query) {
+                    // Exclude orphaned bridge rows referencing hard-deleted parent riders
+                    $query->join('get_cycling_riders', 'get_cycling_join_riders_courses.rider_id', '=', 'get_cycling_riders.id');
                 },
+
+                'dwh_table'             => 'Fact_Get_Cycling_Rider_Course',
+                'dwh_source_id_col'     => 'Source_Join_Id',
+                'audit_watermark'       => true,
+            ],
+            'Get Cycling Rider Notes' => [
+                'source_table' => 'get_cycling_rider_notes',
+                'source_id_col' => 'id',
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_Get_Cycling_Rider_Note',
+                'dwh_source_id_col' => 'Source_Note_Id',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'Grants' => [
+                'source_table'       => 'grants',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'dwh_table'          => 'Dim_Grant',
+                'dwh_source_id_col'  => 'Source_Grant_Id',
+                'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
+            ],
+            'Grant Claims' => [
+                'source_table'       => 'grant_claims',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'dwh_table'          => 'Fact_Grant_Claims',
+                'dwh_source_id_col'  => 'Source_Claim_Id',
+                'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
+            ],
+            'Grant Reallocations' => [
+                'source_table'       => 'grant_reallocations',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
+                'dwh_table'          => 'Fact_Grant_Reallocations',
+                'dwh_source_id_col'  => 'Source_Reallocation_Id',
+                'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
+            ],
+            'Grant Recipients' => [
+                'source_table'       => 'grant_recipients',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Grant_Recipient',
+                'dwh_source_id_col'  => 'Source_Recipient_Id',
+                'dwh_deleted_col'    => null,
+                'dwh_query_modifier' => function ($query) {
+                    $query->where('Dim_Grant_Recipient.Is_Current', 1);
+                },
+                'audit_watermark'    => true,
+            ],
+            'Grant Recipient Renewals' => [
+                'composite'             => false,
+                'source_table'          => 'grant_recipient_renewals',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+
+                'dwh_table'             => 'Fact_Grant_Recipient_Renewal',
+                'dwh_source_id_col'     => 'Source_Renewal_Id',
+                'dwh_deleted_col'       => null,
                 'audit_watermark'    => true,
             ],
             'Instructors' => [
@@ -84,6 +169,53 @@ class DataWarehouseQualityService
                 'source_deleted_col' => 'deleted_at',
                 'dwh_table' => 'Dim_Instructor',
                 'dwh_source_id_col' => 'Instructor_Number',
+                'dwh_deleted_col' => null,
+                'audit_watermark'    => true,
+            ],
+            'Instructor Courses' => [
+                'composite'             => true,
+                'source_table'          => 'join_instructors_courses',
+                'source_composite_cols' => ['instructor_id', 'course_id'],
+                'source_deleted_col'    => null,
+
+                'dwh_table'             => 'Fact_Instructor_Course',
+                'dwh_composite_cols'    => ['Dim_Instructor.Source_Instructor_Id', 'Dim_Course.Source_Course_Id'],
+                'dwh_deleted_col'       => null,
+
+                'dwh_query_modifier'    => function ($query) {
+                    $query->join('Dim_Instructor', 'Fact_Instructor_Course.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
+                        ->join('Dim_Course', 'Fact_Instructor_Course.Course_Key', '=', 'Dim_Course.Course_Key');
+                },
+                'audit_watermark'    => false,
+            ],
+            'Instructor Deliveries' => [
+                'composite'             => true,
+                'use_straight_join'     => true, // <-- Activates STRAIGHT_JOIN on DWH select
+                'source_table'          => 'join_deliveries_instructors',
+                'source_composite_cols' => ['join_deliveries_instructors.delivery_id', 'join_deliveries_instructors.instructor_id'],
+                'source_deleted_col'    => 'deleted_at',
+                'source_query_modifier' => function ($query) {
+                    $query->join('instructors', 'join_deliveries_instructors.instructor_id', '=', 'instructors.id')
+                        ->join('deliveries', 'join_deliveries_instructors.delivery_id', '=', 'deliveries.id')
+                        ->whereNull('deliveries.deleted_at')
+                        ->whereNull('instructors.deleted_at');
+                },
+
+                'dwh_table'             => 'Fact_Instructor_Delivery',
+                'dwh_composite_cols'    => ['Dim_Delivery_Header.Source_Delivery_Id', 'Dim_Instructor.Source_Instructor_Id'],
+                'dwh_query_modifier'    => function ($query) {
+                    $query->join('Dim_Delivery_Header', 'Fact_Instructor_Delivery.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
+                        ->join('Dim_Instructor', 'Fact_Instructor_Delivery.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
+                        ->whereNull('Dim_Delivery_Header.Source_Deleted_At');
+                },
+                'audit_watermark'       => true,
+            ],
+            'Instructor Feedback Lookup' => [
+                'source_table' => 'instructor_feedback_LOOKUP',
+                'source_id_col' => 'id',
+                'source_deleted_col' => null,
+                'dwh_table' => 'Dim_Instructor_Feedback_Lookup',
+                'dwh_source_id_col' => 'Feedback_Lookup_Key',
                 'dwh_deleted_col' => null,
                 'audit_watermark'    => true,
             ],
@@ -114,26 +246,18 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'       => null,
                 'audit_watermark'    => true,
             ],
-            'Grants' => [
-                'source_table'       => 'grants',
-                'source_id_col'      => 'id',
-                'source_deleted_col' => null, // or 'deleted_at' if soft deletes are pruned
-                'dwh_table'          => 'Dim_Grant',
-                'dwh_source_id_col'  => 'Source_Grant_Id',
-                'dwh_deleted_col'    => null,
-                'audit_watermark'    => true,
-            ],
-            'Grant Recipients' => [
-                'source_table'       => 'grant_recipients',
-                'source_id_col'      => 'id',
-                'source_deleted_col' => null,
-                'dwh_table'          => 'Dim_Grant_Recipient',
-                'dwh_source_id_col'  => 'Source_Recipient_Id',
-                'dwh_deleted_col'    => null,
-                'dwh_query_modifier' => function ($query) {
-                    $query->where('Dim_Grant_Recipient.Is_Current', 1);
+            'Instructor Qualifications' => [
+                'source_table'          => 'instructor_qualifications',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+                'source_query_modifier' => function ($query) {
+                    $query->join('instructors', 'instructor_qualifications.instructor_id', '=', 'instructors.id');
                 },
-                'audit_watermark'    => true,
+
+                'dwh_table'             => 'Fact_Instructor_Qualification',
+                'dwh_source_id_col'     => 'Source_Qual_Id',
+                'dwh_deleted_col'       => null,
+                'audit_watermark'       => true,
             ],
             'Organisations' => [
                 'source_table'       => 'organisations',
@@ -144,6 +268,20 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
+            'Parent Surveys' => [
+                'source_table'          => 'parent_survey',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+                'source_query_modifier' => function ($query) {
+                    // Enforce referential integrity against parent tables without discarding soft-deleted deliveries
+                    $query->join('courses', 'parent_survey.course_id', '=', 'courses.id')
+                        ->join('deliveries', 'parent_survey.delivery_id', '=', 'deliveries.id');
+                },
+                'dwh_table'             => 'Fact_Parent_Survey',
+                'dwh_source_id_col'     => 'Source_Survey_Id',
+                'dwh_deleted_col'       => null,
+                'audit_watermark'       => true,
+            ],
             'Riders' => [
                 'source_table'       => 'riders',
                 'source_id_col'      => 'id',
@@ -152,6 +290,18 @@ class DataWarehouseQualityService
                 'dwh_source_id_col'  => 'Source_Rider_Id',
                 'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
+            ],
+            'Rider Courses' => [
+                'composite'             => true,
+                'source_table'          => 'join_riders_courses',
+                'source_composite_cols' => ['rider_id', 'course_id'],
+                'source_deleted_col'    => null,
+
+                'dwh_table'             => 'Fact_Rider_Course',
+                'dwh_composite_cols'    => ['Source_Rider_Id', 'Source_Course_Id'],
+                'dwh_deleted_col'       => null,
+
+                'audit_watermark'       => true,
             ],
             'Schools' => [
                 'source_table'       => 'vendor_edubase',
@@ -175,7 +325,49 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
+            'Teacher Trainer Deliveries' => [
+                'source_table'          => 'teacher_trainer_deliveries',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+                'source_query_modifier' => null,
+                'dwh_table'             => 'Fact_Teacher_Trainer_Delivery',
+                'dwh_source_id_col'     => 'Source_TT_Delivery_Id',
+                'dwh_deleted_col'       => null,
+                'audit_watermark'       => true,
+            ],
+            'Training Organisations' => [
+                'source_table'       => 'vendor_training_organisations',
+                'source_id_col'      => 'id',
+                'source_deleted_col' => null,
+                'dwh_table'          => 'Dim_Training_Organisation',
+                'dwh_source_id_col'  => 'Source_Organisation_Id',
+                'dwh_deleted_col'    => null,
+                'audit_watermark'    => true,
+            ],
+            'Training Providers' => [
+                'source_table' => 'training_providers',
+                'source_id_col' => 'id',
+                'source_deleted_col' => 'deleted_at',
+                'dwh_table' => 'Dim_Training_Provider',
+                'dwh_source_id_col' => 'Source_Provider_Id',
+                'dwh_deleted_col' => 'Source_Deleted_At',
+                'dwh_query_modifier'    => function ($query) {
+                    // Only compare against the active version for SCD Type 2
+                    $query->where('Dim_Training_Provider.Is_Current', 1);
+                },
+                'audit_watermark'    => true,
+            ],
+            'Training Provider Renewals' => [
+                'composite'             => false,
+                'source_table'          => 'training_provider_renewals',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
 
+                'dwh_table'             => 'Fact_Training_Provider_Renewal',
+                'dwh_source_id_col'     => 'Source_Renewal_Id',
+                'dwh_deleted_col'       => null,
+                'audit_watermark'    => true,
+            ]
         ];
 
         $results = [];
@@ -318,8 +510,10 @@ class DataWarehouseQualityService
             $cfg['dwh_query_modifier']($dwhQuery);
         }
 
+        $selectPrefix = !empty($cfg['use_straight_join']) ? 'STRAIGHT_JOIN ' : '';
+
         $dwhLinks = $dwhQuery
-            ->selectRaw("CONCAT_WS('{$separator}', {$dwhColsSql}) as link_key")
+            ->selectRaw("{$selectPrefix}CONCAT_WS('{$separator}', {$dwhColsSql}) as link_key")
             ->pluck('link_key')
             ->map(fn($val) => (string) $val)
             ->toArray();

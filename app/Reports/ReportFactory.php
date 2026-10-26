@@ -41,6 +41,7 @@ class ReportFactory
         'grant-claim-send-and-inclusion'    => GrantClaimSendAndInclusionHandler::class,
         'grant-funding-overview'            => Handlers\GrantFundingOverviewHandler::class,
         'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
+        'instructors'                       => Handlers\InstructorsHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
         'parent_contacts'                   => ParentContactsHandler::class,
         'post-course-follow-up-survey'      => ParentFollowUpSurveyHandler::class,

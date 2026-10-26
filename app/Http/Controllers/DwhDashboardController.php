@@ -13,7 +13,7 @@ class DwhDashboardController extends Controller
     public function index(Request $request, DataWarehouseQualityService $qualityService): View
     {
         // 1. Fetch recent pipeline executions
-        $runs = DB::connection('mysql')->table('dwh_sync_runs')
+        $runs = DB::table('dwh_sync_runs')
             ->orderByDesc('id')
             ->limit(25)
             ->get()
@@ -26,7 +26,7 @@ class DwhDashboardController extends Controller
         $latestRun = $runs->first();
 
         // 2. High-level KPI aggregations
-        $past24hFailures = DB::connection('mysql')->table('dwh_sync_runs')
+        $past24hFailures = DB::table('dwh_sync_runs')
             ->where('started_at', '>=', now()->subDay())
             ->where('status', 'FAILURE')
             ->count();
@@ -37,11 +37,16 @@ class DwhDashboardController extends Controller
             $liveParity = $qualityService->auditAll(null, 5);
         }
 
+        $syncLogs = DB::table('Sync_Log')
+            ->orderBy('table_name', 'asc')
+            ->get();
+
         return view('dwh.dashboard', [
             'runs'             => $runs,
             'latestRun'        => $latestRun,
             'past24hFailures'  => $past24hFailures,
             'liveParity'       => $liveParity,
+            'syncLogs'         => $syncLogs,
         ]);
     }
 }
