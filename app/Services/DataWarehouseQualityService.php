@@ -327,7 +327,7 @@ class DataWarehouseQualityService
                 'dwh_table'             => 'Fact_Rider_Course',
                 'dwh_composite_cols'    => ['Source_Rider_Id', 'Source_Course_Id'],
                 'dwh_deleted_col'       => null,
-                'audit_watermark'       => true,
+                'audit_watermark'       => false,
             ],
             'Schools' => [
                 'source_table'       => 'vendor_edubase',
@@ -581,19 +581,27 @@ class DataWarehouseQualityService
         }
 
         if ($watermark && $watermark !== '1900-01-01 00:00:00') {
+            $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
+
+            // If table relies on legacy rows without created_at, keep NULL created_at as historical
+            if ($tsInfo['has_created_at']) {
+                $srcQuery->where(function ($q) use ($cfg, $watermark) {
+                    $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
+                        ->orWhereNull("{$cfg['source_table']}.created_at");
+                });
+            } elseif ($tsInfo['has_updated_at']) {
+                $srcQuery->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
+            }
+
+            // Symmetrical DWH evaluation
             $dwhTsInfo = $this->getDwhTimestampColumns($cfg['dwh_table']);
             $dwhTable = $cfg['dwh_table'];
 
-            if ($dwhTsInfo['has_created_at'] && $dwhTsInfo['has_updated_at']) {
+            if ($dwhTsInfo['has_created_at']) {
                 $dwhQuery->where(function ($q) use ($dwhTable, $watermark) {
                     $q->where("{$dwhTable}.Source_Created_At", '<=', $watermark)
-                        ->orWhere(function ($fallback) use ($dwhTable, $watermark) {
-                            $fallback->whereNull("{$dwhTable}.Source_Created_At")
-                                ->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
-                        });
+                        ->orWhereNull("{$dwhTable}.Source_Created_At");
                 });
-            } elseif ($dwhTsInfo['has_created_at']) {
-                $dwhQuery->where("{$dwhTable}.Source_Created_At", '<=', $watermark);
             } elseif ($dwhTsInfo['has_updated_at']) {
                 $dwhQuery->where("{$dwhTable}.Source_Updated_At", '<=', $watermark);
             }
