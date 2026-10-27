@@ -9,10 +9,13 @@ use App\Reports\Handlers\GetCyclingAppDataDetailedHandler;
 use App\Reports\Handlers\GetCyclingAppDataHandler;
 use App\Reports\Handlers\GetCyclingAppDataTeacherTrainerHandler;
 use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
+use App\Reports\Handlers\GrantFundingOverviewHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
 use App\Reports\Handlers\InstructorFeedbackStatementSummaryHandler;
+use App\Reports\Handlers\InstructorRenewalsHandler;
 use App\Reports\Handlers\InstructorsDeliveriesAllocationHandler;
+use App\Reports\Handlers\InstructorsHandler;
 use App\Reports\Handlers\ParentContactsHandler;
 use App\Reports\Handlers\ParentFollowUpSurveyHandler;
 use App\Reports\Handlers\PostCourseSurveyHandler;
@@ -39,9 +42,10 @@ class ReportFactory
         'get-cycling-app-data-teacher-trainer' => GetCyclingAppDataTeacherTrainerHandler::class,
         'gr-fleet-cycles-used'              => GrFleetCyclesUsedHandler::class,
         'grant-claim-send-and-inclusion'    => GrantClaimSendAndInclusionHandler::class,
-        'grant-funding-overview'            => Handlers\GrantFundingOverviewHandler::class,
+        'grant-funding-overview'            => GrantFundingOverviewHandler::class,
         'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
-        'instructors'                       => Handlers\InstructorsHandler::class,
+        'instructor-renewals'               => InstructorRenewalsHandler::class,
+        'instructors'                       => InstructorsHandler::class,
         'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
         'parent_contacts'                   => ParentContactsHandler::class,
         'post-course-follow-up-survey'      => ParentFollowUpSurveyHandler::class,
