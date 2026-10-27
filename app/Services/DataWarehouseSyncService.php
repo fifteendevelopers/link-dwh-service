@@ -953,10 +953,10 @@ class DataWarehouseSyncService
             ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
             ->where(function ($q) use ($watermark) {
                 $q->where(function ($sub) use ($watermark) {
-                    $sub->where('updated_at', '>', $watermark)
+                    $sub->where('courses.updated_at', '>', $watermark)
                         ->orWhere(function ($nested) use ($watermark) {
-                            $nested->whereNull('updated_at')
-                                ->where('created_at', '>', $watermark);
+                            $nested->whereNull('courses.updated_at')
+                                ->where('courses.created_at', '>', $watermark);
                         });
                 });
             });
