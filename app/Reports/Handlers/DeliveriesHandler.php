@@ -13,6 +13,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
             'recipient_id' => 'nullable|integer',
             'grant_id'     => 'nullable|integer',
             'provider_id'  => 'nullable|integer',
+            'year'           => 'nullable|integer',
             'start_date'       => 'nullable|string',
             'end_date'       => 'nullable|string',
         ])->validate();
@@ -152,6 +153,11 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
             ->whereNull('c.Parent_Course_Key');
 
         // Optional Runtime Parameter Filters
+        if (!empty($params['year'])) {
+            // Extracts 4-digit start year if formatted as "2025/2026" or passed as 2025
+            $query->where('g.Grant_Period_Start_Year', $params['year']);
+        }
+
         if (!empty($params['recipient_id'])) {
             $query->where('gr.Source_Recipient_Id', $params['recipient_id']);
         }
@@ -161,10 +167,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
         if (!empty($params['provider_id'])) {
             $query->where('tp.Source_Provider_Id', $params['provider_id']);
         }
-        if (!empty($params['start_date']) && !empty($params['end_date'])) {
-            $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'],$params['end_date']]);
-        }
-
+        
         return $query->orderBy('gr.Recipient_Name')
             ->orderBy('g.Grant_Number')
             ->orderBy('dh.Source_Delivery_Id');
