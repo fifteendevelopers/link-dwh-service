@@ -421,12 +421,14 @@ class DataWarehouseQualityService
             ->toArray();
 
         // 2. Stream source deliveries and compare against the in-memory map
-        $nonDigitisedDeliveries = $this->source->table('deliveries')
-            ->where('digitisation_booking', 0)
-            ->whereNull('deleted_at')
-            ->whereNotNull('delivery_details')
-            ->where('delivery_details', '<>', '[]')
-            ->select(['id', 'delivery_details'])
+        $nonDigitisedDeliveries = $this->source->table('deliveries as d')
+            ->leftJoin('courses as c', 'd.id', '=', 'c.delivery_id')
+            ->whereNull('c.id') // Crucial guard: only check JSON if no relational courses exist
+            ->where('d.digitisation_booking', 0)
+            ->whereNull('d.deleted_at')
+            ->whereNotNull('d.delivery_details')
+            ->where('d.delivery_details', '<>', '[]')
+            ->select(['d.id', 'd.delivery_details'])
             ->cursor();
 
         $expectedModules = 0;

@@ -82,6 +82,16 @@ class BackfillNonDigitisedDwhCourses extends Command
                     continue; // Skip if delivery header has not been synced yet
                 }
 
+                $hasRelationalCourses = $dwh->table('Dim_Course')
+                    ->where('Delivery_Key', $header->Delivery_Key)
+                    ->whereNotNull('Source_Course_Id')
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->exists();
+
+                if ($hasRelationalCourses) {
+                    continue;
+                }
+
                 $details = json_decode($deliv->delivery_details, true);
                 if (!is_array($details) || empty($details)) {
                     continue;
