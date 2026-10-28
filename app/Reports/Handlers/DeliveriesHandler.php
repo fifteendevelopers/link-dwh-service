@@ -21,7 +21,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
 
     public function execute(array $params): array
     {
-        ini_set('memory_limit', '1024M');
+        ini_set('memory_limit', '2048M');
         ini_set('max_execution_time', '600');
 
         $query = $this->buildQuery($params);
@@ -140,7 +140,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'f.Count_Adults',
                 'f.Count_Children',
                 'dh.Fleet_Cycles_Used',
-            ]);
+            ])->whereNull('c.parent_course_key');
 
         // 1. Grant Financial Year Filter
         $fy = $params['financial_year'] ?? $params['year'] ?? null;

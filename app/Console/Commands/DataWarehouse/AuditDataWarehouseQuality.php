@@ -28,9 +28,19 @@ class AuditDataWarehouseQuality extends Command
 
             $missingList = $data['missing_ids'] ?? [];
 
+            $formattedMissing = array_map(function ($item) {
+                if (is_array($item)) {
+                    // Formats structured entries, e.g. "Deliv 4 (missing 6)"
+                    $id = $item['delivery_id'] ?? ($item['id'] ?? json_encode($item));
+                    $missing = isset($item['missing']) ? " (missing {$item['missing']})" : '';
+                    return "Deliv {$id}{$missing}";
+                }
+                return (string) $item;
+            }, array_slice($missingList, 0, $limit));
+
             $missingText = $data['missing_count'] > 0
-                ? (!empty($missingList)
-                    ? "{$data['missing_count']} missing: [" . implode(', ', array_slice($missingList, 0, $limit)) . "]"
+                ? (!empty($formattedMissing)
+                    ? "{$data['missing_count']} missing: [" . implode(', ', $formattedMissing) . "]"
                     : "{$data['missing_count']} missing")
                 : 'None';
 

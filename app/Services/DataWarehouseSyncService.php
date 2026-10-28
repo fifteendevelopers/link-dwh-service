@@ -1750,55 +1750,101 @@ class DataWarehouseSyncService
                         continue;
                     }
 
+                    $fact_date = $record->course_start ?: $record->date_delivery_start;
+                    $dateKey   = $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null;
+
+                    // -------------------------------------------------------------------------
+                    // CASE A: Non-digitised booking (course_id IS NULL, parse each module in JSON)
+                    // -------------------------------------------------------------------------
+                    if (is_null($record->course_id)) {
+                        $details = json_decode($record->delivery_details ?? '[]', true);
+                        if (!is_array($details) || empty($details)) {
+                            continue;
+                        }
+
+                        foreach ($details as $entry) {
+                            $courseLevelString = $entry['module']['id'] ?? null;
+                            $yearGroupString   = $entry['delivery']['year_group'] ?? null;
+
+                            if (empty($courseLevelString)) {
+                                continue;
+                            }
+
+                            // 1. Create/resolve Dim_Course for this specific module
+                            $this->dwh->table('Dim_Course')->updateOrInsert(
+                                [
+                                    'Delivery_Key'      => $delivery->Delivery_Key,
+                                    'Course_Level'      => $courseLevelString,
+                                    'Source_Course_Id'  => null,
+                                    'Source_System_Key' => $sourceSystemKey,
+                                ],
+                                [
+                                    'Status'        => 1,
+                                    'Start_Date'    => $fact_date,
+                                    'Date_Complete' => $fact_date,
+                                    'Year_Group'    => $yearGroupString,
+                                ]
+                            );
+
+                            $courseKey = $this->dwh->table('Dim_Course')
+                                ->where('Delivery_Key', $delivery->Delivery_Key)
+                                ->where('Course_Level', $courseLevelString)
+                                ->whereNull('Source_Course_Id')
+                                ->where('Source_System_Key', $sourceSystemKey)
+                                ->value('Course_Key');
+
+                            if (!$courseKey) {
+                                continue;
+                            }
+
+                            // 2. Extract metrics specifically for this single module entry
+                            $moduleMetrics = $this->extractMetricsForSingleModuleEntry($entry);
+
+                            // 3. Upsert Fact_Course_Delivery for this module
+                            $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
+                                [
+                                    'Delivery_Key' => $delivery->Delivery_Key,
+                                    'Course_Key'   => $courseKey,
+                                ],
+                                array_merge(
+                                    $moduleMetrics,
+                                    [
+                                        'Riders_Enrolled_Count'  => 0,
+                                        'Riders_Completed_Count' => 0,
+                                        'Date_Key'               => $dateKey,
+                                        'School_Key'             => $delivery->School_Key,
+                                        'Organisation_Key'       => $delivery->Organisation_Key,
+                                        'Provider_Key'           => $delivery->Training_Provider_Key,
+                                        'Grant_Key'              => $delivery->Grant_Key,
+                                    ]
+                                )
+                            );
+                        }
+                        continue;
+                    }
+
+                    // -------------------------------------------------------------------------
+                    // CASE B: Digitised booking (record has course_id)
+                    // -------------------------------------------------------------------------
+                    $courseKey = $this->dwh->table('Dim_Course')
+                        ->where('Source_Course_Id', $record->course_id)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('Course_Key');
+
+                    if (!$courseKey) {
+                        continue;
+                    }
+
                     $mockCourse = (object)[
                         'id'               => $record->course_id,
                         'delivery_id'      => $record->delivery_id,
                         'delivery_details' => $record->delivery_details ?? null,
                     ];
                     $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
-
-                    $courseLevelString = $deliveryDetailMetrics['Extracted_Course_Level'] ?? null;
-                    $yearGroupString   = $deliveryDetailMetrics['Extracted_Year_Group'] ?? null;
                     unset($deliveryDetailMetrics['Extracted_Course_Level'], $deliveryDetailMetrics['Extracted_Year_Group']);
 
-                    $courseKey = null;
-                    if (!is_null($record->course_id)) {
-                        $courseKey = $this->dwh->table('Dim_Course')
-                            ->where('Source_Course_Id', $record->course_id)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('Course_Key');
-                    } elseif (!empty($courseLevelString)) {
-                        $this->dwh->table('Dim_Course')->updateOrInsert(
-                            [
-                                'Delivery_Key'      => $delivery->Delivery_Key,
-                                'Course_Level'      => $courseLevelString,
-                                'Source_Course_Id'  => null,
-                                'Source_System_Key' => $sourceSystemKey,
-                            ],
-                            [
-                                'Status'        => 1,
-                                'Start_Date'    => $record->course_start ?: $record->date_delivery_start,
-                                'Date_Complete' => $record->course_start ?: $record->date_delivery_start,
-                                'Year_Group'    => $yearGroupString,
-                            ]
-                        );
-
-                        $courseKey = $this->dwh->table('Dim_Course')
-                            ->where('Delivery_Key', $delivery->Delivery_Key)
-                            ->where('Course_Level', $courseLevelString)
-                            ->whereNull('Source_Course_Id')
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->value('Course_Key');
-                    }
-
-                    if (is_null($courseKey)) {
-                        continue;
-                    }
-
-                    $isDigitised = ((int) ($delivery->Digitisation_Booking ?? 0) === 1) || !is_null($record->course_id);
                     $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
-
-                    if ($currentAttended === 0 && $isDigitised && !is_null($record->course_id)) {
+                    if ($currentAttended === 0 && !is_null($record->course_id)) {
                         $actualAttended = $this->dwh->table('Fact_Rider_Course')
                             ->where('Source_Course_Id', $record->course_id)
                             ->where('Source_System_Key', $sourceSystemKey)
@@ -1810,12 +1856,8 @@ class DataWarehouseSyncService
                         }
                     }
 
-                    $enrolledCount = 0;
-                    $completedCount = 0;
-                    if (!is_null($record->course_id)) {
-                        $enrolledCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
-                        $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
-                    }
+                    $enrolledCount  = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
+                    $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
 
                     if ($record->consent_src_characteristics == 1) {
                         $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
@@ -1824,14 +1866,10 @@ class DataWarehouseSyncService
                             $metrics = !empty($record->characteristics)
                                 ? $this->aggregateFromLegacyCharacteristics($record->characteristics)
                                 : $this->initializeExtendedMetricArray();
-                        } elseif (!is_null($record->course_id)) {
-                            $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
                         } else {
-                            $metrics = $this->initializeExtendedMetricArray();
+                            $metrics = $this->aggregateFromSourceTable('course_characteristics', $record->course_id);
                         }
                     }
-
-                    $fact_date = $record->course_start ?: $record->date_delivery_start;
 
                     $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                         [
@@ -1844,7 +1882,7 @@ class DataWarehouseSyncService
                             [
                                 'Riders_Enrolled_Count'  => $enrolledCount,
                                 'Riders_Completed_Count' => $completedCount,
-                                'Date_Key'               => $fact_date ? str_replace('-', '', substr($fact_date, 0, 10)) : null,
+                                'Date_Key'               => $dateKey,
                                 'School_Key'             => $delivery->School_Key,
                                 'Organisation_Key'       => $delivery->Organisation_Key,
                                 'Provider_Key'           => $delivery->Training_Provider_Key,
@@ -1874,6 +1912,79 @@ class DataWarehouseSyncService
             $this->slack->sendSyncError('Fact_Course_Delivery', $e->getMessage(), [], $e->getTraceAsString());
             throw $e;
         }
+    }
+
+    private function extractMetricsForSingleModuleEntry(array $entry): array
+    {
+        $metrics = array_merge($this->initializeExtendedMetricArray(), [
+            'Count_Booked_Provisional'       => 0,
+            'Count_Booked_Confirmed'         => 0,
+            'Count_Attended_Confirmed'       => 0,
+            'Count_Bikes_Swapped'            => 0,
+            'Count_Bikes_Recycled'           => 0,
+            'Count_Gender_Not_Stated'        => 0,
+            'Count_SEND'                     => 0,
+            'Count_Pupil_Premium'            => 0,
+            'Count_SEND_Not_Stated'          => 0,
+            'Count_Pupil_Premium_Not_Stated' => 0,
+        ]);
+
+        $delivery = $entry['delivery'] ?? [];
+        $booked   = $delivery['booked'] ?? [];
+
+        $metrics['Count_Booked_Provisional'] = (int) ($booked['provisional'] ?? 0);
+
+        if (isset($delivery['confirmed']) && (int)$delivery['confirmed'] === 1) {
+            $metrics['Count_Booked_Confirmed']   = (int) ($booked['total'] ?? 0);
+            $metrics['Count_Attended_Confirmed'] = (int) ($delivery['attended']['total'] ?? 0);
+        }
+
+        if (($entry['module']['id'] ?? '') === 'plus_family') {
+            $metrics['Count_Adults']   = (int) ($delivery['adults'] ?? 0);
+            $metrics['Count_Teens']    = (int) ($delivery['teens'] ?? 0);
+            $metrics['Count_Children'] = (int) ($delivery['children'] ?? 0);
+            return $metrics;
+        }
+
+        $gender = $booked['gender'] ?? [];
+        foreach ($gender as $sub => $val) {
+            if ($sub === 'female')       $metrics['Count_Female'] += (int) $val;
+            elseif ($sub === 'male')     $metrics['Count_Male'] += (int) $val;
+            elseif ($sub === 'other')    $metrics['Count_Gender_Other'] += (int) $val;
+            elseif ($sub === 'na')       $metrics['Count_Gender_Not_Stated'] += (int) $val;
+        }
+
+        $ethnicity = $booked['ethnicity'] ?? [];
+        foreach ($ethnicity as $sub => $val) {
+            $targetColumn = $this->mapEthnicityToColumn($sub);
+            if (array_key_exists($targetColumn, $metrics)) {
+                $metrics[$targetColumn] += (int) $val;
+            } else {
+                $metrics['Count_Ethnicity_Not_Stated'] += (int) $val;
+            }
+        }
+
+        $ages = $booked['age_range'] ?? [];
+        foreach ($ages as $sub => $val) {
+            $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
+            if (array_key_exists($col, $metrics)) $metrics[$col] += (int) $val;
+        }
+
+        $repeats = $booked['repeat_type'] ?? [];
+        foreach ($repeats as $sub => $val) {
+            $col = 'Count_Booked_Repeat_Type_' . ucfirst(strtolower($sub));
+            if (array_key_exists($col, $metrics)) $metrics[$col] += (int) $val;
+        }
+
+        $metrics['Count_SEND']                     += (int) ($booked['send'] ?? 0);
+        $metrics['Count_Pupil_Premium']            += (int) ($booked['free_school_meals'] ?? 0);
+        $metrics['Count_SEND_Not_Stated']          += (int) ($booked['send_na'] ?? 0);
+        $metrics['Count_Pupil_Premium_Not_Stated'] += (int) ($booked['free_school_meals_na'] ?? 0);
+
+        $metrics['Count_Bikes_Swapped']  = (int) ($delivery['bikes_swapped'] ?? 0);
+        $metrics['Count_Bikes_Recycled'] = (int) ($delivery['bikes_recycled'] ?? 0);
+
+        return $metrics;
     }
 
     public function syncFactRiderCourse($command = null)

@@ -36,6 +36,7 @@ class ReportRouterController extends Controller
         $jobId       = $request->input('job_id');
 
         try {
+
             // Resolve the concrete reporting handler class
             $handler = ReportFactory::make($reportKey);
 

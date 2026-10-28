@@ -30,10 +30,6 @@ class DataWarehouseQualityService
             ->value('Last_Synced_At') ?? '1900-01-01 00:00:00';
     }
 
-    /**
-     * Resolve available timestamp column(s) on a source table.
-     * Returns ['has_updated_at' => bool, 'has_created_at' => bool]
-     */
     protected function getSourceTimestampColumns(string $tableName): array
     {
         if (isset($this->sourceTimestampCache[$tableName])) {
@@ -48,10 +44,6 @@ class DataWarehouseQualityService
         ];
     }
 
-    /**
-     * Resolve available timestamp column(s) on a DWH table.
-     * Returns ['has_created_at' => bool, 'has_updated_at' => bool]
-     */
     protected function getDwhTimestampColumns(string $tableName): array
     {
         if (isset($this->dwhTimestampCache[$tableName])) {
@@ -66,9 +58,6 @@ class DataWarehouseQualityService
         ];
     }
 
-    /**
-     * Run all entity integrity checks and return a structured summary.
-     */
     public function auditAll(?OutputInterface $output = null, int $sampleLimit = 5): array
     {
         $entities = [
@@ -82,17 +71,20 @@ class DataWarehouseQualityService
                 'audit_watermark'    => true,
             ],
             'Courses' => [
-                'source_table'       => 'courses',
-                'source_id_col'      => 'id',
-                'source_deleted_col' => null,
-                'dwh_table'          => 'Dim_Course',
-                'dwh_source_id_col'  => 'Source_Course_Id',
-                'dwh_deleted_col'    => null,
-                'dwh_query_modifier' => function ($query) {
-                    $query->join('Dim_Delivery_Header', 'Dim_Course.Delivery_Key', '=', 'Dim_Delivery_Header.Delivery_Key')
-                        ->whereNotNull('Dim_Course.Source_Course_Id');
+                'source_table'          => 'courses',
+                'source_id_col'         => 'id',
+                'source_deleted_col'    => null,
+                'source_query_modifier' => function ($query) {
+                    $query->join('deliveries', 'courses.delivery_id', '=', 'deliveries.id');
                 },
-                'audit_watermark'    => false, // Full table synced; avoid false negatives from daytime row updates
+                'dwh_table'             => 'Dim_Course',
+                'dwh_source_id_col'     => 'Source_Course_Id',
+                'dwh_deleted_col'       => null,
+                'dwh_query_modifier'    => function ($query) {
+                    // No unindexed join needed; Source_Course_Id not null represents digitised courses
+                    $query->whereNotNull('Dim_Course.Source_Course_Id');
+                },
+                'audit_watermark'       => true,
             ],
             'Deliveries' => [
                 'source_table'       => 'deliveries',
@@ -241,7 +233,7 @@ class DataWarehouseQualityService
                         ->join('Dim_Instructor', 'Fact_Instructor_Delivery.Instructor_Key', '=', 'Dim_Instructor.Instructor_Key')
                         ->whereNull('Dim_Delivery_Header.Source_Deleted_At');
                 },
-                'audit_watermark'       => false, // Disabled: avoids false positives from null/inconsistent pivot timestamps
+                'audit_watermark'       => false,
             ],
             'Instructor Feedback Lookup' => [
                 'source_table'       => 'instructor_feedback_LOOKUP',
@@ -252,7 +244,7 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'    => null,
                 'audit_watermark'    => false,
             ],
-            'Instructor Provider Links' => [
+            'Instructor - Training Provider (Join)' => [
                 'composite'             => true,
                 'source_table'          => 'join_instructors_training_providers',
                 'source_composite_cols' => ['instructor_id', 'training_provider_id'],
@@ -407,12 +399,120 @@ class DataWarehouseQualityService
             }
         }
 
+        $results['Courses (Non-Digitised JSON Modules)'] = $this->auditNonDigitisedCourses($sampleLimit);
+
         return $results;
     }
 
     /**
-     * Standard primary key entity comparison.
+     * Audits non-digitised delivery_details JSON entries against synthetic Dim_Course records.
+     * Single grouped query to eliminate all N+1 overhead.
      */
+    public function auditNonDigitisedCourses(int $sampleLimit = 5): array
+    {
+        // 1. Fetch DWH synthetic course counts in ONE single grouped query
+        $dwhCourseCounts = $this->dwh->table('Dim_Course as c')
+            ->join('Dim_Delivery_Header as d', 'c.Delivery_Key', '=', 'd.Delivery_Key')
+            ->where('d.Digitisation_Booking', 0)
+            ->where('c.Source_System_Key', $this->sourceSystemKey)
+            ->whereNull('c.Source_Course_Id')
+            ->groupBy('d.Source_Delivery_Id')
+            ->pluck(DB::raw('COUNT(*) as total_courses'), 'd.Source_Delivery_Id')
+            ->toArray();
+
+        // 2. Stream source deliveries and compare against the in-memory map
+        $nonDigitisedDeliveries = $this->source->table('deliveries')
+            ->where('digitisation_booking', 0)
+            ->whereNull('deleted_at')
+            ->whereNotNull('delivery_details')
+            ->where('delivery_details', '<>', '[]')
+            ->select(['id', 'delivery_details'])
+            ->cursor();
+
+        $expectedModules = 0;
+        $missingDeliveries = [];
+
+        foreach ($nonDigitisedDeliveries as $deliv) {
+            $details = json_decode($deliv->delivery_details, true);
+            if (!is_array($details)) {
+                continue;
+            }
+
+            $moduleCount = 0;
+            foreach ($details as $entry) {
+                if (!empty($entry['module']['id'])) {
+                    $moduleCount++;
+                }
+            }
+
+            if ($moduleCount === 0) {
+                continue;
+            }
+
+            $expectedModules += $moduleCount;
+
+            $dwhCount = (int) ($dwhCourseCounts[$deliv->id] ?? 0);
+
+            if ($dwhCount < $moduleCount) {
+                $missingDeliveries[] = [
+                    'delivery_id' => (int) $deliv->id,
+                    'expected'    => $moduleCount,
+                    'actual'      => $dwhCount,
+                    'missing'     => $moduleCount - $dwhCount,
+                ];
+            }
+        }
+
+        $dwhTotal = array_sum($dwhCourseCounts);
+        $missingCount = max(0, $expectedModules - $dwhTotal);
+
+        return [
+            'source_count'  => $expectedModules,
+            'dwh_count'     => $dwhTotal,
+            'match'         => ($expectedModules === $dwhTotal && empty($missingDeliveries)),
+            'missing_count' => $missingCount,
+            'missing_ids'   => array_slice($missingDeliveries, 0, $sampleLimit),
+        ];
+    }
+
+    /**
+     * Diagnostic comparison for digitised and non-digitised courses.
+     */
+    public function auditCoursesBreakdown(int $sampleLimit = 10): array
+    {
+        // 1. Digitised courses count (source table vs Dim_Course)
+        // Direct count on Dim_Course where Source_Course_Id is not null avoids unindexed join
+        $srcDigitised = $this->source->table('courses')
+            ->join('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
+            ->where('deliveries.digitisation_booking', 1)
+            ->whereNull('deliveries.deleted_at')
+            ->count();
+
+        $dwhDigitised = $this->dwh->table('Dim_Course')
+            ->where('Source_System_Key', $this->sourceSystemKey)
+            ->whereNotNull('Source_Course_Id')
+            ->count();
+
+        // 2. Non-Digitised modules vs synthetic Dim_Course rows
+        $nonDigitisedAudit = $this->auditNonDigitisedCourses($sampleLimit);
+
+        return [
+            'digitised' => [
+                'source_courses_count' => $srcDigitised,
+                'dwh_courses_count'    => $dwhDigitised,
+                'match'                => ($srcDigitised === $dwhDigitised),
+                'difference'           => $srcDigitised - $dwhDigitised,
+            ],
+            'non_digitised' => [
+                'source_expected_modules' => $nonDigitisedAudit['source_count'],
+                'dwh_synthetic_courses'   => $nonDigitisedAudit['dwh_count'],
+                'match'                   => $nonDigitisedAudit['match'],
+                'difference'              => $nonDigitisedAudit['missing_count'],
+                'sample_missing'          => $nonDigitisedAudit['missing_ids'],
+            ],
+        ];
+    }
+
     protected function auditEntity(array $cfg, int $sampleLimit): array
     {
         $watermark = null;
@@ -420,7 +520,6 @@ class DataWarehouseQualityService
             $watermark = $this->getWatermark($cfg['dwh_table']);
         }
 
-        // 1. Build Source Query
         $srcQuery = $this->source->table($cfg['source_table']);
 
         if (!empty($cfg['source_deleted_col'])) {
@@ -430,7 +529,6 @@ class DataWarehouseQualityService
         if ($watermark && $watermark !== '1900-01-01 00:00:00') {
             $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
 
-            // Primary: created_at -> Fallback: updated_at
             if ($tsInfo['has_created_at'] && $tsInfo['has_updated_at']) {
                 $srcQuery->where(function ($q) use ($cfg, $watermark) {
                     $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
@@ -454,7 +552,6 @@ class DataWarehouseQualityService
             ->map(fn($id) => (int) $id)
             ->toArray();
 
-        // 2. Build DWH Query
         $dwhQuery = $this->dwh->table($cfg['dwh_table'])
             ->where("{$cfg['dwh_table']}.Source_System_Key", $this->sourceSystemKey);
 
@@ -462,7 +559,6 @@ class DataWarehouseQualityService
             $dwhQuery->whereNull("{$cfg['dwh_table']}.{$cfg['dwh_deleted_col']}");
         }
 
-        // Apply symmetric watermark filter AFTER $dwhQuery is initialized
         if ($watermark && $watermark !== '1900-01-01 00:00:00') {
             $dwhTsInfo = $this->getDwhTimestampColumns($cfg['dwh_table']);
             $dwhTable = $cfg['dwh_table'];
@@ -512,9 +608,6 @@ class DataWarehouseQualityService
         ];
     }
 
-    /**
-     * Pivot/Bridge table comparison (e.g. Instructor - Provider link).
-     */
     protected function auditCompositeKey(array $cfg, int $sampleLimit = 5): array
     {
         $separator = $cfg['composite_delimiter'] ?? '-';
@@ -525,19 +618,15 @@ class DataWarehouseQualityService
             return implode('.', array_map(fn($part) => "`" . str_replace('`', '', $part) . "`", $parts));
         };
 
-        // 1. Resolve source composite columns
         $srcCols = (array) ($cfg['source_composite_cols'] ?? $cfg['source_id_col']);
         $srcCols = array_map('trim', explode(',', implode(',', $srcCols)));
 
-        // 2. Resolve DWH composite columns
         $dwhCols = (array) ($cfg['dwh_composite_cols'] ?? $cfg['dwh_source_id_col']);
         $dwhCols = array_map('trim', explode(',', implode(',', $dwhCols)));
 
-        // 3. Build dynamic CONCAT_WS SQL expressions
         $srcColsSql = implode(', ', array_map($wrapCol, $srcCols));
         $dwhColsSql = implode(', ', array_map($wrapCol, $dwhCols));
 
-        // 4. Source Query
         $srcQuery = $this->source->table($cfg['source_table']);
 
         if (!empty($cfg['source_deleted_col'])) {
@@ -572,7 +661,6 @@ class DataWarehouseQualityService
             ->map(fn($val) => (string) $val)
             ->toArray();
 
-        // 5. DWH Query with Join Modifiers
         $dwhQuery = $this->dwh->table($cfg['dwh_table'])
             ->where("{$cfg['dwh_table']}.Source_System_Key", $this->sourceSystemKey);
 
@@ -583,7 +671,6 @@ class DataWarehouseQualityService
         if ($watermark && $watermark !== '1900-01-01 00:00:00') {
             $tsInfo = $this->getSourceTimestampColumns($cfg['source_table']);
 
-            // If table relies on legacy rows without created_at, keep NULL created_at as historical
             if ($tsInfo['has_created_at']) {
                 $srcQuery->where(function ($q) use ($cfg, $watermark) {
                     $q->where("{$cfg['source_table']}.created_at", '<=', $watermark)
@@ -593,7 +680,6 @@ class DataWarehouseQualityService
                 $srcQuery->where("{$cfg['source_table']}.updated_at", '<=', $watermark);
             }
 
-            // Symmetrical DWH evaluation
             $dwhTsInfo = $this->getDwhTimestampColumns($cfg['dwh_table']);
             $dwhTable = $cfg['dwh_table'];
 
@@ -619,7 +705,6 @@ class DataWarehouseQualityService
             ->map(fn($val) => (string) $val)
             ->toArray();
 
-        // 6. Parity Verification
         $dwhLookup = array_flip($dwhLinks);
 
         $missing = [];
@@ -642,9 +727,6 @@ class DataWarehouseQualityService
         ];
     }
 
-    /**
-     * Diagnostic on the source connection to detect orphaned/soft-deleted relations.
-     */
     public function auditInstructorProviderOrphans(): array
     {
         $rows = $this->source->table('join_instructors_training_providers as j')
