@@ -1,7 +1,7 @@
 <?php
 
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\DataWarehouse\Support;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
