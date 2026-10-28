@@ -58,18 +58,17 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
 
     protected function buildQuery(array $params)
     {
-
         $query = DB::connection('mysql')->table('Fact_Course_Delivery as f')
             ->join('Dim_Delivery_Header as dh', 'f.Delivery_Key', '=', 'dh.Delivery_Key')
             ->join('Dim_Course as c', 'f.Course_Key', '=', 'c.Course_Key')
             ->join('Dim_Grant as g', 'f.Grant_Key', '=', 'g.Grant_Key')
-            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
-            ->join('Dim_Training_Provider as tp', 'f.Provider_Key', '=', 'tp.Provider_Key')
+            ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+            ->leftJoin('Dim_Training_Provider as tp', 'f.Provider_Key', '=', 'tp.Provider_Key')
             ->leftJoin('Dim_School as s', 'f.School_Key', '=', 's.School_Key')
             ->select([
                 'g.Grant_Number',
                 'g.Grant_Source',
-                'gr.Recipient_Name',
+                DB::raw("IFNULL(gr.Recipient_Name, 'not set') as Recipient_Name"),
                 'dh.Source_Delivery_Id',
                 DB::raw("CASE WHEN dh.Digitisation_Booking = 1 THEN 'Yes' ELSE 'No' END as Digitisation"),
                 's.School_Urn',
@@ -77,16 +76,16 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 's.LA_Name',
                 's.LA_Code',
                 DB::raw("CASE
-                    WHEN JSON_VALID(dh.Alt_Delivery_Location) THEN
-                        CONCAT_WS(', ',
-                            NULLIF(dh.Alt_Delivery_Location->>'$.venueName', ''),
-                            NULLIF(dh.Alt_Delivery_Location->>'$.venueAddress', ''),
-                            NULLIF(dh.Alt_Delivery_Location->>'$.venuePostcode', '')
-                        )
-                    ELSE
-                        dh.Alt_Delivery_Location
-                END as Alt_Delivery_Location"),
-                'tp.Provider_Name',
+                WHEN JSON_VALID(dh.Alt_Delivery_Location) THEN
+                    CONCAT_WS(', ',
+                        NULLIF(dh.Alt_Delivery_Location->>'$.venueName', ''),
+                        NULLIF(dh.Alt_Delivery_Location->>'$.venueAddress', ''),
+                        NULLIF(dh.Alt_Delivery_Location->>'$.venuePostcode', '')
+                    )
+                ELSE
+                    dh.Alt_Delivery_Location
+            END as Alt_Delivery_Location"),
+                DB::raw("IFNULL(tp.Provider_Name, '') as Provider_Name"),
                 'tp.Source_Provider_Id',
                 DB::raw("DATE_FORMAT(dh.Date_Delivery_Start, '%d/%m/%Y') as Date_Delivery_Start"),
                 DB::raw("DATE_FORMAT(dh.Date_Completed, '%d/%m/%Y') as Date_Completed"),
@@ -94,15 +93,14 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'c.Course_Level',
                 'dh.Delivery_Status',
                 'f.Count_Booked_Provisional',
-                'f.Riders_Enrolled_Count', //Booked
-                'f.Riders_Completed_Count', //Attended
+                'f.Riders_Enrolled_Count',
+                'f.Riders_Completed_Count',
                 'f.Count_Booked_Confirmed',
                 'f.Count_Attended_Confirmed',
                 'f.Count_Male',
                 'f.Count_Female',
                 'f.Count_Gender_Other',
                 'f.Count_Gender_Not_Stated',
-                // Granular Ethnicity Mappings
                 'f.Count_Ethnicity_Asian_Bangladeshi',
                 'f.Count_Ethnicity_Asian_Chinese',
                 'f.Count_Ethnicity_Asian_Indian',
@@ -123,7 +121,6 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'f.Count_Ethnicity_Other_Any',
                 'f.Count_Ethnicity_Other_Arab',
                 'f.Count_Ethnicity_Not_Stated',
-                // Age Ranges
                 'f.Count_Age_Range_18_24',
                 'f.Count_Age_Range_25_34',
                 'f.Count_Age_Range_35_44',
@@ -131,31 +128,25 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'f.Count_Age_Range_55_64',
                 'f.Count_Age_Range_Over_65',
                 'f.Count_Age_Range_Not_Stated',
-                // Repeat Types
                 'f.Count_Booked_Repeat_Type_Repeat',
                 'f.Count_Booked_Repeat_Type_Unique',
                 'f.Count_Booked_Repeat_Type_Na',
-                // SEND
                 'f.Count_SEND',
                 'f.Count_SEND_Not_Stated',
-                // Pupil Premium
                 'f.Count_Pupil_Premium',
                 'f.Count_Pupil_Premium_Not_Stated',
-                // Bikes
                 'f.Count_Bikes_Recycled',
                 'f.Count_Bikes_Swapped',
-                // Family
                 'f.Count_Adults',
                 'f.Count_Children',
-                //Fleet Cycles
                 'dh.Fleet_Cycles_Used',
-            ])
-            ->whereNull('c.Parent_Course_Key');
+            ]);
 
-        // Optional Runtime Parameter Filters
-        if (!empty($params['year'])) {
-            // Extracts 4-digit start year if formatted as "2025/2026" or passed as 2025
-            $query->where('g.Grant_Period_Start_Year', $params['year']);
+        // 1. Grant Financial Year Filter
+        $fy = $params['financial_year'] ?? $params['year'] ?? null;
+        if (!empty($fy)) {
+            $startYear = is_numeric($fy) ? (int)$fy : (int)substr((string)$fy, 0, 4);
+            $query->where('g.Grant_Period_Start_Year', $startYear);
         }
 
         if (!empty($params['recipient_id'])) {
@@ -167,11 +158,10 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
         if (!empty($params['provider_id'])) {
             $query->where('tp.Source_Provider_Id', $params['provider_id']);
         }
-        
+
         return $query->orderBy('gr.Recipient_Name')
             ->orderBy('g.Grant_Number')
             ->orderBy('dh.Source_Delivery_Id');
-
     }
 
 
