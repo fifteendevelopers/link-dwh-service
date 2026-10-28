@@ -49,7 +49,6 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
                 'r.Source_Rider_Id as Rider ID',
                 'tp.Provider_Name as Training Provider',
                 DB::raw("COALESCE(s.School_Name, o.Organisation_Name) as 'School/Organisation'"),
-
                 // Course Name Labeling Text Logic
                 DB::raw("CASE
                     WHEN c.Course_Level = 'level_1_2' THEN 'Level 1 & 2 (Combined)'
@@ -156,12 +155,9 @@ class PostCourseSurveyHandler implements ReportHandlerInterface
                 's.Imd_Decile'
             ]);
 
-        // --- Year Filter Rule Block ---
-        // Dynamically scales to requested target parameter, defaulting directly to 2025
-        if (isset($params['year']) && $params['year'] !== '' && $params['year'] !== null) {
-            $query->whereRaw('YEAR(f.Source_Created_At) = ?', [$params['year']]);
-        } else {
-            $query->whereRaw('YEAR(f.Source_Created_At) = 2025');
+        // --- Year Filter Rule Block (start and end dates are passed in as the financial year dates ---
+        if(isset($params['start_date']) && isset($params['end_date'])) {
+            $query->whereBetween('dh.Date_Delivery_Start', [$params['start_date'], $params['end_date']]);
         }
 
         // --- Runtime Optional Parameters Whitelisting ---
