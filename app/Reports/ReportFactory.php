@@ -28,6 +28,8 @@ use App\Reports\Handlers\TeacherTrainerDeliveriesDetailedHandler;
 use App\Reports\Handlers\TeacherTrainerDeliveriesSimpleHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
 use App\Reports\Handlers\TrainingProviderRenewalDetailHandler;
+use App\Reports\Handlers\TrainingProviderRenewalsHandler;
+use App\Reports\Handlers\TrainingProvidersHandler;
 
 class ReportFactory
 {
@@ -35,32 +37,34 @@ class ReportFactory
      * Internal report routing registry map.
      */
     protected static array $registry = [
-        'deliveries'                        => DeliveriesHandler::class,
-        'deliveries-per-grant-recipient'    => DeliveriesPerGrantRecipientHandler::class,
-        'get-cycling-app-data'                 => GetCyclingAppDataHandler::class,
-        'get-cycling-app-data-detailed'        => GetCyclingAppDataDetailedHandler::class,
-        'get-cycling-app-data-teacher-trainer' => GetCyclingAppDataTeacherTrainerHandler::class,
-        'gr-fleet-cycles-used'              => GrFleetCyclesUsedHandler::class,
-        'grant-claim-send-and-inclusion'    => GrantClaimSendAndInclusionHandler::class,
-        'grant-funding-overview'            => GrantFundingOverviewHandler::class,
-        'grant-movements-financials'        => GrantMovementsFinancialsHandler::class,
-        'instructor-renewals'               => InstructorRenewalsHandler::class,
-        'instructors'                       => InstructorsHandler::class,
-        'instructors-deliveries-allocation' => InstructorsDeliveriesAllocationHandler::class,
-        'parent_contacts'                   => ParentContactsHandler::class,
-        'post-course-follow-up-survey'      => ParentFollowUpSurveyHandler::class,
-        'post-course-survey'                => PostCourseSurveyHandler::class,
-        'pre-course-cycle-frequency'        => PreCourseCycleFrequencyHandler::class,
+        'deliveries'                          => DeliveriesHandler::class,
+        'deliveries-per-grant-recipient'      => DeliveriesPerGrantRecipientHandler::class,
+        'get-cycling-app-data'                => GetCyclingAppDataHandler::class,
+        'get-cycling-app-data-detailed'       => GetCyclingAppDataDetailedHandler::class,
+        'get-cycling-app-data-teacher-trainer'=> GetCyclingAppDataTeacherTrainerHandler::class,
+        'gr-fleet-cycles-used'                => GrFleetCyclesUsedHandler::class,
+        'grant-claim-send-and-inclusion'      => GrantClaimSendAndInclusionHandler::class,
+        'grant-funding-overview'              => GrantFundingOverviewHandler::class,
+        'grant-movements-financials'          => GrantMovementsFinancialsHandler::class,
+        'instructor-renewals'                 => InstructorRenewalsHandler::class,
+        'instructors'                         => InstructorsHandler::class,
+        'instructors-deliveries-allocation'   => InstructorsDeliveriesAllocationHandler::class,
+        'parent_contacts'                     => ParentContactsHandler::class,
+        'post-course-follow-up-survey'        => ParentFollowUpSurveyHandler::class,
+        'post-course-survey'                  => PostCourseSurveyHandler::class,
+        'pre-course-cycle-frequency'          => PreCourseCycleFrequencyHandler::class,
 //        'pre-course-frequency'              => PreCourseFrequencyHandler::class,
-        'report-29.0'                       => PreCourseCycleFrequencyHandler::class, // e.g. Supports aliases
-        'rider-activity-outcomes'           => RiderActivityOutcomesHandler::class,
-        'rider-feedback-summary'            => InstructorFeedbackStatementSummaryHandler::class,
-        'school-deliveries'                 => SchoolDeliveriesHandler::class,
-        'school-deliveries-audit'           => SchoolDeliveriesAuditHandler::class,
-        'tp-hands-up-survey'                => TpHandsUpSurveyHandler::class,
+        'report-29.0'                         => PreCourseCycleFrequencyHandler::class, // e.g. Supports aliases
+        'rider-activity-outcomes'             => RiderActivityOutcomesHandler::class,
+        'rider-feedback-summary'              => InstructorFeedbackStatementSummaryHandler::class,
+        'school-deliveries'                   => SchoolDeliveriesHandler::class,
+        'school-deliveries-audit'             => SchoolDeliveriesAuditHandler::class,
+        'tp-hands-up-survey'                  => TpHandsUpSurveyHandler::class,
         'teacher-trainer-deliveries-simple'   => TeacherTrainerDeliveriesSimpleHandler::class,
         'teacher-trainer-deliveries-detailed' => TeacherTrainerDeliveriesDetailedHandler::class,
-        'training-provider-renewal-detail' => TrainingProviderRenewalDetailHandler::class,
+        'training-providers'                  => TrainingProvidersHandler::class,
+        'training-provider-renewals'         => TrainingProviderRenewalsHandler::class,
+        'training-provider-renewal-detail'    => TrainingProviderRenewalDetailHandler::class,
     ];
 
     /**
