@@ -59,7 +59,7 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
             'plus_ride', 'plus_transition', 'plus_family', 'plus_adult'
         ];
 
-        // 1. Pivot places (Value_Count) and funding (Amount) per amendment
+        // 1. Pivot places (Value_Count) and funding (Amount) per amendment from Fact_Grant_Amendment_Logs
         $deltasQuery = $db->table('Fact_Grant_Amendment_Logs as al')
             ->select('al.Amendment_Key');
 
@@ -86,10 +86,11 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
         $totalPlacesSql  = implode(' + ', array_map(fn($m) => "COALESCE(d.{$m}_places, 0)", $modules));
         $totalFundingSql = implode(' + ', array_map(fn($m) => "COALESCE(d.{$m}_funding, 0)", $modules));
 
-        // 3. Main query joining Dim_Grant and Dim_Grant_Recipient
+        // 3. Main query joining Dim_Grant, Dim_Grant_Recipient, Fact_Grant_Allocation_Dft, and deltas
         $query = $db->table('Fact_Grant_Amendments as a')
             ->join('Dim_Grant as g', 'a.Grant_Key', '=', 'g.Grant_Key')
-            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Grant_Recipient_Key')
+            ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
+            ->leftJoin('Fact_Grant_Allocation_Dft as gad', 'g.Grant_Key', '=', 'gad.Grant_Key')
             ->leftJoinSub($deltasQuery, 'd', 'a.Amendment_Key', '=', 'd.Amendment_Key')
             ->where('a.Status_Raw', 1);
 
@@ -110,7 +111,7 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
             'a.Amendment_Number',
             'a.created_at',
             'a.Date_Approved',
-            'gr.Pref_Sgoh',
+            'gr.Is_SGO',
             DB::raw("'' as gap_1"),
             // Core modules (Places, Funding)
             DB::raw("COALESCE(d.level_1_places, 0) as level_1_places"),
@@ -150,7 +151,8 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
             DB::raw("'' as gap_3"),
             DB::raw("({$totalPlacesSql}) as total_places_change"),
             DB::raw("({$totalFundingSql}) as total_funding_change"),
-            DB::raw("((COALESCE(g.Total_Levels, 0) + COALESCE(g.Total_Plus, 0)) - ({$totalFundingSql})) as original_allocation"),
+            // Original Allocation: (Total_Levels + Total_Plus) - totalFundingDelta
+            DB::raw("((COALESCE(gad.Total_Levels, 0) + COALESCE(gad.Total_Plus, 0)) - ({$totalFundingSql})) as original_allocation"),
         ]);
 
         return $query->orderBy('g.Grant_Number')->orderBy('a.Amendment_Number');
