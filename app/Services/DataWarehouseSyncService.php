@@ -6,6 +6,7 @@ use App\Models\Rider;
 use App\Services\SlackAlertService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Throwable;
 
@@ -1557,6 +1558,83 @@ class DataWarehouseSyncService
     // =========================================================================
     // FACTS & BRIDGES
     // =========================================================================
+
+    public function syncGrantRecipientTrainingProviders($command = null)
+    {
+        $dwh = $this->dwh;
+        $sourceSystemKey = $this->getSourceSystemKey();
+
+        try {
+            $providerMap = $this->dwh->table('Dim_Training_Provider')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->where('Is_Current', 1)
+                ->pluck('Provider_Key', 'Source_Provider_Id')
+                ->toArray();
+
+            $recipientMap = $this->dwh->table('Dim_Grant_Recipient')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->pluck('Recipient_Key', 'Source_Recipient_Id')
+                ->toArray();
+
+            $sourceRows = $this->source->table('join_grant_recipients_training_providers')
+                ->get();
+
+            $total = $sourceRows->count();
+
+            $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+            if ($bar) $bar->start();
+
+            $now = now();
+            $payload = [];
+            $skipped = 0;
+
+            foreach ($sourceRows as $row) {
+                $grKey = $recipientMap[$row->grant_recipient_id] ?? null;
+                $tpKey = $providerMap[$row->training_provider_id] ?? null;
+
+                if (!$grKey || !$tpKey) {
+                    $skipped++;
+                    Log::warning("DWH Sync Skip: Missing dimension key for GR: {$row->grant_recipient_id} or TP: {$row->training_provider_id}");
+                    continue;
+                }
+
+                $payload[] = [
+                    'Grant_Recipient_Key'                 => $grKey,
+                    'Provider_Key'                        => $tpKey,
+                    'Source_Grant_Recipient_Id'           => $row->grant_recipient_id,
+                    'Source_Training_Provider_Id'         => $row->training_provider_id,
+                    'Source_System_Key'                   => 1,
+                    'Pref_Enable_Tp_Access'               => (int)($row->pref_enable_tp_access ?? 0),
+                    'Pref_Enable_Tp_Digi_Delivery_Access' => (int)($row->pref_enable_tp_digi_delivery_access ?? 0),
+                    'Source_Deleted_At'                   => $row->deleted_at,
+                    'created_at'                          => $now,
+                    'updated_at'                          => $now,
+                ];
+            }
+
+            // 3. Atomic refresh / upsert
+            $dwh->transaction(function () use ($dwh, $payload) {
+                $dwh->table('Fact_Grant_Recipient_Training_Provider')->delete();
+
+                foreach (array_chunk($payload, 200) as $chunk) {
+                    $dwh->table('Fact_Grant_Recipient_Training_Provider')->insert($chunk);
+                }
+            });
+
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            $skipNotice = $skipped > 0 ? " ({$skipped} orphaned records skipped)" : "";
+
+            return "Fact_Instructor_Training_Provider refreshed with " . count($payload) . " records.{$skipNotice}";
+
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Fact_Instructor_Training_Provider', $e->getMessage(), [], $e->getTraceAsString());
+            throw $e;
+        }
+    }
 
     public function syncInstructorTrainingProviders($command = null)
     {

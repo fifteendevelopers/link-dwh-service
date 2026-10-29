@@ -131,7 +131,11 @@ class SyncToDataWarehouse extends Command
             }
 
             /* Fact tables */
-            if ($table === 'all' || $table === 'instructors_training_providers') {
+            if ($table === 'all' || $table === 'fact_recipients_training_providers') {
+                $runSyncStep('Fact Grant Recipient Training Providers', fn() => $syncService->syncGrantRecipientTrainingProviders($this));
+            }
+
+            if ($table === 'all' || $table === 'fact_instructors_training_providers') {
                 $runSyncStep('Fact Instructor Training Providers', fn() => $syncService->syncInstructorTrainingProviders($this));
             }
 

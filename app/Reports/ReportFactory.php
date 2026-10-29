@@ -12,6 +12,7 @@ use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
 use App\Reports\Handlers\GrantClaimsToPayHandler;
 use App\Reports\Handlers\GrantFundingOverviewHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
+use App\Reports\Handlers\GrantRecipientsAssociatedTpsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
 use App\Reports\Handlers\InstructorFeedbackStatementSummaryHandler;
 use App\Reports\Handlers\InstructorRenewalsHandler;
@@ -49,6 +50,7 @@ class ReportFactory
         'grant-claims-to-pay'                 => GrantClaimsToPayHandler::class,
         'grant-funding-overview'              => GrantFundingOverviewHandler::class,
         'grant-movements-financials'          => GrantMovementsFinancialsHandler::class,
+        'grant-recipients-associated-tps'     => GrantRecipientsAssociatedTpsHandler::class,
         'instructor-renewals'                 => InstructorRenewalsHandler::class,
         'instructors'                         => InstructorsHandler::class,
         'instructors-deliveries-allocation'   => InstructorsDeliveriesAllocationHandler::class,

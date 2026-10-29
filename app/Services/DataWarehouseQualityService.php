@@ -190,6 +190,17 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'    => null,
                 'audit_watermark'    => true,
             ],
+            'Grant Recipient - Training Provider (Join)' => [
+                'composite'             => true,
+                'source_table'          => 'join_grant_recipients_training_providers',
+                'source_composite_cols' => ['grant_recipient_id', 'training_provider_id'],
+                'source_deleted_col'    => 'deleted_at',
+                'dwh_table'             => 'Fact_Grant_Recipient_Training_Provider',
+                'dwh_composite_cols'    => ['Source_Grant_Recipient_Id', 'Source_Training_Provider_Id'],
+                'dwh_deleted_col'       => 'Source_Deleted_At',
+                'dwh_query_modifier'    => null,
+                'audit_watermark'       => false,
+            ],
             'Instructors' => [
                 'source_table'       => 'instructors',
                 'source_id_col'      => 'instructor_number',
