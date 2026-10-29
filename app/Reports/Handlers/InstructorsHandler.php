@@ -168,7 +168,7 @@ class InstructorsHandler extends AbstractStreamingReportHandler implements Repor
                 $baseData = [
                     $instructor->Instructor_Number ?? '',
                     $instructor->Instructor_Type ?? '',
-                    $instructor->Status_Raw ?? ($instructor->Status ?? ''),
+                    ($instructor->Status_Raw ?? ($instructor->Status ?? ''))?'Active':'Deregistered',
                     !empty($instructor->Date_Renewal) ? $instructor->Date_Renewal : 'N/A',
                     !empty($instructor->Date_Deregistered) ? $instructor->Date_Deregistered : null,
                     $instructor->Deregistration_Reason ?? '',
