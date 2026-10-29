@@ -140,7 +140,8 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'f.Count_Adults',
                 'f.Count_Children',
                 'dh.Fleet_Cycles_Used',
-            ])->whereNull('c.parent_course_key');
+            ])->whereNull('dh.Source_Deleted_At')
+            ->whereNull('c.parent_course_key');
 
         // 1. Grant Financial Year Filter
         $fy = $params['financial_year'] ?? $params['year'] ?? null;
