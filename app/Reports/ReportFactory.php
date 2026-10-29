@@ -9,6 +9,7 @@ use App\Reports\Handlers\GetCyclingAppDataDetailedHandler;
 use App\Reports\Handlers\GetCyclingAppDataHandler;
 use App\Reports\Handlers\GetCyclingAppDataTeacherTrainerHandler;
 use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
+use App\Reports\Handlers\GrantClaimsToPayHandler;
 use App\Reports\Handlers\GrantFundingOverviewHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrFleetCyclesUsedHandler;
@@ -44,6 +45,7 @@ class ReportFactory
         'get-cycling-app-data-teacher-trainer'=> GetCyclingAppDataTeacherTrainerHandler::class,
         'gr-fleet-cycles-used'                => GrFleetCyclesUsedHandler::class,
         'grant-claim-send-and-inclusion'      => GrantClaimSendAndInclusionHandler::class,
+        'grant-claims-to-pay'                 => GrantClaimsToPayHandler::class,
         'grant-funding-overview'              => GrantFundingOverviewHandler::class,
         'grant-movements-financials'          => GrantMovementsFinancialsHandler::class,
         'instructor-renewals'                 => InstructorRenewalsHandler::class,
