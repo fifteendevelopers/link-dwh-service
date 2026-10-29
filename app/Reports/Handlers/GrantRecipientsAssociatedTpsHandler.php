@@ -48,8 +48,8 @@ class GrantRecipientsAssociatedTpsHandler extends AbstractStreamingReportHandler
     {
         $db = DB::connection('mysql');
 
-        return $db->table('Dim_Grant_Recipient as gr')
-            ->leftJoin('Fact_Grant_Recipient_Training_Provider as j', 'gr.Recipient_Key', '=', 'j.Grant_Recipient_Key')
+        return $db->table('Fact_Grant_Recipient_Training_Provider as j')
+            ->leftJoin('Dim_Grant_Recipient as gr', 'gr.Recipient_Key', '=', 'j.Grant_Recipient_Key')
             ->leftJoin('Dim_Training_Provider as tp', function ($join) {
                 $join->on('j.Provider_Key', '=', 'tp.Provider_Key')
                     ->where('tp.Is_Current', 1)
