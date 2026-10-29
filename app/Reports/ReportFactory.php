@@ -28,6 +28,7 @@ use App\Reports\Handlers\SchoolDeliveriesHandler;
 use App\Reports\Handlers\TeacherTrainerDeliveriesDetailedHandler;
 use App\Reports\Handlers\TeacherTrainerDeliveriesSimpleHandler;
 use App\Reports\Handlers\TpHandsUpSurveyHandler;
+use App\Reports\Handlers\TrainingProviderInstructorDbsHandler;
 use App\Reports\Handlers\TrainingProviderRenewalDetailHandler;
 use App\Reports\Handlers\TrainingProviderRenewalsHandler;
 use App\Reports\Handlers\TrainingProvidersHandler;
@@ -65,6 +66,7 @@ class ReportFactory
         'teacher-trainer-deliveries-simple'   => TeacherTrainerDeliveriesSimpleHandler::class,
         'teacher-trainer-deliveries-detailed' => TeacherTrainerDeliveriesDetailedHandler::class,
         'training-providers'                  => TrainingProvidersHandler::class,
+        'training-provider-instructor-dbs'    => TrainingProviderInstructorDbsHandler::class,
         'training-provider-renewals'         => TrainingProviderRenewalsHandler::class,
         'training-provider-renewal-detail'    => TrainingProviderRenewalDetailHandler::class,
     ];
