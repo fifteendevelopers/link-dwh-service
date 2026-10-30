@@ -432,20 +432,24 @@ class DataWarehouseQualityService
      */
     public function auditNonDigitisedCourses(int $sampleLimit = 5): array
     {
-        // 1. Fetch DWH synthetic course counts in ONE single grouped query
+        // 1. Fetch DWH synthetic course counts, filtering out soft-deleted deliveries
         $dwhCourseCounts = $this->dwh->table('Dim_Course as c')
             ->join('Dim_Delivery_Header as d', 'c.Delivery_Key', '=', 'd.Delivery_Key')
             ->where('d.Digitisation_Booking', 0)
+            ->whereNull('d.Source_Deleted_At')
             ->where('c.Source_System_Key', $this->sourceSystemKey)
-            ->whereNull('c.Source_Course_Id')
+            ->where(function ($q) {
+                $q->whereNull('c.Source_Course_Id')
+                    ->orWhere('c.Source_Course_Id', '>=', 9000000000);
+            })
             ->groupBy('d.Source_Delivery_Id')
             ->pluck(DB::raw('COUNT(*) as total_courses'), 'd.Source_Delivery_Id')
             ->toArray();
 
-        // 2. Stream source deliveries and compare against the in-memory map
+        // 2. Stream active source deliveries
         $nonDigitisedDeliveries = $this->source->table('deliveries as d')
             ->leftJoin('courses as c', 'd.id', '=', 'c.delivery_id')
-            ->whereNull('c.id') // Crucial guard: only check JSON if no relational courses exist
+            ->whereNull('c.id')
             ->where('d.digitisation_booking', 0)
             ->whereNull('d.deleted_at')
             ->whereNotNull('d.delivery_details')
@@ -474,27 +478,25 @@ class DataWarehouseQualityService
             }
 
             $expectedModules += $moduleCount;
-
             $dwhCount = (int) ($dwhCourseCounts[$deliv->id] ?? 0);
 
-            if ($dwhCount < $moduleCount) {
+            if ($dwhCount !== $moduleCount) {
                 $missingDeliveries[] = [
                     'delivery_id' => (int) $deliv->id,
                     'expected'    => $moduleCount,
                     'actual'      => $dwhCount,
-                    'missing'     => $moduleCount - $dwhCount,
+                    'diff'        => $expectedModules - $dwhCount,
                 ];
             }
         }
 
         $dwhTotal = array_sum($dwhCourseCounts);
-        $missingCount = max(0, $expectedModules - $dwhTotal);
 
         return [
             'source_count'  => $expectedModules,
             'dwh_count'     => $dwhTotal,
             'match'         => ($expectedModules === $dwhTotal && empty($missingDeliveries)),
-            'missing_count' => $missingCount,
+            'missing_count' => abs($expectedModules - $dwhTotal),
             'missing_ids'   => array_slice($missingDeliveries, 0, $sampleLimit),
         ];
     }

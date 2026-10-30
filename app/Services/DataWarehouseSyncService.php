@@ -1940,11 +1940,12 @@ class DataWarehouseSyncService
                             $courseLevelString = $entry['module']['id'] ?? null;
                             $yearGroupString   = $entry['delivery']['year_group'] ?? null;
 
-                            $syntheticSourceCourseId = -(($delivery->Source_Delivery_Id * 100) + (int)$index);
-
                             if (empty($courseLevelString)) {
                                 continue;
                             }
+
+                            // 1. Clean unsigned synthetic identifier (Delivery_Id * 100 + index)
+                            $syntheticSourceCourseId = 9000000000 + ((int)$record->delivery_id * 100) + (int)$index;
 
                             $deliveryEntry = $entry['delivery'] ?? [];
                             $bookedEntry   = $deliveryEntry['booked'] ?? [];
@@ -1956,16 +1957,16 @@ class DataWarehouseSyncService
                             $provisionalVal = (int) ($bookedEntry['provisional'] ?? 0);
                             $bookedVal      = (int) ($bookedEntry['total'] ?? 0);
 
-                            // 1. Create/resolve Dim_Course with Booked, Provisional & Has_Confirmed_Booked
+                            // 2. Match STRICTLY on Delivery_Key + Source_Course_Id so cohorts never overwrite
                             $this->dwh->table('Dim_Course')->updateOrInsert(
                                 [
                                     'Delivery_Key'      => $delivery->Delivery_Key,
-                                    'Course_Level'      => $courseLevelString,
-                                    'Year_Group'        => $yearGroupString, // Included to prevent Y6 / Y2 collision
                                     'Source_Course_Id'  => $syntheticSourceCourseId,
                                     'Source_System_Key' => $sourceSystemKey,
                                 ],
                                 [
+                                    'Course_Level'         => $courseLevelString,
+                                    'Year_Group'           => $yearGroupString,
                                     'Status'               => 1,
                                     'Start_Date'           => $fact_date,
                                     'Date_Complete'        => $fact_date,
@@ -1977,11 +1978,10 @@ class DataWarehouseSyncService
                                 ]
                             );
 
+                            // 3. Resolve Course_Key using the synthetic ID directly
                             $courseKey = $this->dwh->table('Dim_Course')
                                 ->where('Delivery_Key', $delivery->Delivery_Key)
-                                ->where('Course_Level', $courseLevelString)
-                                ->where('Year_Group', $yearGroupString)
-                                ->whereNull('Source_Course_Id')
+                                ->where('Source_Course_Id', $syntheticSourceCourseId)
                                 ->where('Source_System_Key', $sourceSystemKey)
                                 ->value('Course_Key');
 
@@ -1989,10 +1989,10 @@ class DataWarehouseSyncService
                                 continue;
                             }
 
-                            // 2. Extract metrics specifically for this single module entry
+                            // 4. Extract metrics specifically for this single module entry
                             $moduleMetrics = $this->extractMetricsForSingleModuleEntry($entry);
 
-                            // 3. Upsert Fact_Course_Delivery for this module
+                            // 5. Upsert Fact_Course_Delivery for this module
                             $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                                 [
                                     'Delivery_Key' => $delivery->Delivery_Key,
@@ -2001,6 +2001,8 @@ class DataWarehouseSyncService
                                 array_merge(
                                     $moduleMetrics,
                                     [
+                                        'Count_Provisional'      => $provisionalVal,
+                                        'Count_Booked'           => $bookedVal,
                                         'Riders_Enrolled_Count'  => 0,
                                         'Riders_Completed_Count' => 0,
                                         'Date_Key'               => $dateKey,
