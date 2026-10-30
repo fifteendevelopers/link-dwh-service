@@ -151,7 +151,16 @@
                         </td>
                         <td class="px-6 py-3 font-mono text-slate-500">
                             @if(!empty($data['missing_ids']))
-                                <span class="text-rose-600 font-medium">[{{ implode(', ', array_slice($data['missing_ids'], 0, 5)) }}]</span>
+                                @php
+                                    $sampleMissing = array_slice($data['missing_ids'], 0, 5);
+                                    $formattedMissing = array_map(function ($item) {
+                                        if (is_array($item)) {
+                                            return '(' . implode(':', $item) . ')';
+                                        }
+                                        return (string) $item;
+                                    }, $sampleMissing);
+                                @endphp
+                                <span class="text-rose-600 font-medium">[{{ implode(', ', $formattedMissing) }}]</span>
                             @else
                                 <span class="text-slate-400">None</span>
                             @endif
