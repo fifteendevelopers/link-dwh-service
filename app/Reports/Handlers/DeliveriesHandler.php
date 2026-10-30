@@ -73,6 +73,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 DB::raw("CASE WHEN dh.Digitisation_Booking = 1 THEN 'Yes' ELSE 'No' END as Digitisation"),
                 's.School_Urn',
                 's.School_Name',
+                DB::raw("IFNULL(s.Postcode, '') as School_Postcode"),
                 's.LA_Name',
                 's.LA_Code',
                 DB::raw("CASE
