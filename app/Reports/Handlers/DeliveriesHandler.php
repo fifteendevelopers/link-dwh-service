@@ -65,7 +65,7 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
             ->leftJoin('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->leftJoin('Dim_Training_Provider as tp', 'f.Provider_Key', '=', 'tp.Provider_Key')
             ->leftJoin('Dim_School as s', 'f.School_Key', '=', 's.School_Key')
-            ->select([
+            ->select([ // 65 columns
                 'g.Grant_Number',
                 'g.Grant_Source',
                 DB::raw("IFNULL(gr.Recipient_Name, 'not set') as Recipient_Name"),
@@ -73,7 +73,6 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 DB::raw("CASE WHEN dh.Digitisation_Booking = 1 THEN 'Yes' ELSE 'No' END as Digitisation"),
                 's.School_Urn',
                 's.School_Name',
-                DB::raw("IFNULL(s.Postcode, '') as School_Postcode"),
                 's.LA_Name',
                 's.LA_Code',
                 DB::raw("CASE
