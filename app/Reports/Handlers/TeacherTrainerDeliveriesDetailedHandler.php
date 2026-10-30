@@ -109,7 +109,7 @@ class TeacherTrainerDeliveriesDetailedHandler extends AbstractStreamingReportHan
                 $join->on('d.TT_Delivery_Key', '=', 'fdtt.TT_Delivery_Key')
                     ->whereNull('fdtt.Source_Deleted_At');
             })
-            ->leftJoin('Dim_Teacher_Trainers as tt', 'fdtt.Teacher_Trainer_Key', '=', 'tt.Teacher_Trainer_Key')
+            ->leftJoin('Dim_Teacher_Trainer as tt', 'fdtt.Teacher_Trainer_Key', '=', 'tt.Teacher_Trainer_Key')
             ->leftJoin('Dim_School as s', 'd.School_Key', '=', 's.School_Key')
             ->leftJoinSub($metricPivots, 'mp', 'm.TT_Delivery_Module_Key', '=', 'mp.TT_Delivery_Module_Key')
             ->leftJoinSub($surveyPivots, 'sp', function ($join) {
