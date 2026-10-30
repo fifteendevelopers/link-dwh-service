@@ -660,21 +660,34 @@ class DataWarehouseSyncService
             $sourceRecipients,
             function ($recipient, $state) use ($sourceSystemKey, $today) {
                 $incomingData = [
-                    'Recipient_Name'    => $recipient->recipient_name,
-                    'Recipient_Number'  => $recipient->recipient_number,
-                    'LA_Id'             => $recipient->local_authority_id,
-                    'Is_Active'         => is_null($recipient->deleted_at) ? 'Y' : 'N',
-                    'Address_Line_1'    => $recipient->address_01,
-                    'Address_Line_2'    => $recipient->address_02,
-                    'City'              => $recipient->city,
-                    'Postcode'          => $recipient->postcode,
-                    'Website'           => $recipient->website,
-                    'Inception_Date'    => $recipient->date_inception,
-                    'Renewal_Date'      => $recipient->date_renewal,
-                    'Deregistered_Date' => $recipient->date_deregistered,
-                    'Is_SGO'            => ($recipient->pref_sgoh == 1) ? 1 : 0,
-                    'Source_Created_At' => $recipient->created_at,
-                    'Source_Updated_At' => $recipient->updated_at,
+                    'Recipient_Name'             => $recipient->recipient_name,
+                    'Recipient_Number'           => $recipient->recipient_number,
+                    'LA_Id'                      => $recipient->local_authority_id,
+                    'Is_Active'                  => is_null($recipient->deleted_at) ? 'Y' : 'N',
+                    'Address_Line_1'             => $recipient->address_01,
+                    'Address_Line_2'             => $recipient->address_02,
+                    'City'                       => $recipient->city,
+                    'Postcode'                   => $recipient->postcode,
+                    'Telephone'                  => $recipient->telephone,
+                    'Landline'                   => $recipient->landline,
+                    'Primary_Email'              => $recipient->primary_email,
+                    'Secondary_Email'            => $recipient->secondary_email,
+                    'Public_Email'               => $recipient->public_email,
+                    'Public_Telephone'           => $recipient->public_telephone,
+                    'Status'                     => (int) ($recipient->status ?? 1),
+                    'Website'                    => $recipient->website,
+                    'Inception_Date'             => $recipient->date_inception,
+                    'Renewal_Date'               => $recipient->date_renewal,
+                    'Deregistered_Date'          => $recipient->date_deregistered,
+                    'Date_Insurance_Expiry'      => $recipient->date_insurance_expiry,
+                    'Deregistration_Reason'      => $recipient->deregistration_reason,
+                    'Sister_Training_Provider_Id'=> $recipient->sister_training_provider,
+                    'Legacy_Id'                  => $recipient->legacy_id,
+                    'Account_Notes'              => $recipient->account_notes,
+                    'Is_SGO'                     => ($recipient->pref_sgoh == 1) ? 1 : 0,
+                    'Source_Deleted_At'          => $recipient->deleted_at,
+                    'Source_Created_At'          => $recipient->created_at,
+                    'Source_Updated_At'          => $recipient->updated_at,
                 ];
 
                 $current = $this->dwh->table('Dim_Grant_Recipient')
@@ -3992,6 +4005,12 @@ class DataWarehouseSyncService
                     $dwh->table('Fact_Deliveries_Teacher_Trainers')->insert($chunk);
                 }
             });
+
+            $this->updateWatermark(
+                'Fact_Deliveries_Teacher_Trainers',
+                $now->toDateTimeString(),
+                count($cleanPayload)
+            );
 
             if ($bar) {
                 $bar->finish();
