@@ -28,9 +28,18 @@ class TeacherTrainerDeliveriesSimpleHandler extends AbstractStreamingReportHandl
             return $query->get()->map(fn($row) => (array)$row)->toArray();
         }
 
-        $query->chunk(500, function ($rows) {
-            $chunkArray = $rows->map(fn($row) => (array)$row)->toArray();
-            $this->transmitBatch($chunkArray, false);
+        $query->chunk(1000, function ($rows) {
+            $memBuffer = fopen('php://temp', 'r+');
+
+            foreach ($rows as $row) {
+                fputcsv($memBuffer, (array)$row);
+            }
+
+            rewind($memBuffer);
+            $csvStringChunk = stream_get_contents($memBuffer);
+            fclose($memBuffer);
+
+            $this->transmitBatch([$csvStringChunk], false);
         });
 
         $this->transmitBatch([], true);
