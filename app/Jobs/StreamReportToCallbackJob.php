@@ -14,8 +14,8 @@ class StreamReportToCallbackJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     // Extend timeout execution window safety rules for massive data streams
-    public $timeout = 1200;
-
+    public int $timeout = 1200;
+    public int $tries = 1;
     protected string $reportKey;
     protected array $params;
     protected string $callbackUrl;

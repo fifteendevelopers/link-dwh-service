@@ -1022,7 +1022,7 @@ class DataWarehouseSyncService
                         'Confirmed_By'                  => $course->confirmed_by ?? null,
                         'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                         'Confirmed_At'                  => $course->confirmed_at ?? null,
-                        'Provisional_Booked'            => $course->provisional_booked ?? null,
+                        'Provisional'                   => $course->provisional_booked ?? null,
                         'Booked'                        => $course->booked ?? null,
                         'Adults'                        => $course->adults ?? null,
                         'Children'                      => $course->children ?? null,
@@ -2017,19 +2017,6 @@ class DataWarehouseSyncService
                     $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
                     unset($deliveryDetailMetrics['Extracted_Course_Level'], $deliveryDetailMetrics['Extracted_Year_Group']);
 
-                    $currentAttended = (int) ($deliveryDetailMetrics['Count_Attended_Confirmed'] ?? 0);
-                    if ($currentAttended === 0 && !is_null($record->course_id)) {
-                        $actualAttended = $this->dwh->table('Fact_Rider_Course')
-                            ->where('Source_Course_Id', $record->course_id)
-                            ->where('Source_System_Key', $sourceSystemKey)
-                            ->where('Attended', 1)
-                            ->count();
-
-                        if ($actualAttended > 0) {
-                            $deliveryDetailMetrics['Count_Attended_Confirmed'] = $actualAttended;
-                        }
-                    }
-
                     $enrolledCount  = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
                     $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
 
@@ -2090,28 +2077,21 @@ class DataWarehouseSyncService
 
     private function extractMetricsForSingleModuleEntry(array $entry): array
     {
+        $delivery = $entry['delivery'] ?? [];
+        $booked   = $delivery['booked'] ?? [];
+
         $metrics = array_merge($this->initializeExtendedMetricArray(), [
-            'Count_Booked_Provisional'       => 0,
-            'Count_Booked_Confirmed'         => 0,
-            'Count_Attended_Confirmed'       => 0,
-            'Count_Bikes_Swapped'            => 0,
-            'Count_Bikes_Recycled'           => 0,
+            'Count_Provisional'       => (int) ($booked['provisional'] ?? 0),
+            'Count_Booked'         => (int) ($booked['total'] ?? 0),
+            'Count_Attended'       => (int) ($delivery['attended']['total'] ?? 0),
+            'Count_Bikes_Swapped'            => (int) ($delivery['bikes_swapped'] ?? 0),
+            'Count_Bikes_Recycled'           => (int) ($delivery['bikes_recycled'] ?? 0),
             'Count_Gender_Not_Stated'        => 0,
             'Count_SEND'                     => 0,
             'Count_Pupil_Premium'            => 0,
             'Count_SEND_Not_Stated'          => 0,
             'Count_Pupil_Premium_Not_Stated' => 0,
         ]);
-
-        $delivery = $entry['delivery'] ?? [];
-        $booked   = $delivery['booked'] ?? [];
-
-        $metrics['Count_Booked_Provisional'] = (int) ($booked['provisional'] ?? 0);
-
-        if (isset($delivery['confirmed']) && (int)$delivery['confirmed'] === 1) {
-            $metrics['Count_Booked_Confirmed']   = (int) ($booked['total'] ?? 0);
-            $metrics['Count_Attended_Confirmed'] = (int) ($delivery['attended']['total'] ?? 0);
-        }
 
         if (($entry['module']['id'] ?? '') === 'plus_family') {
             $metrics['Count_Adults']   = (int) ($delivery['adults'] ?? 0);
@@ -4438,7 +4418,7 @@ class DataWarehouseSyncService
 
     private function mapEthnicityToColumn($input)
     {
-        $key = strtolower(trim($input));
+        $key = strtolower(trim((string) ($input ?? '')));
 
         $code = match ($key) {
             'wbri', 'whitebritish', 'white_british'                    => 'WBRI',
@@ -4553,9 +4533,9 @@ class DataWarehouseSyncService
         $details = json_decode($course->delivery_details ?? '[]', true);
 
         $metrics = array_merge($this->initializeExtendedMetricArray(), [
-            'Count_Booked_Provisional'       => 0,
-            'Count_Booked_Confirmed'         => 0,
-            'Count_Attended_Confirmed'       => 0,
+            'Count_Provisional'              => 0,
+            'Count_Booked'                   => 0,
+            'Count_Attended'                 => 0,
             'Count_Bikes_Swapped'            => 0,
             'Count_Bikes_Recycled'           => 0,
             'Extracted_Course_Level'         => null,
@@ -4577,12 +4557,14 @@ class DataWarehouseSyncService
                 $delivery = $entry['delivery'] ?? [];
                 $booked   = $delivery['booked'] ?? [];
 
-                $metrics['Count_Booked_Provisional'] = (int) ($booked['provisional'] ?? 0);
+                $isConfirmed = (isset($delivery['confirmed']) && (int)$delivery['confirmed'] === 1)
+                    || (isset($booked['status']) && strtolower(trim((string)$booked['status'])) === 'confirmed')
+                    || (!empty($course->has_confirmed_booked) && (int)$course->has_confirmed_booked === 1);
 
-                if (isset($delivery['confirmed']) && $delivery['confirmed'] == 1) {
-                    $metrics['Count_Booked_Confirmed']   = (int) ($booked['total'] ?? 0);
-                    $metrics['Count_Attended_Confirmed'] = (int) ($delivery['attended']['total'] ?? 0);
-                }
+                $metrics['Count_Booked']           = (int) ($booked['total'] ?? 0);
+                $metrics['Count_Attended']         = (int) ($delivery['attended']['total'] ?? 0);
+                $metrics['Count_Provisional']      = (int) ($booked['provisional'] ?? 0);
+
 
                 if (($entry['module']['id'] ?? '') === 'plus_family') {
                     $metrics['Count_Adults']   = (int) ($delivery['adults'] ?? 0);
@@ -4637,11 +4619,11 @@ class DataWarehouseSyncService
     private function extractFromNormalizedTables($course)
     {
         $metrics = array_merge($this->initializeExtendedMetricArray(), [
-            'Count_Booked_Provisional' => 0,
-            'Count_Booked_Confirmed'   => 0,
-            'Count_Attended_Confirmed' => 0,
-            'Count_Bikes_Swapped'      => 0,
-            'Count_Bikes_Recycled'     => 0,
+            'Count_Provisional'    => 0,
+            'Count_Booked'         => 0,
+            'Count_Attended'       => 0,
+            'Count_Bikes_Swapped'  => 0,
+            'Count_Bikes_Recycled' => 0,
         ]);
 
         $moduleQuery = $this->source->table('delivery_modules');
@@ -4654,9 +4636,9 @@ class DataWarehouseSyncService
         $module = $moduleQuery->first();
         if (!$module) return $metrics;
 
-        $metrics['Count_Booked_Provisional'] = (int) $module->booked_provisional;
-        $metrics['Count_Booked_Confirmed']   = ($module->confirmed) ? (int) $module->booked_total : 0;
-        $metrics['Count_Attended_Confirmed'] = ($module->confirmed) ? (int) $module->attended_total : 0;
+        $metrics['Count_Provisional'] = (int) ($module->booked_provisional ?? 0);
+        $metrics['Count_Booked']      = (int) ($module->booked_total ?? 0);
+        $metrics['Count_Attended']    = (int) ($module->attended_total ?? 0);
 
         $metricRows = $this->source->table('delivery_metrics')
             ->where('module_id', $module->id)
