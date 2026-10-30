@@ -33,8 +33,17 @@ class SchoolDeliveriesAuditHandler extends AbstractStreamingReportHandler
         $chunkSize = 2000;
 
         $query->chunk($chunkSize, function ($rows) {
-            $chunkArray = $rows->map(fn($row) => (array)$row)->toArray();
-            $this->transmitBatch($chunkArray, false);
+            $memBuffer = fopen('php://temp', 'r+');
+
+            foreach ($rows as $row) {
+                fputcsv($memBuffer, (array) $row);
+            }
+
+            rewind($memBuffer);
+            $csvChunk = stream_get_contents($memBuffer);
+            fclose($memBuffer);
+
+            $this->transmitBatch([$csvChunk], false);
         });
 
         $this->transmitBatch([], true);
