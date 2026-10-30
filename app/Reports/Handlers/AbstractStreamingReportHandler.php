@@ -46,12 +46,17 @@ abstract class AbstractStreamingReportHandler implements ReportHandlerInterface
         Log::debug("DWH Streamer: Transmitting packet to target webhook: {$url} (Job #{$this->jobId}, EOF: " . ($isFinal ? 'True' : 'False') . ")");
 
         $shouldVerifySsl = !app()->environment(['local', 'dev', 'development']);
-        $response = Http::withOptions(['verify' => $shouldVerifySsl])
-        ->withHeaders([
-            'X-Report-Job-ID'    => $this->jobId ?? '0',
-            'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false',
-            'Accept'             => 'application/json'
-        ])
+
+        $timeoutSeconds = $isFinal ? 300 : 120;
+
+        $response = Http::timeout($timeoutSeconds)
+            ->connectTimeout(15)
+            ->withOptions(['verify' => $shouldVerifySsl])
+            ->withHeaders([
+                'X-Report-Job-ID'    => $this->jobId ?? '0',
+                'X-Report-Batch-EOF' => $isFinal ? 'true' : 'false',
+                'Accept'             => 'application/json'
+            ])
             ->post($url, [
                 'data' => $payload
             ]);
