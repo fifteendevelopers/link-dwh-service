@@ -41,14 +41,14 @@ class GetCyclingAppDataHandler extends AbstractStreamingReportHandler
     protected function buildData(array $params): array
     {
         // 1. Fetch Active Courses & Activities Catalog
-        $courseDefinitions = DB::connection('mysql')->table('Dim_Get_Cycling_Course')
+        $courseDefinitions = DB::table('Dim_Get_Cycling_Course')
             ->orderBy('Source_Course_Id')
             ->get();
 
         $courseIds = $courseDefinitions->pluck('Source_Course_Id')->toArray();
 
         // Query activities from child table if synced, or source relation
-        $activityDefinitions = DB::connection('mysql')->table('Fact_Get_Cycling_Rider_Course_Activity as a')
+        $activityDefinitions = DB::table('Fact_Get_Cycling_Rider_Course_Activity as a')
             ->join('Fact_Get_Cycling_Rider_Course as rc', 'a.GC_Rider_Course_Key', '=', 'rc.GC_Rider_Course_Key')
             ->join('Dim_Get_Cycling_Course as c', 'rc.GC_Course_Key', '=', 'c.GC_Course_Key')
             ->select('a.Activity_Id')
@@ -61,7 +61,7 @@ class GetCyclingAppDataHandler extends AbstractStreamingReportHandler
         $activityIdMap = array_flip($activityDefinitions);
 
         // 2. Main Query
-        $query = DB::connection('mysql')->table('Fact_Get_Cycling_Rider_Course as rc')
+        $query = DB::table('Fact_Get_Cycling_Rider_Course as rc')
             ->join('Dim_Get_Cycling_Rider as r', 'rc.GC_Rider_Key', '=', 'r.GC_Rider_Key')
             ->join('Dim_Get_Cycling_Course as c', 'rc.GC_Course_Key', '=', 'c.GC_Course_Key')
             ->leftJoin('Dim_School as s', 'rc.School_Key', '=', 's.School_Key')
@@ -100,7 +100,7 @@ class GetCyclingAppDataHandler extends AbstractStreamingReportHandler
 
         // 3. Batch load activity attendance
         $rcKeys = $records->pluck('GC_Rider_Course_Key')->toArray();
-        $activityRecords = DB::connection('mysql')->table('Fact_Get_Cycling_Rider_Course_Activity')
+        $activityRecords = DB::table('Fact_Get_Cycling_Rider_Course_Activity')
             ->whereIn('GC_Rider_Course_Key', $rcKeys)
             ->where('Activity_Score', '>', 0)
             ->select('GC_Rider_Course_Key', 'Activity_Id')
