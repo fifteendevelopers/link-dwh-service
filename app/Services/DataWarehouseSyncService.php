@@ -1936,33 +1936,51 @@ class DataWarehouseSyncService
                             continue;
                         }
 
-                        foreach ($details as $entry) {
+                        foreach ($details as $index => $entry) {
                             $courseLevelString = $entry['module']['id'] ?? null;
                             $yearGroupString   = $entry['delivery']['year_group'] ?? null;
+
+                            $syntheticSourceCourseId = -(($delivery->Source_Delivery_Id * 100) + (int)$index);
 
                             if (empty($courseLevelString)) {
                                 continue;
                             }
 
-                            // 1. Create/resolve Dim_Course for this specific module
+                            $deliveryEntry = $entry['delivery'] ?? [];
+                            $bookedEntry   = $deliveryEntry['booked'] ?? [];
+
+                            // Check confirmation status from JSON
+                            $isConfirmed = (isset($deliveryEntry['confirmed']) && (int)$deliveryEntry['confirmed'] === 1)
+                                || (isset($bookedEntry['status']) && strtolower(trim((string)$bookedEntry['status'])) === 'confirmed');
+
+                            $provisionalVal = (int) ($bookedEntry['provisional'] ?? 0);
+                            $bookedVal      = (int) ($bookedEntry['total'] ?? 0);
+
+                            // 1. Create/resolve Dim_Course with Booked, Provisional & Has_Confirmed_Booked
                             $this->dwh->table('Dim_Course')->updateOrInsert(
                                 [
                                     'Delivery_Key'      => $delivery->Delivery_Key,
                                     'Course_Level'      => $courseLevelString,
-                                    'Source_Course_Id'  => null,
+                                    'Year_Group'        => $yearGroupString, // Included to prevent Y6 / Y2 collision
+                                    'Source_Course_Id'  => $syntheticSourceCourseId,
                                     'Source_System_Key' => $sourceSystemKey,
                                 ],
                                 [
-                                    'Status'        => 1,
-                                    'Start_Date'    => $fact_date,
-                                    'Date_Complete' => $fact_date,
-                                    'Year_Group'    => $yearGroupString,
+                                    'Status'               => 1,
+                                    'Start_Date'           => $fact_date,
+                                    'Date_Complete'        => $fact_date,
+                                    'Has_Confirmed_Booked' => $isConfirmed ? 1 : 0,
+                                    'Provisional'          => $provisionalVal,
+                                    'Booked'               => $bookedVal,
+                                    'Adults'               => ($courseLevelString === 'plus_family') ? (int)($deliveryEntry['adults'] ?? 0) : null,
+                                    'Children'             => ($courseLevelString === 'plus_family') ? (int)($deliveryEntry['children'] ?? 0) : null,
                                 ]
                             );
 
                             $courseKey = $this->dwh->table('Dim_Course')
                                 ->where('Delivery_Key', $delivery->Delivery_Key)
                                 ->where('Course_Level', $courseLevelString)
+                                ->where('Year_Group', $yearGroupString)
                                 ->whereNull('Source_Course_Id')
                                 ->where('Source_System_Key', $sourceSystemKey)
                                 ->value('Course_Key');
