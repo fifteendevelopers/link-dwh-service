@@ -56,10 +56,15 @@ class TeacherTrainerDeliveriesSimpleHandler extends AbstractStreamingReportHandl
             ->groupBy('TT_Delivery_Module_Key');
 
         $query = DB::connection('mysql')->table('Fact_Teacher_Trainer_Delivery_Module as m')
-            ->join('Fact_Teacher_Trainer_Delivery as d', 'm.TT_Delivery_Key', '=', 'd.TT_Delivery_Key')
+            ->join('Dim_Teacher_Trainer_Delivery as d', 'm.TT_Delivery_Key', '=', 'd.TT_Delivery_Key')
             ->leftJoin('Dim_School as s', 'd.School_Key', '=', 's.School_Key')
-            ->leftJoin('Dim_Teacher_Trainer as tt', 'd.Teacher_Trainer_Key', '=', 'tt.Teacher_Trainer_Key')
-            ->leftJoinSub($attendedSub, 'att', 'm.TT_Delivery_Module_Key', '=', 'att.TT_Delivery_Module_Key')
+            // Join bridge and trainer
+            ->leftJoin('Fact_Delivery_Teacher_Trainer as fdtt', function ($join) {
+                $join->on('d.TT_Delivery_Key', '=', 'fdtt.TT_Delivery_Key')
+                    ->whereNull('fdtt.Source_Deleted_At');
+            })
+            ->leftJoin('Dim_Teacher_Trainers as tt', 'fdtt.Teacher_Trainer_Key', '=', 'tt.Teacher_Trainer_Key')
+            ->whereNull('d.Source_Deleted_At')
             ->select([
                 DB::raw("IFNULL(tt.Source_Teacher_Trainer_Id, '') as teacher_id"),
                 DB::raw("IFNULL(tt.First_Name, '') as first_name"),

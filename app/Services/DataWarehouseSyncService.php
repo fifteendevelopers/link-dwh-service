@@ -1555,6 +1555,89 @@ class DataWarehouseSyncService
         );
     }
 
+    public function syncTeacherTrainerDeliveries($command = null)
+    {
+        $sourceSystemKey = $this->getSourceSystemKey();
+        $watermark = $this->getWatermark('Dim_Teacher_Trainer_Delivery');
+
+        $query = $this->source->table('teacher_trainer_deliveries')
+            ->where(function ($q) use ($watermark) {
+                $q->where('updated_at', '>', $watermark)
+                    ->orWhere(function ($sub) use ($watermark) {
+                        $sub->whereNull('updated_at')
+                            ->where(function ($nested) use ($watermark) {
+                                $nested->where('created_at', '>', $watermark)
+                                    ->orWhereNull('created_at');
+                            });
+                    });
+            })
+            ->orderBy('id', 'asc');
+
+        $hasJsonColumn = $this->source->getSchemaBuilder()->hasColumn('teacher_trainer_deliveries', 'delivery_details');
+
+        return $this->executeSyncRunner(
+            'Dim_Teacher_Trainer_Delivery',
+            $command,
+            $query,
+            function ($row, $state) use ($sourceSystemKey, $hasJsonColumn) {
+                $schoolKey = null;
+                if (!empty($row->school_urn)) {
+                    $schoolKey = $this->dwh->table('Dim_School')
+                        ->where('School_Urn', $row->school_urn)
+                        ->where('Source_System_Key', $sourceSystemKey)
+                        ->value('School_Key');
+                }
+
+                // Upsert dimension header including Source_Deleted_At
+                $this->dwh->table('Dim_Teacher_Trainer_Delivery')->updateOrInsert(
+                    [
+                        'Source_TT_Delivery_Id' => $row->id,
+                        'Source_System_Key'     => $sourceSystemKey,
+                    ],
+                    [
+                        'School_Key'          => $schoolKey,
+                        'School_Urn'          => $row->school_urn,
+                        'Date_Delivery_Start' => $row->date_delivery_start,
+                        'Date_Delivery_End'   => $row->date_delivery_end,
+                        'Completion_Date'     => $row->completion_date,
+                        'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? false),
+                        'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? false),
+                        'Has_Survey'          => (bool) ($row->has_survey ?? false),
+                        'Notes'               => $row->notes,
+                        'Source_Deleted_At'   => $row->deleted_at,
+                        'created_at'          => $row->created_at ?? now(),
+                        'updated_at'          => $row->updated_at ?? now(),
+                    ]
+                );
+
+                $ttDeliveryKey = $this->dwh->table('Dim_Teacher_Trainer_Delivery')
+                    ->where('Source_TT_Delivery_Id', $row->id)
+                    ->where('Source_System_Key', $sourceSystemKey)
+                    ->value('TT_Delivery_Key');
+
+                if ($ttDeliveryKey) {
+                    if ($hasJsonColumn && !empty($row->delivery_details)) {
+                        $this->syncModulesAndMetricsFromJson($row, $ttDeliveryKey, $sourceSystemKey);
+                    } else {
+                        $this->syncModulesAndMetricsFromRelational($row->id, $ttDeliveryKey, $sourceSystemKey);
+                    }
+                }
+
+                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
+                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
+                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : \Carbon\Carbon::parse($rowTimestamp)->toDateTimeString();
+                }
+
+                return true;
+            },
+            function ($state, $count) {
+                if ($state->highestTimestamp) {
+                    $this->updateWatermark('Dim_Teacher_Trainer_Delivery', $state->highestTimestamp, $count);
+                }
+            }
+        );
+    }
+
     // =========================================================================
     // FACTS & BRIDGES
     // =========================================================================
@@ -3824,86 +3907,109 @@ class DataWarehouseSyncService
         );
     }
 
-    public function syncFactTeacherTrainerDeliveries($command = null)
+    public function syncFactDeliveryTeacherTrainers($command = null)
     {
+        $dwh = $this->dwh;
         $sourceSystemKey = $this->getSourceSystemKey();
-        $watermark = $this->getWatermark('Fact_Teacher_Trainer_Delivery');
 
-        $query = $this->source->table('teacher_trainer_deliveries')
-            ->where(function ($q) use ($watermark) {
-                $q->where('updated_at', '>', $watermark)
-                    ->orWhere(function ($sub) use ($watermark) {
-                        $sub->whereNull('updated_at')
-                            ->where(function ($nested) use ($watermark) {
-                                $nested->where('created_at', '>', $watermark)
-                                    ->orWhereNull('created_at');
-                            });
-                    });
-            })
-            ->orderBy('id', 'asc');
+        try {
+            // 1. In-memory surrogate key maps
+            $deliveryMap = $dwh->table('Dim_Teacher_Trainer_Delivery')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->pluck('TT_Delivery_Key', 'Source_TT_Delivery_Id')
+                ->toArray();
 
-        $hasJsonColumn = $this->source->getSchemaBuilder()->hasColumn('teacher_trainer_deliveries', 'delivery_details');
+            $trainerMap = $dwh->table('Dim_Teacher_Trainer')
+                ->where('Source_System_Key', $sourceSystemKey)
+                ->pluck('Teacher_Trainer_Key', 'Source_Teacher_Trainer_Id')
+                ->toArray();
 
-        return $this->executeSyncRunner(
-            'Fact_Teacher_Trainer_Delivery',
-            $command,
-            $query,
-            function ($row, $state) use ($sourceSystemKey, $hasJsonColumn) {
-                $schoolKey = null;
-                if (!empty($row->school_urn)) {
-                    $schoolKey = $this->dwh->table('Dim_School')
-                        ->where('School_Urn', $row->school_urn)
-                        ->where('Source_System_Key', $sourceSystemKey)
-                        ->value('School_Key');
+            // 2. Fetch all source pivot rows
+            $sourceRows = $this->source->table('join_deliveries_teacher_trainers')->get();
+            $total = $sourceRows->count();
+
+            $bar = $command ? $command->getOutput()->createProgressBar($total) : null;
+            if ($bar) $bar->start();
+
+            $now = now();
+            $payload = [];
+            $skipped = 0;
+
+            foreach ($sourceRows as $row) {
+                $delKey = $deliveryMap[$row->teacher_trainer_delivery_id] ?? null;
+                $ttKey  = $trainerMap[$row->teacher_trainer_id] ?? null;
+
+                if (!$delKey || !$ttKey) {
+                    $skipped++;
+                    if ($bar) $bar->advance();
+                    continue;
                 }
 
-                // Upsert fact header using actual table column names
-                $this->dwh->table('Fact_Teacher_Trainer_Delivery')->updateOrInsert(
-                    [
-                        'Source_TT_Delivery_Id' => $row->id,
-                        'Source_System_Key'     => $sourceSystemKey,
-                    ],
-                    [
-                        'School_Key'          => $schoolKey,
-                        'School_Urn'          => $row->school_urn,
-                        'Date_Delivery_Start' => $row->date_delivery_start,
-                        'Date_Delivery_End'   => $row->date_delivery_end,
-                        'Completion_Date'     => $row->completion_date,
-                        'Is_Mixed_Year_Group' => (bool) ($row->is_mixed_year_group ?? false),
-                        'Has_Ethnicity'       => (bool) ($row->has_ethnicity ?? false),
-                        'Has_Survey'          => (bool) ($row->has_survey ?? false),
-                        'Notes'               => $row->notes,
-                        'created_at'          => $row->created_at ?? now(),
-                        'updated_at'          => $row->updated_at ?? now(),
-                    ]
-                );
+                $compoundKey = "{$delKey}_{$ttKey}";
 
-                $ttDeliveryKey = $this->dwh->table('Fact_Teacher_Trainer_Delivery')
-                    ->where('Source_TT_Delivery_Id', $row->id)
-                    ->where('Source_System_Key', $sourceSystemKey)
-                    ->value('TT_Delivery_Key');
-
-                if ($ttDeliveryKey) {
-                    if ($hasJsonColumn && !empty($row->delivery_details)) {
-                        $this->syncModulesAndMetricsFromJson($row, $ttDeliveryKey, $sourceSystemKey);
-                    } else {
-                        $this->syncModulesAndMetricsFromRelational($row->id, $ttDeliveryKey, $sourceSystemKey);
+                // If we already added this pair:
+                if (isset($payload[$compoundKey])) {
+                    // If stored entry was soft-deleted, but this row is active, overwrite it
+                    if (!empty($payload[$compoundKey]['Source_Deleted_At']) && empty($row->deleted_at)) {
+                        $payload[$compoundKey] = [
+                            'TT_Delivery_Key'           => $delKey,
+                            'Teacher_Trainer_Key'       => $ttKey,
+                            'Source_TT_Delivery_Id'     => $row->teacher_trainer_delivery_id,
+                            'Source_Teacher_Trainer_Id' => $row->teacher_trainer_id,
+                            'Source_System_Key'         => $sourceSystemKey,
+                            'Source_Deleted_At'         => $row->deleted_at,
+                            'created_at'                => $now,
+                            'updated_at'                => $now,
+                        ];
                     }
+                    if ($bar) $bar->advance();
+                    continue;
                 }
 
-                $rowTimestamp = $row->updated_at ?? $row->created_at ?? null;
-                if ($rowTimestamp && (is_null($state->highestTimestamp) || $rowTimestamp > $state->highestTimestamp)) {
-                    $state->highestTimestamp = is_string($rowTimestamp) ? $rowTimestamp : \Carbon\Carbon::parse($rowTimestamp)->toDateTimeString();
-                }
+                // First time seeing this pair
+                $payload[$compoundKey] = [
+                    'TT_Delivery_Key'           => $delKey,
+                    'Teacher_Trainer_Key'       => $ttKey,
+                    'Source_TT_Delivery_Id'     => $row->teacher_trainer_delivery_id,
+                    'Source_Teacher_Trainer_Id' => $row->teacher_trainer_id,
+                    'Source_System_Key'         => $sourceSystemKey,
+                    'Source_Deleted_At'         => $row->deleted_at,
+                    'created_at'                => $now,
+                    'updated_at'                => $now,
+                ];
 
-                return true;
-            },
-            function ($state, $count) {
-                if ($state->highestTimestamp) {
-                    $this->updateWatermark('Fact_Teacher_Trainer_Delivery', $state->highestTimestamp, $count);
-                }
+                if ($bar) $bar->advance();
             }
-        );
+
+            // Convert associative keyed array back to numeric list
+            $cleanPayload = array_values($payload);
+
+            // 3. Atomic refresh inside transaction using delete()
+            $dwh->transaction(function () use ($dwh, $cleanPayload) {
+                $dwh->table('Fact_Deliveries_Teacher_Trainers')->delete();
+
+                foreach (array_chunk($cleanPayload, 500) as $chunk) {
+                    $dwh->table('Fact_Deliveries_Teacher_Trainers')->insert($chunk);
+                }
+            });
+
+            if ($bar) {
+                $bar->finish();
+                $command?->newLine();
+            }
+
+            $mergedCount = $total - count($cleanPayload) - $skipped;
+            $skipNotice  = $skipped > 0 ? " ({$skipped} unmapped/orphaned records skipped)" : "";
+            $dupesNotice = $mergedCount > 0 ? " ({$mergedCount} duplicate pairs merged)" : "";
+
+            return "Fact_Deliveries_Teacher_Trainers refreshed with " . count($cleanPayload) . " records.{$skipNotice}{$dupesNotice}";
+
+        } catch (\Throwable $e) {
+            if (isset($this->slack)) {
+                $this->slack->sendSyncError('Fact_Deliveries_Teacher_Trainers', $e->getMessage(), [], $e->getTraceAsString());
+            }
+            throw $e;
+        }
     }
 
     public function syncGetCyclingRiderCourses($command = null)

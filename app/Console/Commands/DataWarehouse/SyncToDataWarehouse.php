@@ -130,6 +130,10 @@ class SyncToDataWarehouse extends Command
                 $runSyncStep('Get Cycling Rider Notes', fn() => $syncService->syncGetCyclingRiderNotes($this));
             }
 
+            if ($table === 'all' || $table === 'teacher_trainer_deliveries') {
+                $runSyncStep('Teacher Trainer Deliveries', fn() => $syncService->syncTeacherTrainerDeliveries($this));
+            }
+
             /* Fact tables */
             if ($table === 'all' || $table === 'fact_recipients_training_providers') {
                 $runSyncStep('Fact Grant Recipient Training Providers', fn() => $syncService->syncGrantRecipientTrainingProviders($this));
@@ -216,7 +220,7 @@ class SyncToDataWarehouse extends Command
             }
 
             if ($table === 'all' || $table === 'fact_teacher_trainer_deliveries') {
-                $runSyncStep('Fact Teacher Trainer Deliveries', fn() => $syncService->syncFactTeacherTrainerDeliveries($this));
+                $runSyncStep('Fact Teacher Trainer Deliveries', fn() => $syncService->syncFactDeliveryTeacherTrainers($this));
             }
 
             if ($table === 'all' || $table === 'fact_get_cycling_rider_courses') {
