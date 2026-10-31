@@ -5,7 +5,7 @@ namespace App\Reports\Handlers;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
-class GrantRecipientsHandler extends AbstractStreamingReportHandler
+class GrantRecipientsReportHandler extends AbstractStreamingReportHandler
 {
     public function validate(array $parameters): array
     {
@@ -52,28 +52,29 @@ class GrantRecipientsHandler extends AbstractStreamingReportHandler
 
         $query = $db->table('Dim_Grant_Recipient as gr')
             ->select([
-                'gr.Source_Grant_Recipient_Id as id',
+                'gr.Source_Recipient_Id as id',
                 'gr.Recipient_Number as recipient_number',
                 'gr.Recipient_Name as recipient_name',
-                'gr.Address_01 as address_01',
-                'gr.Address_02 as address_02',
+                'gr.Address_Line_1 as address_01',
+                'gr.Address_Line_2 as address_02',
                 'gr.City as city',
                 'gr.Postcode as postcode',
                 'gr.Website as website',
                 'gr.Primary_Email as primary_email',
                 'gr.Secondary_Email as secondary_email',
                 'gr.Status as status',
-                'gr.Date_Inception as date_inception',
-                'gr.Date_Renewal as date_renewal',
-                'gr.Date_Deregistered as date_deregistered',
+                'gr.Inception_Date as date_inception',
+                'gr.Renewal_Date as date_renewal',
+                'gr.Deregistered_Date as date_deregistered',
                 'gr.Deregistration_Reason as deregistration_reason',
                 'gr.Is_SGO as pref_sgoh',
                 'gr.Source_Created_At as created_at',
                 'gr.Source_Updated_At as updated_at',
             ])
+            ->where('Is_Current','=', 1)
             ->whereNull('gr.Source_Deleted_At')
             ->orderBy('gr.Recipient_Name')
-            ->orderBy('gr.Source_Grant_Recipient_Id');
+            ->orderBy('gr.Source_Recipient_Id');
 
         if (!empty($params['status'])) {
             $query->where('gr.Status', $params['status']);

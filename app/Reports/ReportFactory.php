@@ -55,7 +55,7 @@ class ReportFactory
         'grant-funding-overview'              => GrantFundingOverviewHandler::class,
         'grant-movements-financials'          => GrantMovementsFinancialsHandler::class,
         'grant-recipient-renewals'            => GrantRecipientRenewalsHandler::class,
-        'grant_recipients'                    => GrantRecipientsReportHandler::class,
+        'grant-recipients'                    => GrantRecipientsReportHandler::class,
         'grant-recipients-associated-tps'     => GrantRecipientsAssociatedTpsHandler::class,
         'instructor-renewals'                 => InstructorRenewalsHandler::class,
         'instructors'                         => InstructorsHandler::class,
