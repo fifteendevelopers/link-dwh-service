@@ -82,7 +82,9 @@ class DataWarehouseQualityService
                 'dwh_deleted_col'       => null,
                 'dwh_query_modifier'    => function ($query) {
                     // No unindexed join needed; Source_Course_Id not null represents digitised courses
-                    $query->whereNotNull('Dim_Course.Source_Course_Id');
+                    // and < 9000
+                    $query->whereNotNull('Dim_Course.Source_Course_Id')
+                        ->where('Dim_Course.Source_Course_Id', '<', 9000000000);
                 },
                 'audit_watermark'       => true,
             ],
