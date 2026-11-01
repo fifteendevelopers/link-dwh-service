@@ -60,6 +60,7 @@ class GrantClaimsToPayHandler extends AbstractStreamingReportHandler
         // 1. Identify target Claim_Keys first to avoid full-table scans
         $targetClaims = DB::connection('mysql')->table('Fact_Grant_Claims as c')
             ->join('Dim_Grant as g', 'c.Grant_Key', '=', 'g.Grant_Key')
+            ->whereNull('c.Source_Deleted_At')
             ->where('c.Status_Raw', 1)
             ->where('c.Pref_Claim_Paid', 0);
 
@@ -175,6 +176,7 @@ class GrantClaimsToPayHandler extends AbstractStreamingReportHandler
                     IFNULL(c.Inclusion_Claimable_Amount, 0)
                 , 2) as overall_total"),
             ])
+            ->whereNull('c.Source_Deleted_At')
             ->where('c.Status_Raw', 1)
             ->where('c.Pref_Claim_Paid', 0);
 

@@ -87,6 +87,7 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
         $sendSubquery = DB::connection('mysql')->table('Fact_Grant_Claim_Send_Records')
             ->select('Claim_Key')
             ->selectRaw("GROUP_CONCAT(CONCAT('Delivery raw - £', Send_Amount, ' - ', Send_Riders_Count, ' Riders - No details given') SEPARATOR ' | ') as send_deliveries_compiled")
+            ->whereNull('Source_Deleted_At')
             ->groupBy('Claim_Key');
 
         // 2. Group and concatenate the child Inclusion categories and details per Claim_Key
@@ -94,12 +95,14 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
             ->select('Claim_Key')
             ->selectRaw("GROUP_CONCAT(Inclusion_Category SEPARATOR ',') as categories_compiled")
             ->selectRaw("GROUP_CONCAT(CONCAT(Inclusion_Category, ' - £', Inclusion_Amount, ' - ', COALESCE(Inclusion_Delivery, 'No delivery provided'), ' - No details given') SEPARATOR ' | ') as inclusion_reasons_compiled")
+            ->whereNull('Source_Deleted_At')
             ->groupBy('Claim_Key');
 
         // 3. Total Available Budget from Fact_Grant_Allocation_Dft per Grant_Key
         $allocationSubquery = DB::connection('mysql')->table('Fact_Grant_Allocation_Dft')
             ->select('Grant_Key')
             ->selectRaw("SUM(COALESCE(Grant_Send, 0) + COALESCE(Grant_Inclusion, 0)) as total_available_budget")
+            ->whereNull('Source_Deleted_At')
             ->groupBy('Grant_Key');
 
         // 4. Cumulative Claimed Total (Status 0 and 1) per Grant_Key
@@ -107,6 +110,7 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
             ->select('Grant_Key')
             ->selectRaw("SUM(COALESCE(Send_Claimable_Amount, 0) + COALESCE(Inclusion_Claimable_Amount, 0)) as total_grant_claimed")
             ->whereIn('Status_Raw', [0, 1])
+            ->whereNull('Source_Deleted_At')
             ->groupBy('Grant_Key');
 
         // 5. Construct main query
@@ -129,7 +133,8 @@ class GrantClaimSendAndInclusionHandler extends AbstractStreamingReportHandler
                 DB::raw("COALESCE(alloc.total_available_budget, 0) as total_available_budget"),
                 DB::raw("COALESCE(clms.total_grant_claimed, 0) as total_grant_claimed"),
             ])
-            ->where('c.Status_Raw', 1);
+            ->where('c.Status_Raw', 1)
+            ->whereNull('c.Source_Deleted_At');
 
         // Filter on selected financial year
         if (!empty($params['financial_year'])) {

@@ -92,13 +92,14 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
             ->join('Dim_Grant_Recipient as gr', 'g.Grant_Recipient_Key', '=', 'gr.Recipient_Key')
             ->leftJoin('Fact_Grant_Allocation_Dft as gad', 'g.Grant_Key', '=', 'gad.Grant_Key')
             ->leftJoinSub($deltasQuery, 'd', 'a.Amendment_Key', '=', 'd.Amendment_Key')
+            ->whereNull('a.Source_Deleted_At')
             ->where('a.Status_Raw', 1);
 
         if (!empty($params['date_from'])) {
-            $query->whereDate('a.created_at', '>=', $params['date_from']);
+            $query->whereDate('a.Source_Created_At', '>=', $params['date_from']);
         }
         if (!empty($params['date_to'])) {
-            $query->whereDate('a.created_at', '<=', $params['date_to']);
+            $query->whereDate('a.Source_Created_At', '<=', $params['date_to']);
         }
         if (!empty($params['grant_source']) && $params['grant_source'] !== 'All') {
             $query->where('g.Grant_Source', '=', $params['grant_source']);
@@ -109,7 +110,7 @@ class GrantAmendmentsHandler extends AbstractStreamingReportHandler
             'g.Grant_Source',
             'gr.Recipient_Name',
             'a.Amendment_Number',
-            'a.created_at',
+            'a.Source_Created_At',
             'a.Date_Approved',
             'gr.Is_SGO',
             DB::raw("'' as gap_1"),

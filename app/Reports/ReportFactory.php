@@ -11,6 +11,7 @@ use App\Reports\Handlers\GetCyclingAppDataTeacherTrainerHandler;
 use App\Reports\Handlers\GrantAmendmentsHandler;
 use App\Reports\Handlers\GrantClaimSendAndInclusionHandler;
 use App\Reports\Handlers\GrantClaimsToPayHandler;
+use App\Reports\Handlers\GrantFundingChangesHandler;
 use App\Reports\Handlers\GrantFundingOverviewHandler;
 use App\Reports\Handlers\GrantMovementsFinancialsHandler;
 use App\Reports\Handlers\GrantRecipientRenewalsHandler;
@@ -52,6 +53,7 @@ class ReportFactory
         'grant-amendments'                    => GrantAmendmentsHandler::class,
         'grant-claim-send-and-inclusion'      => GrantClaimSendAndInclusionHandler::class,
         'grant-claims-to-pay'                 => GrantClaimsToPayHandler::class,
+        'grant-funding-changes'               => GrantFundingChangesHandler::class,
         'grant-funding-overview'              => GrantFundingOverviewHandler::class,
         'grant-movements-financials'          => GrantMovementsFinancialsHandler::class,
         'grant-recipient-renewals'            => GrantRecipientRenewalsHandler::class,

@@ -2798,8 +2798,9 @@ class DataWarehouseSyncService
                     'Reallocation_Type'             => $ra->reallocation_type,
                     'Reallocation_Notes'            => $ra->reallocation_notes,
                     'Reallocation_Increase_Reasons' => $ra->reallocation_increase_reasons,
-                    'created_at'                    => now(),
-                    'updated_at'                    => now(),
+                    'Source_Created_At'             => $ra->created_at,
+                    'Source_Updated_At'             => $ra->updated_at,
+                    'Source_Deleted_At'             => $ra->deleted_at,
                 ]);
 
                 if (!$this->sourceHasColumn('grant_reallocations', 'reallocation_log')) {
@@ -2811,8 +2812,9 @@ class DataWarehouseSyncService
                             'Module_Key'        => $log->module_key,
                             'Value_Count'       => $log->value,
                             'Amount'            => $log->amount,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At'             => $ra->created_at,
+                            'Source_Updated_At'             => $ra->updated_at,
+                            'Source_Deleted_At'             => $ra->deleted_at,
                         ]);
                     }
                 } else {
@@ -2824,8 +2826,9 @@ class DataWarehouseSyncService
                             'Module_Key'        => $key,
                             'Value_Count'       => $node['value'] ?? 0,
                             'Amount'            => $node['amount'] ?? 0.00,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $ra->created_at,
+                            'Source_Updated_At' => $ra->updated_at,
+                            'Source_Deleted_At'             => $ra->deleted_at,
                         ]);
                     }
                 }
@@ -2889,8 +2892,9 @@ class DataWarehouseSyncService
                     'Amendment_Number'    => $am->amendment_number,
                     'Status_Raw'          => $am->status,
                     'Date_Approved'       => $am->date_approved,
-                    'created_at'          => now(),
-                    'updated_at'          => now(),
+                    'Source_Created_At'   => $am->created_at,
+                    'Source_Updated_At'   => $am->updated_at,
+                    'Source_Deleted_At'   => $am->deleted_at,
                 ]);
 
                 if (!$this->sourceHasColumn('grant_amendments', 'amendment_log')) {
@@ -2903,8 +2907,9 @@ class DataWarehouseSyncService
                             'Module_Key'        => $log->module,
                             'Value_Count'       => $log->value,
                             'Amount'            => $log->amount,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $am->created_at,
+                            'Source_Updated_At' => $am->updated_at,
+                            'Source_Deleted_At' => $am->deleted_at,
                         ]);
                     }
                 } else {
@@ -2917,8 +2922,9 @@ class DataWarehouseSyncService
                             'Module_Key'        => $node['module'] ?? $key,
                             'Value_Count'       => $node['value'] ?? 0,
                             'Amount'            => $node['amount'] ?? 0.00,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $am->created_at,
+                            'Source_Updated_At' => $am->updated_at,
+                            'Source_Deleted_At' => $am->deleted_at,
                         ]);
                     }
                 }
@@ -2989,8 +2995,9 @@ class DataWarehouseSyncService
                     'Delivery_On_Track_Prediction'=> $cl->delivery_on_track_prediction,
                     'Send_Claimable_Amount'       => is_numeric($cl->send_claimable_amount) ? (float) $cl->send_claimable_amount : 0.00,
                     'Inclusion_Claimable_Amount'  => is_numeric($cl->inclusion_claimable_amount) ? (float) $cl->inclusion_claimable_amount : 0.00,
-                    'created_at'                  => now(),
-                    'updated_at'                  => now(),
+                    'Source_Created_At'           => $cl->created_at,
+                    'Source_Updated_At'           => $cl->updated_at,
+                    'Source_Deleted_At'           => $cl->deleted_at
                 ]);
 
                 // 1. Logs
@@ -3002,8 +3009,9 @@ class DataWarehouseSyncService
                             'Source_System_Key' => $sourceSystemKey,
                             'Module_Key'        => $log->module_key,
                             'Item_Count'        => $log->item_count,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 } else {
@@ -3014,8 +3022,9 @@ class DataWarehouseSyncService
                             'Source_System_Key' => $sourceSystemKey,
                             'Module_Key'        => $key,
                             'Item_Count'        => $count,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 }
@@ -3030,8 +3039,9 @@ class DataWarehouseSyncService
                             'Send_Id_String'    => !empty($s->send_id) ? $s->send_id : (!empty($s->send_id_string) ? $s->send_id_string : 'raw'),
                             'Send_Riders_Count' => !empty($s->send_riders) ? (int) $s->send_riders : 0,
                             'Send_Amount'       => (!empty($s->send_amount) && is_numeric($s->send_amount)) ? (float) $s->send_amount : 0.00,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 } else {
@@ -3043,8 +3053,9 @@ class DataWarehouseSyncService
                             'Send_Id_String'    => !empty($node['sendId']) ? $node['sendId'] : 'raw',
                             'Send_Riders_Count' => !empty($node['sendRiders']) ? (int) $node['sendRiders'] : 0,
                             'Send_Amount'       => (!empty($node['sendAmount']) && is_numeric($node['sendAmount'])) ? (float) $node['sendAmount'] : 0.00,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 }
@@ -3060,8 +3071,9 @@ class DataWarehouseSyncService
                             'Inclusion_Category'  => !empty($inc->inclusion_category) ? $inc->inclusion_category : 'N/A',
                             'Inclusion_Delivery'  => !empty($inc->inclusion_delivery) ? $inc->inclusion_delivery : null,
                             'Inclusion_Amount'    => (!empty($inc->inclusion_amount) && is_numeric($inc->inclusion_amount)) ? (float) $inc->inclusion_amount : 0.00,
-                            'created_at'          => now(),
-                            'updated_at'          => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 } else {
@@ -3074,8 +3086,9 @@ class DataWarehouseSyncService
                             'Inclusion_Category'  => !empty($node['inclusionCategory']) ? $node['inclusionCategory'] : 'N/A',
                             'Inclusion_Delivery'  => isset($node['inclusionDelivery']) && $node['inclusionDelivery'] !== '' ? $node['inclusionDelivery'] : null,
                             'Inclusion_Amount'    => (!empty($node['inclusionAmount']) && is_numeric($node['inclusionAmount'])) ? (float) $node['inclusionAmount'] : 0.00,
-                            'created_at'          => now(),
-                            'updated_at'          => now(),
+                            'Source_Created_At' => $cl->created_at,
+                            'Source_Updated_At' => $cl->updated_at,
+                            'Source_Deleted_At' => $cl->deleted_at
                         ]);
                     }
                 }
@@ -3109,7 +3122,6 @@ class DataWarehouseSyncService
                             });
                     });
             })
-            ->whereNull('deleted_at')
             ->orderBy('id', 'asc');
 
         return $this->executeSyncRunner(
@@ -3169,7 +3181,9 @@ class DataWarehouseSyncService
                         'Places_Send'              => (int) ($row->places_send ?? 0),
                         'Grant_Inclusion'          => (float) ($row->grant_inclusion ?? 0),
                         'Places_Inclusion'         => (int) ($row->places_inclusion ?? 0),
-                        'Updated_At'               => now(),
+                        'Source_Created_At'        => $row->created_at,
+                        'Source_Updated_At'        => $row->updated_at,
+                        'Source_Deleted_At'        => $row->deleted_at
                     ]
                 );
 

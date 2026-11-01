@@ -76,7 +76,8 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
             // Note: If your parent table PK uses f.Reallocation_Key instead of f.id, swap 'f.id' to match
             ->leftJoin('Fact_Grant_Reallocation_Logs as rl', 'f.Reallocation_Key', '=', 'rl.Reallocation_Key')
             ->select($selectFields)
-            ->where('f.Status_Raw', 1);
+            ->where('f.Status_Raw', 1)
+            ->whereNull('f.Source_Deleted_At');
 
         // --- Contextual Parameter Dynamic Filtering ---
         if (isset($params['grant_source']) && $params['grant_source'] !== '' && $params['grant_source'] !== null) {
@@ -84,11 +85,11 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
         }
 
         if (isset($params['start_date']) && $params['start_date'] !== '' && $params['start_date'] !== null) {
-            $query->where('f.created_at', '>=', $params['start_date']);
+            $query->where('f.Source_Created_At', '>=', $params['start_date']);
         }
 
         if (isset($params['end_date']) && $params['end_date'] !== '' && $params['end_date'] !== null) {
-            $query->where('f.created_at', '<=', $params['end_date']);
+            $query->where('f.Source_Created_At', '<=', $params['end_date']);
         }
 
         // Enforce strict MySQL GROUP BY criteria grouping all parent metadata
@@ -103,12 +104,12 @@ class GrantMovementsFinancialsHandler implements ReportHandlerInterface
             'f.Status_Raw',
             'f.Reallocation_Notes',
             'f.Reallocation_Increase_Reasons',
-            'f.created_at',
+            'f.Source_Created_At',
             'f.Date_Approved'
         ]);
 
         return $query->orderBy('g.Grant_Number')
-            ->orderBy('f.created_at')
+            ->orderBy('f.Source_Created_At')
             ->get()
             ->toArray();
     }

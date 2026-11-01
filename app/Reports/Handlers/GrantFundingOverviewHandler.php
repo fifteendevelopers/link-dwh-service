@@ -240,6 +240,7 @@ class GrantFundingOverviewHandler extends AbstractStreamingReportHandler
             ->selectRaw("SUM(CASE WHEN c.Pref_Claim_Paid = 1 AND cl.Module_Key = 'plus_transition' THEN cl.Item_Count ELSE 0 END) as claim_plus_transition_places")
             ->selectRaw("SUM(CASE WHEN c.Pref_Claim_Paid = 1 AND cl.Module_Key = 'plus_family' THEN cl.Item_Count ELSE 0 END) as claim_plus_family_places")
             ->selectRaw("SUM(CASE WHEN c.Pref_Claim_Paid = 1 AND cl.Module_Key = 'plus_adult' THEN cl.Item_Count ELSE 0 END) as claim_plus_adult_places")
+            ->whereNull('c.Source_Deleted_At')
             ->where('c.Status_Raw', 1)
             ->whereBetween('c.Date_Approved', [$startDateTime, $endDateTime])
             ->groupBy('c.Grant_Key');
