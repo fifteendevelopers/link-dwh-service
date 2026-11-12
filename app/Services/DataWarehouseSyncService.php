@@ -989,6 +989,10 @@ class DataWarehouseSyncService
             'courses.attendees_overridden_at', 'courses.created_at', 'courses.updated_at',
         ])->orderBy('courses.id', 'asc');
 
+        if ($this->sourceHasColumn('deliveries', 'delivery_details')) {
+            $query->addSelect('deliveries.delivery_details');
+        }
+
         $result = $this->executeSyncRunner(
             'Dim_Course',
             $command,
@@ -1018,7 +1022,7 @@ class DataWarehouseSyncService
                         'Year_Group'                    => $course->year_group,
                         'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
                         'Cancellation_Reason'           => $course->cancellation_reason ?? null,
-                        'Has_Confirmed_Booked'          => (bool) ($course->has_confirmed_booked ?? false),
+                        'Has_Confirmed_Booked'          => self::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null),
                         'Confirmed_By'                  => $course->confirmed_by ?? null,
                         'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                         'Confirmed_At'                  => $course->confirmed_at ?? null,
@@ -4290,6 +4294,36 @@ class DataWarehouseSyncService
             ->value('Grant_Key');
     }
 
+    /**
+     * Resolve whether a digitised course is confirmed. The legacy delivery_details JSON
+     * flag (delivery.confirmed = 1) takes priority over booked.status, and either one
+     * overrides a 0 in courses.has_confirmed_booked.
+     */
+    public static function resolveCourseConfirmed($courseId, $hasConfirmedBooked, ?string $deliveryDetails): bool
+    {
+        if (!empty($hasConfirmedBooked) && (int) $hasConfirmedBooked === 1) {
+            return true;
+        }
+
+        $details = json_decode($deliveryDetails ?? '[]', true);
+        if (!is_array($details)) {
+            return false;
+        }
+
+        foreach ($details as $entry) {
+            if (!isset($entry['module']['entity_id']) || $entry['module']['entity_id'] != $courseId) {
+                continue;
+            }
+
+            $delivery = $entry['delivery'] ?? [];
+
+            return (isset($delivery['confirmed']) && (int) $delivery['confirmed'] === 1)
+                || (isset($delivery['booked']['status']) && strtolower(trim((string) $delivery['booked']['status'])) === 'confirmed');
+        }
+
+        return false;
+    }
+
     private function sourceHasColumn(string $table, string $column): bool
     {
         static $schemaCache = [];
@@ -4590,10 +4624,6 @@ class DataWarehouseSyncService
 
                 $delivery = $entry['delivery'] ?? [];
                 $booked   = $delivery['booked'] ?? [];
-
-                $isConfirmed = (isset($delivery['confirmed']) && (int)$delivery['confirmed'] === 1)
-                    || (isset($booked['status']) && strtolower(trim((string)$booked['status'])) === 'confirmed')
-                    || (!empty($course->has_confirmed_booked) && (int)$course->has_confirmed_booked === 1);
 
                 $metrics['Count_Booked']           = (int) ($booked['total'] ?? 0);
                 $metrics['Count_Attended']         = (int) ($delivery['attended']['total'] ?? 0);

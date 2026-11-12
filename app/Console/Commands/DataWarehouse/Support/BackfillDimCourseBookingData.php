@@ -2,8 +2,10 @@
 
 namespace App\Console\Commands\DataWarehouse\Support;
 
+use App\Services\DataWarehouseSyncService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class BackfillDimCourseBookingData extends Command
 {
@@ -34,24 +36,31 @@ class BackfillDimCourseBookingData extends Command
 
         $updatedCount = 0;
 
-        $source->table('courses')
+        $query = $source->table('courses')
+            ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
             ->select([
-                'id',
-                'is_cancelled',
-                'cancellation_reason',
-                'has_confirmed_booked',
-                'confirmed_by',
-                'confirmed_by_email',
-                'confirmed_at',
-                'provisional_booked',
-                'booked',
-                'adults',
-                'children',
-                'attendees_overridden_metadata',
-                'attendees_overridden_by',
-                'attendees_overridden_at',
-            ])
-            ->orderBy('id')
+                'courses.id',
+                'courses.is_cancelled',
+                'courses.cancellation_reason',
+                'courses.has_confirmed_booked',
+                'courses.confirmed_by',
+                'courses.confirmed_by_email',
+                'courses.confirmed_at',
+                'courses.provisional_booked',
+                'courses.booked',
+                'courses.adults',
+                'courses.children',
+                'courses.attendees_overridden_metadata',
+                'courses.attendees_overridden_by',
+                'courses.attendees_overridden_at',
+            ]);
+
+        if (Schema::connection('mysql_src')->hasColumn('deliveries', 'delivery_details')) {
+            $query->addSelect('deliveries.delivery_details');
+        }
+
+        $query
+            ->orderBy('courses.id')
             ->chunk($chunkSize, function ($courses) use ($dwh, $sourceSystemKey, $bar, &$updatedCount) {
                 foreach ($courses as $course) {
                     // Update only existing Dim_Course rows
@@ -61,11 +70,11 @@ class BackfillDimCourseBookingData extends Command
                         ->update([
                             'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
                             'Cancellation_Reason'           => $course->cancellation_reason ?? null,
-                            'Has_Confirmed_Booked'          => (bool) ($course->has_confirmed_booked ?? false),
+                            'Has_Confirmed_Booked'          => DataWarehouseSyncService::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null),
                             'Confirmed_By'                  => $course->confirmed_by ?? null,
                             'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                             'Confirmed_At'                  => $course->confirmed_at ?? null,
-                            'Provisional_Booked'            => $course->provisional_booked ?? null,
+                            'Provisional'                   => $course->provisional_booked ?? null,
                             'Booked'                        => $course->booked ?? null,
                             'Adults'                        => $course->adults ?? null,
                             'Children'                      => $course->children ?? null,
