@@ -64,10 +64,10 @@ class DataWarehouseQualityService
             'Consents' => [
                 'source_table'       => 'consents',
                 'source_id_col'      => 'id',
-                'source_deleted_col' => null,
+                'source_deleted_col' => 'deleted_at',
                 'dwh_table'          => 'Dim_Consent',
                 'dwh_source_id_col'  => 'Source_Consent_Id',
-                'dwh_deleted_col'    => null,
+                'dwh_deleted_col'    => 'Source_Deleted_At',
                 'audit_watermark'    => true,
             ],
             'Courses' => [
