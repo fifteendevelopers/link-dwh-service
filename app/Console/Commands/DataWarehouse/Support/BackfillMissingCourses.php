@@ -101,7 +101,7 @@ class BackfillMissingCourses extends Command
                                     'Confirmed_By'                  => $course->confirmed_by ?? null,
                                     'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                                     'Confirmed_At'                  => $course->confirmed_at ?? null,
-                                    'Provisional_Booked'            => $course->provisional_booked ?? null,
+                                    'Provisional'                   => $course->provisional_booked ?? null,
                                     'Booked'                        => $course->booked ?? null,
                                     'Adults'                        => $course->adults ?? null,
                                     'Children'                      => $course->children ?? null,

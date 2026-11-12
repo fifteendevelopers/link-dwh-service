@@ -95,6 +95,9 @@ class BackfillDimCourseBookingData extends Command
         $this->newLine(2);
         $this->info("Backfill complete! {$updatedCount} Dim_Course records updated.");
 
+        $propagated = app(DataWarehouseSyncService::class)->propagateParentCourseConfirmation($sourceSystemKey);
+        $this->info("{$propagated} child courses marked confirmed from their parent course.");
+
         return self::SUCCESS;
     }
 }

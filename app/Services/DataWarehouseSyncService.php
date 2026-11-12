@@ -1122,7 +1122,34 @@ class DataWarehouseSyncService
             $this->slack->sendSyncError('Dim_Course (Parent Hierarchy)', $e->getMessage());
         }
 
+        try {
+            $command->comment("Dim_Courses step 3. Propagating parent confirmation to child courses...");
+            $propagated = $this->propagateParentCourseConfirmation($sourceSystemKey);
+            $command->comment("Dim_Courses step 3. Completed: {$propagated} child courses marked confirmed");
+        } catch (Throwable $e) {
+            $this->slack->sendSyncError('Dim_Course (Parent Confirmation)', $e->getMessage());
+        }
+
         return $result;
+    }
+
+    /**
+     * Combined courses (e.g. level_1_2) carry the confirmed flag on the parent only: the
+     * child level_1 / level_2 rows never appear in delivery_details. Promote children of a
+     * confirmed parent to confirmed. Runs across the whole table so children are corrected
+     * even when only the parent changed in this sync window.
+     */
+    public function propagateParentCourseConfirmation($sourceSystemKey): int
+    {
+        return $this->dwh->update("
+            UPDATE Dim_Course child
+            JOIN Dim_Course parent
+              ON child.Parent_Course_Key = parent.Course_Key
+            SET child.Has_Confirmed_Booked = 1
+            WHERE child.Source_System_Key = ?
+              AND parent.Has_Confirmed_Booked = 1
+              AND child.Has_Confirmed_Booked = 0
+        ", [$sourceSystemKey]);
     }
 
     public function syncRiders($command = null)
