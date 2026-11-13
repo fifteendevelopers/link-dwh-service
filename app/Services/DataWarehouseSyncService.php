@@ -893,6 +893,10 @@ class DataWarehouseSyncService
                         ->value('External_System_Key');
                 }
 
+                $isDigitised       = (int) ($delivery->digitisation_booking ?? 0) === 1;
+                $hasExternalSystem = $delivery->external_system_id !== null && trim((string) $delivery->external_system_id) !== '';
+                $hasStatus         = $delivery->status !== null && trim((string) $delivery->status) !== '';
+
                 $this->dwh->table('Dim_Delivery_Header')->updateOrInsert(
                     [
                         'Source_Delivery_Id' => $delivery->id,
@@ -904,7 +908,11 @@ class DataWarehouseSyncService
                         'Organisation_Key'                   => $organisationKey,
                         'Training_Provider_Key'              => $providerKey,
                         'External_System_Key'                => $externalSystemKey,
-                        'Delivery_Status'                    => ($delivery->digitisation_booking === 1) ? $this->mapDeliveryStatus($delivery->status) : 'N/A',
+                        'Delivery_Status' => match (true) {
+                            $hasStatus                                          => $this->mapDeliveryStatus($delivery->status),
+                            !$isDigitised && !$hasExternalSystem && !$hasStatus => 'Complete',
+                            default                                             => 'N/A',
+                        },
                         'Date_Delivery_Start'                => $delivery->date_delivery_start,
                         'Date_Delivery_End'                  => $delivery->date_delivery_end,
                         'Digitisation_Booking'               => $delivery->digitisation_booking,
