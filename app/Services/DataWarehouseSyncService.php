@@ -1322,7 +1322,7 @@ class DataWarehouseSyncService
                         'Ability_Can_One_Hand_Signal'    => in_array("3", $abilities) ? 1 : 0,
                         'Ability_Has_Level_2'            => in_array("4", $abilities) ? 1 : 0,
                         'Cycle_Ability_Raw'              => json_encode($abilities),
-                        'Is_Pupil_premium'               => $consent->is_fsm ?: 0,
+                        'Is_Pupil_Premium'               => $consent->is_fsm ?: 0,
                         'Is_SEND'                        => $consent->is_SEND ?: 0,
                         'SEND_Details'                   => $consent->send_details,
                         'Has_Medical_Condition'          => $consent->has_medical_condition ?: 0,
@@ -2073,14 +2073,18 @@ class DataWarehouseSyncService
                         'delivery_id'      => $record->delivery_id,
                         'delivery_details' => $record->delivery_details ?? null,
                     ];
+
+                    // Always source booking/attendance totals (and any module-level metrics)
+                    // from deliveries.delivery_details JSON, falling back to delivery_modules/metrics
                     $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
                     unset($deliveryDetailMetrics['Extracted_Course_Level'], $deliveryDetailMetrics['Extracted_Year_Group']);
 
                     $enrolledCount  = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
                     $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
 
+                    // Baseline demographic metrics from Consents or Course Characteristics
                     if ($record->consent_src_characteristics == 1) {
-                        $metrics = $this->aggregateFromDWHConsents($delivery->Delivery_Key);
+                        $metrics = $this->aggregateFromDWHConsents((int) $delivery->Delivery_Key, (int) $record->course_id);
                     } else {
                         if ($useLegacyCourseCharacteristics) {
                             $metrics = !empty($record->characteristics)
@@ -2091,14 +2095,34 @@ class DataWarehouseSyncService
                         }
                     }
 
+                    // Merge baseline demographics with delivery_details metrics:
+                    // Always take booking/attendance/family totals from delivery_details (or delivery_modules),
+                    // and only overwrite demographic counters when delivery_details actually provides non-zero values.
+                    $mergedMetrics = $metrics;
+                    $authoritativeKeys = [
+                        'Count_Provisional',
+                        'Count_Booked',
+                        'Count_Attended',
+                        'Count_Adults',
+                        'Count_Teens',
+                        'Count_Children',
+                        'Count_Bikes_Swapped',
+                        'Count_Bikes_Recycled',
+                    ];
+
+                    foreach ($deliveryDetailMetrics as $col => $val) {
+                        if (in_array($col, $authoritativeKeys, true) || (int) $val > 0) {
+                            $mergedMetrics[$col] = $val;
+                        }
+                    }
+
                     $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                         [
                             'Delivery_Key' => $delivery->Delivery_Key,
                             'Course_Key'   => $courseKey,
                         ],
                         array_merge(
-                            $useLegacy ? [] : $metrics,
-                            $deliveryDetailMetrics,
+                            $mergedMetrics,
                             [
                                 'Riders_Enrolled_Count'  => $enrolledCount,
                                 'Riders_Completed_Count' => $completedCount,
@@ -4651,7 +4675,8 @@ class DataWarehouseSyncService
         ]);
 
         foreach ($details as $entry) {
-            $isTargetModule = is_null($course->id) || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] == $course->id);
+            $isTargetModule = is_null($course->id)
+                || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] !== '' && (int) $entry['module']['entity_id'] === (int) $course->id);
 
             if ($isTargetModule) {
                 $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
@@ -4767,6 +4792,10 @@ class DataWarehouseSyncService
             if ($sub === 'bikes_swapped')  $metrics['Count_Bikes_Swapped'] += $val;
             if ($sub === 'bikes_recycled') $metrics['Count_Bikes_Recycled'] += $val;
 
+            if ($sub === 'adults')   $metrics['Count_Adults'] = $val;
+            if ($sub === 'teens')    $metrics['Count_Teens'] = $val;
+            if ($sub === 'children') $metrics['Count_Children'] = $val;
+
             if ($cat === 'booked_age_range') {
                 $col = $sub === 'na' ? 'Count_Age_Range_Not_Stated' : ($sub === 'over_65' ? 'Count_Age_Range_Over_65' : 'Count_Age_Range_' . $sub);
                 $metrics[$col] = $val;
@@ -4793,18 +4822,45 @@ class DataWarehouseSyncService
         return $metrics;
     }
 
-    private function aggregateFromDWHConsents($deliveryKey)
+    private function aggregateFromDWHConsents(int $deliveryKey, ?int $sourceCourseId = null): array
     {
-        $consents = $this->dwh->table('Dim_Consent')
-            ->where('Delivery_Key', $deliveryKey)
-            ->where('Attended', 1)
-            ->get();
+        $query = $this->dwh->table('Dim_Consent as dc')
+            ->where('dc.Delivery_Key', $deliveryKey)
+            ->whereNull('dc.Source_Deleted_At');
+
+        // Scope strictly to riders enrolled on this specific course via Fact_Rider_Course
+        if ($sourceCourseId !== null) {
+            $query->join('Dim_Rider as dr', 'dc.Rider_Key', '=', 'dr.Rider_Key')
+                ->join('Fact_Rider_Course as frc', function ($join) use ($sourceCourseId) {
+                    $join->on('dr.Source_Rider_Id', '=', 'frc.Source_Rider_Id')
+                        ->where('frc.Source_Course_Id', '=', $sourceCourseId);
+                })
+                ->where('frc.Attended', 1)
+                ->where('frc.Withdrawn', 0);
+        } else {
+            $query->where('dc.Attended', 1);
+        }
+
+        $consents = $query->select([
+            'dc.Gender',
+            'dc.Ethnicity',
+            'dc.Is_Pupil_premium',
+            'dc.Is_SEND',
+        ])->get();
 
         $m = $this->initializeExtendedMetricArray();
 
         foreach ($consents as $consent) {
-            if ($consent->Gender === 'Female') $m['Count_Female']++;
-            elseif ($consent->Gender === 'Male') $m['Count_Male']++;
+            $gender = strtolower(trim((string) ($consent->Gender ?? '')));
+            if ($gender === 'female') {
+                $m['Count_Female']++;
+            } elseif ($gender === 'male') {
+                $m['Count_Male']++;
+            } elseif ($gender === 'other' || $gender === 'non-binary') {
+                $m['Count_Gender_Other']++;
+            } else {
+                $m['Count_Gender_Not_Stated']++;
+            }
 
             $column = $this->mapEthnicityToColumn($consent->Ethnicity);
             if (isset($m[$column])) {
@@ -4813,8 +4869,18 @@ class DataWarehouseSyncService
                 $m['Count_Ethnicity_Not_Stated']++;
             }
 
-            if ($consent->Is_Pupil_Premium) $m['Count_Pupil_Premium']++;
-            if ($consent->Is_SEND) $m['Count_SEND']++;
+            // Fixed column casing: Is_Pupil_premium (lowercase 'p')
+            if ($consent->Is_Pupil_premium === null) {
+                $m['Count_Pupil_Premium_Not_Stated']++;
+            } elseif ((int) $consent->Is_Pupil_premium === 1) {
+                $m['Count_Pupil_Premium']++;
+            }
+
+            if ($consent->Is_SEND === null) {
+                $m['Count_SEND_Not_Stated']++;
+            } elseif ((int) $consent->Is_SEND === 1) {
+                $m['Count_SEND']++;
+            }
         }
 
         return $m;
