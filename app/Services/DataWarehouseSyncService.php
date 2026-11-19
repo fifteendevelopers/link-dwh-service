@@ -910,7 +910,7 @@ class DataWarehouseSyncService
                         'External_System_Key'                => $externalSystemKey,
                         'Delivery_Status' => match (true) {
                             $hasStatus                                          => $this->mapDeliveryStatus($delivery->status),
-                            !$isDigitised && !$hasExternalSystem && !$hasStatus => 'Complete',
+                            !$isDigitised && !$hasExternalSystem && !$hasStatus => 'Completed',
                             default                                             => 'N/A',
                         },
                         'Date_Delivery_Start'                => $delivery->date_delivery_start,
