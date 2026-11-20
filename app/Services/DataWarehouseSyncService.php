@@ -529,8 +529,7 @@ class DataWarehouseSyncService
                         'Status'                          => $school->status,
                         'Urban_Rural_Code'                => $school->urban_rural_code,
                         'Rural_Urban_Classification'      => $school->urban_rural_name,
-                        'Imd_Decile'                      => $imdDecile,
-                        'updated_at'                      => now(),
+                        'Imd_Decile'                      => $imdDecile
                     ]
                 );
 
