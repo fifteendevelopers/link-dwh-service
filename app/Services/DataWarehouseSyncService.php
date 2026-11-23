@@ -1321,8 +1321,8 @@ class DataWarehouseSyncService
                         'Ability_Can_One_Hand_Signal'    => in_array("3", $abilities) ? 1 : 0,
                         'Ability_Has_Level_2'            => in_array("4", $abilities) ? 1 : 0,
                         'Cycle_Ability_Raw'              => json_encode($abilities),
-                        'Is_Pupil_Premium'               => $consent->is_fsm ?: 0,
-                        'Is_SEND'                        => $consent->is_SEND ?: 0,
+                        'Is_Pupil_Premium'               => $consent->is_fsm,
+                        'Is_SEND'                        => $consent->is_SEND,
                         'SEND_Details'                   => $consent->send_details,
                         'Has_Medical_Condition'          => $consent->has_medical_condition ?: 0,
                         'Medical_Details'                => $consent->medical_details,
@@ -1860,34 +1860,48 @@ class DataWarehouseSyncService
         $watermark = $this->getWatermark('Fact_Course_Delivery');
 
         try {
-            $candidateDeliveryIds = $this->source->table('deliveries')
-                ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
-                ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+            // 1. Identify candidate deliveries modified directly or via courses, enrolments, or consents
+            $deliveryModifiedIds = $this->source->table('deliveries')
                 ->where(function ($q) use ($watermark) {
-                    $q->where(function ($deliv) use ($watermark) {
-                        $deliv->where('deliveries.updated_at', '>', $watermark)
-                            ->orWhere('deliveries.created_at', '>', $watermark)
-                            ->orWhereNull('deliveries.updated_at');
-                    })
-                        ->orWhere(function ($course) use ($watermark) {
-                            $course->where('courses.updated_at', '>', $watermark)
-                                ->orWhere('courses.created_at', '>', $watermark)
-                                ->orWhere(function ($cNull) {
-                                    $cNull->whereNotNull('courses.id')
-                                        ->whereNull('courses.updated_at');
-                                });
-                        })
-                        ->orWhere(function ($riderCourse) use ($watermark) {
-                            $riderCourse->where('jrc.updated_at', '>', $watermark)
-                                ->orWhere('jrc.created_at', '>', $watermark)
-                                ->orWhere(function ($jrcNull) {
-                                    $jrcNull->whereNotNull('jrc.course_id')
-                                        ->whereNull('jrc.updated_at');
-                                });
-                        });
+                    $q->where('updated_at', '>', $watermark)
+                        ->orWhere('created_at', '>', $watermark)
+                        ->orWhereNull('updated_at');
                 })
-                ->distinct()
-                ->pluck('deliveries.id')
+                ->pluck('id');
+
+            $courseModifiedIds = $this->source->table('courses')
+                ->where(function ($q) use ($watermark) {
+                    $q->where('updated_at', '>', $watermark)
+                        ->orWhere('created_at', '>', $watermark)
+                        ->orWhereNull('updated_at');
+                })
+                ->pluck('delivery_id');
+
+            $jrcModifiedIds = $this->source->table('join_riders_courses as jrc')
+                ->join('courses', 'jrc.course_id', '=', 'courses.id')
+                ->where(function ($q) use ($watermark) {
+                    $q->where('jrc.updated_at', '>', $watermark)
+                        ->orWhere('jrc.created_at', '>', $watermark)
+                        ->orWhereNull('jrc.updated_at');
+                })
+                ->pluck('courses.delivery_id');
+
+            $consentModifiedIds = $this->source->table('consents')
+                ->where(function ($q) use ($watermark) {
+                    $q->where('updated_at', '>', $watermark)
+                        ->orWhere('created_at', '>', $watermark)
+                        ->orWhere('deleted_at', '>', $watermark);
+                })
+                ->pluck('delivery_id');
+
+            $candidateDeliveryIds = $deliveryModifiedIds
+                ->merge($courseModifiedIds)
+                ->merge($jrcModifiedIds)
+                ->merge($consentModifiedIds)
+                ->filter()
+                ->unique()
+                ->sort()
+                ->values()
                 ->toArray();
 
             $total = count($candidateDeliveryIds);
@@ -1906,6 +1920,7 @@ class DataWarehouseSyncService
                 $recordsQuery = $this->source->table('deliveries')
                     ->leftJoin('courses', 'deliveries.id', '=', 'courses.delivery_id')
                     ->leftJoin('join_riders_courses as jrc', 'courses.id', '=', 'jrc.course_id')
+                    ->leftJoin('consents as c', 'deliveries.id', '=', 'c.delivery_id')
                     ->whereIn('deliveries.id', $deliveryIdChunk)
                     ->select([
                         'deliveries.id as delivery_id',
@@ -1918,6 +1933,7 @@ class DataWarehouseSyncService
                         'courses.created_at as course_created',
                         'courses.updated_at as course_updated',
                         DB::raw('MAX(COALESCE(jrc.updated_at, jrc.created_at)) as rider_course_updated'),
+                        DB::raw('MAX(GREATEST(COALESCE(c.updated_at, "1900-01-01 00:00:00"), COALESCE(c.created_at, "1900-01-01 00:00:00"), COALESCE(c.deleted_at, "1900-01-01 00:00:00"))) as consent_updated'),
                     ])
                     ->groupBy([
                         'deliveries.id',
@@ -1946,7 +1962,8 @@ class DataWarehouseSyncService
                         $record->delivery_created ?? '1900-01-01 00:00:00',
                         $record->course_updated ?? '1900-01-01 00:00:00',
                         $record->course_created ?? '1900-01-01 00:00:00',
-                        $record->rider_course_updated ?? '1900-01-01 00:00:00'
+                        $record->rider_course_updated ?? '1900-01-01 00:00:00',
+                        $record->consent_updated ?? '1900-01-01 00:00:00'
                     );
 
                     if ($activeTimestamp > $highestTimestampSeen) {
@@ -1982,20 +1999,17 @@ class DataWarehouseSyncService
                                 continue;
                             }
 
-                            // 1. Clean unsigned synthetic identifier (Delivery_Id * 100 + index)
-                            $syntheticSourceCourseId = 9000000000 + ((int)$record->delivery_id * 100) + (int)$index;
+                            $syntheticSourceCourseId = 9000000000 + ((int) $record->delivery_id * 100) + (int) $index;
 
                             $deliveryEntry = $entry['delivery'] ?? [];
                             $bookedEntry   = $deliveryEntry['booked'] ?? [];
 
-                            // Check confirmation status from JSON
-                            $isConfirmed = (isset($deliveryEntry['confirmed']) && (int)$deliveryEntry['confirmed'] === 1)
-                                || (isset($bookedEntry['status']) && strtolower(trim((string)$bookedEntry['status'])) === 'confirmed');
+                            $isConfirmed = (isset($deliveryEntry['confirmed']) && (int) $deliveryEntry['confirmed'] === 1)
+                                || (isset($bookedEntry['status']) && strtolower(trim((string) $bookedEntry['status'])) === 'confirmed');
 
                             $provisionalVal = (int) ($bookedEntry['provisional'] ?? 0);
                             $bookedVal      = (int) ($bookedEntry['total'] ?? 0);
 
-                            // 2. Match STRICTLY on Delivery_Key + Source_Course_Id so cohorts never overwrite
                             $this->dwh->table('Dim_Course')->updateOrInsert(
                                 [
                                     'Delivery_Key'      => $delivery->Delivery_Key,
@@ -2011,12 +2025,11 @@ class DataWarehouseSyncService
                                     'Has_Confirmed_Booked' => $isConfirmed ? 1 : 0,
                                     'Provisional'          => $provisionalVal,
                                     'Booked'               => $bookedVal,
-                                    'Adults'               => ($courseLevelString === 'plus_family') ? (int)($deliveryEntry['adults'] ?? 0) : null,
-                                    'Children'             => ($courseLevelString === 'plus_family') ? (int)($deliveryEntry['children'] ?? 0) : null,
+                                    'Adults'               => ($courseLevelString === 'plus_family') ? (int) ($deliveryEntry['adults'] ?? 0) : null,
+                                    'Children'             => ($courseLevelString === 'plus_family') ? (int) ($deliveryEntry['children'] ?? 0) : null,
                                 ]
                             );
 
-                            // 3. Resolve Course_Key using the synthetic ID directly
                             $courseKey = $this->dwh->table('Dim_Course')
                                 ->where('Delivery_Key', $delivery->Delivery_Key)
                                 ->where('Source_Course_Id', $syntheticSourceCourseId)
@@ -2027,10 +2040,8 @@ class DataWarehouseSyncService
                                 continue;
                             }
 
-                            // 4. Extract metrics specifically for this single module entry
                             $moduleMetrics = $this->extractMetricsForSingleModuleEntry($entry);
 
-                            // 5. Upsert Fact_Course_Delivery for this module
                             $this->dwh->table('Fact_Course_Delivery')->updateOrInsert(
                                 [
                                     'Delivery_Key' => $delivery->Delivery_Key,
@@ -2067,23 +2078,44 @@ class DataWarehouseSyncService
                         continue;
                     }
 
-                    $mockCourse = (object)[
+                    $mockCourse = (object) [
                         'id'               => $record->course_id,
                         'delivery_id'      => $record->delivery_id,
                         'delivery_details' => $record->delivery_details ?? null,
                     ];
 
-                    // Always source booking/attendance totals (and any module-level metrics)
-                    // from deliveries.delivery_details JSON, falling back to delivery_modules/metrics
                     $deliveryDetailMetrics = $this->getCourseDeliveryMetrics($mockCourse, $useLegacy);
                     unset($deliveryDetailMetrics['Extracted_Course_Level'], $deliveryDetailMetrics['Extracted_Year_Group']);
 
-                    $enrolledCount  = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->count();
-                    $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
+                    // Include child courses if this is a combined parent course (e.g. level_1_2)
+                    $scopedCourseIds = $this->source->table('courses')
+                        ->where('id', $record->course_id)
+                        ->orWhere('parent_course_id', $record->course_id)
+                        ->pluck('id')
+                        ->toArray();
+
+                    $enrolledCount = $this->source->table('join_riders_courses')
+                        ->whereIn('course_id', $scopedCourseIds)
+                        ->where(function ($q) {
+                            $q->whereNull('withdrawn')->orWhere('withdrawn', 0);
+                        })
+                        ->distinct('rider_id')
+                        ->count('rider_id');
+
+                    $completedCount = $this->source->table('join_riders_courses')
+                        ->whereIn('course_id', $scopedCourseIds)
+                        ->where(function ($q) {
+                            $q->whereNull('withdrawn')->orWhere('withdrawn', 0);
+                        })
+                        ->where('has_completed_course', 1)
+                        ->distinct('rider_id')
+                        ->count('rider_id');
+
+                    $isConsentAuthoritative = (int) ($record->consent_src_characteristics ?? 0) === 1;
 
                     // Baseline demographic metrics from Consents or Course Characteristics
-                    if ((int) ($record->consent_src_characteristics ?? 0) === 1) {
-                        $metrics = $this->aggregateFromDWHConsents((int) $delivery->Delivery_Key, (int) $record->course_id);
+                    if ($isConsentAuthoritative) {
+                        $metrics = $this->aggregateFromDWHConsents((int) $delivery->Delivery_Key, (int) $record->course_id, (int) $sourceSystemKey);
                     } else {
                         if ($useLegacyCourseCharacteristics) {
                             $metrics = !empty($record->characteristics)
@@ -2094,9 +2126,6 @@ class DataWarehouseSyncService
                         }
                     }
 
-                    // Merge baseline demographics with delivery_details metrics:
-                    // Always take booking/attendance/family totals from delivery_details (or delivery_modules),
-                    // and only overwrite demographic counters when delivery_details actually provides non-zero values.
                     $mergedMetrics = $metrics;
                     $authoritativeKeys = [
                         'Count_Provisional',
@@ -2109,10 +2138,29 @@ class DataWarehouseSyncService
                         'Count_Bikes_Recycled',
                     ];
 
-                    $isConsentAuthoritative = (int) ($record->consent_src_characteristics ?? 0) === 1;
+                    // Where the source delivery record holds a demographic breakdown for this module, it is the
+                    // TP-submitted register for the course and takes precedence over consent-derived counts.
+                    // Consent aggregation over-counts (e.g. union of riders across child courses of a combined
+                    // course), so it is only used as a fallback when the delivery record has no breakdown.
+                    $hasDetailDemographics = false;
+                    foreach ($deliveryDetailMetrics as $col => $val) {
+                        if (!in_array($col, $authoritativeKeys, true) && (int) $val > 0) {
+                            $hasDetailDemographics = true;
+                            break;
+                        }
+                    }
 
                     foreach ($deliveryDetailMetrics as $col => $val) {
+                        if ($isConsentAuthoritative && $hasDetailDemographics && !in_array($col, $authoritativeKeys, true)) {
+                            $mergedMetrics[$col] = $val;
+                            continue;
+                        }
+
                         if (in_array($col, $authoritativeKeys, true)) {
+                            // If consent-driven and JSON Count_Attended is 0 while consent-derived Count_Attended > 0, keep consent count
+                            if ($col === 'Count_Attended' && $isConsentAuthoritative && (int) $val === 0 && (int) ($metrics['Count_Attended'] ?? 0) > 0) {
+                                continue;
+                            }
                             $mergedMetrics[$col] = $val;
                         } elseif (!$isConsentAuthoritative && (int) $val > 0) {
                             $mergedMetrics[$col] = $val;
@@ -2260,7 +2308,7 @@ class DataWarehouseSyncService
             foreach ($rows as $rc) {
                 $finalAttendance = (!empty($rc->attended_override) && $rc->attended_override == 1)
                     ? $rc->attended_override
-                    : ($rc->attended ?? 1);
+                    : ($rc->attended ?? 0); // NULL = attendance not recorded, not attended
 
                 $batch[] = [
                     'Source_Rider_Id'      => $rc->rider_id,
@@ -4827,36 +4875,53 @@ class DataWarehouseSyncService
         return $metrics;
     }
 
-    private function aggregateFromDWHConsents(int $deliveryKey, ?int $sourceCourseId = null): array
+    private function aggregateFromDWHConsents(int $deliveryKey, ?int $sourceCourseId = null, ?int $sourceSystemKey = null): array
     {
+        $sourceSystemKey = $sourceSystemKey ?? (int) $this->getSourceSystemKey();
+
         $query = $this->dwh->table('Dim_Consent as dc')
             ->where('dc.Delivery_Key', $deliveryKey)
+            ->where('dc.Source_System_Key', $sourceSystemKey)
             ->whereNull('dc.Source_Deleted_At');
 
-        // Scope strictly to riders enrolled on this specific course via Fact_Rider_Course
+        // Scope strictly to active, attended riders on this course (or its child courses if combined)
         if ($sourceCourseId !== null) {
-            $query->join('Dim_Rider as dr', 'dc.Rider_Key', '=', 'dr.Rider_Key')
-                ->join('Fact_Rider_Course as frc', function ($join) use ($sourceCourseId) {
+            $scopedSourceCourseIds = $this->source->table('courses')
+                ->where('id', $sourceCourseId)
+                ->orWhere('parent_course_id', $sourceCourseId)
+                ->pluck('id')
+                ->toArray();
+
+            $query->join('Dim_Rider as dr', function ($join) use ($sourceSystemKey) {
+                $join->on('dc.Rider_Key', '=', 'dr.Rider_Key')
+                    ->where('dr.Source_System_Key', '=', $sourceSystemKey);
+            })
+                ->join('Fact_Rider_Course as frc', function ($join) use ($scopedSourceCourseIds, $sourceSystemKey) {
                     $join->on('dr.Source_Rider_Id', '=', 'frc.Source_Rider_Id')
-                        ->where('frc.Source_Course_Id', '=', $sourceCourseId);
+                        ->where('frc.Source_System_Key', '=', $sourceSystemKey)
+                        ->whereIn('frc.Source_Course_Id', $scopedSourceCourseIds);
                 })
                 ->where('frc.Attended', 1)
-                ->where('frc.Withdrawn', 0);
+                ->where('frc.Withdrawn', 0)
+                ->distinct();
         } else {
             $query->where('dc.Attended', 1);
         }
 
         $consents = $query->select([
+            'dc.Consent_Key',
             'dc.Gender',
             'dc.Ethnicity',
-            'dc.Is_Pupil_premium',
+            'dc.Is_Pupil_Premium',
             'dc.Is_SEND',
         ])->get();
 
-        $m = $this->initializeExtendedMetricArray();
+        $m = array_merge($this->initializeExtendedMetricArray(), [
+            'Count_Attended' => $consents->count(),
+        ]);
 
         foreach ($consents as $consent) {
-
+            // 1. Gender
             $gender = strtolower(trim((string) ($consent->Gender ?? '')));
             if (in_array($gender, ['female', 'f'], true)) {
                 $m['Count_Female']++;
@@ -4868,6 +4933,7 @@ class DataWarehouseSyncService
                 $m['Count_Gender_Not_Stated']++;
             }
 
+            // 2. Ethnicity
             $column = $this->mapEthnicityToColumn($consent->Ethnicity);
             if (isset($m[$column])) {
                 $m[$column]++;
@@ -4875,16 +4941,19 @@ class DataWarehouseSyncService
                 $m['Count_Ethnicity_Not_Stated']++;
             }
 
-            // Fixed column casing: Is_Pupil_premium (lowercase 'p')
-            if ($consent->Is_Pupil_premium === null) {
+            // 3. Pupil Premium (handles both Is_Pupil_Premium and Is_Pupil_premium column casing)
+            $ppVal = $consent->Is_Pupil_Premium ?? $consent->Is_Pupil_premium ?? null;
+            if ($ppVal === null || $ppVal === '') {
                 $m['Count_Pupil_Premium_Not_Stated']++;
-            } elseif ((int) $consent->Is_Pupil_premium === 1) {
+            } elseif ((int) $ppVal === 1) {
                 $m['Count_Pupil_Premium']++;
             }
 
-            if ($consent->Is_SEND === null) {
+            // 4. SEND
+            $sendVal = $consent->Is_SEND ?? null;
+            if ($sendVal === null || $sendVal === '') {
                 $m['Count_SEND_Not_Stated']++;
-            } elseif ((int) $consent->Is_SEND === 1) {
+            } elseif ((int) $sendVal === 1) {
                 $m['Count_SEND']++;
             }
         }
