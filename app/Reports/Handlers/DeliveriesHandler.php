@@ -71,11 +71,12 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 // Resolve attended: rider attendance count -> fallback to f.Count_Attended -> fallback to completed count
                 $riderAttended = ($srcCourseId && isset($attendanceMap[$srcCourseId]))
                     ? (int) $attendanceMap[$srcCourseId]
-                    : null;
+                    : 0;
 
-                $finalAttended = $riderAttended
-                    ?? (int) ($rowData['Count_Attended_Raw'] ?? 0)
-                    ?: (int) ($rowData['Riders_Completed_Count'] ?? 0);
+                // Prioritise Fact_Course_Delivery.Count_Attended, falling back to rider attendance / completed counts
+                $finalAttended = (int) ($rowData['Count_Attended_Raw'] ?? 0)
+                    ?: $riderAttended
+                        ?: (int) ($rowData['Riders_Completed_Count'] ?? 0);
 
                 $finalBooked = (int) ($rowData['Count_Booked_Raw'] ?? 0)
                     ?: (int) ($rowData['Booked_Raw'] ?? 0)
@@ -214,7 +215,8 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                 'f.Riders_Completed_Count',
             ])
             ->whereNull('dh.Source_Deleted_At')
-            ->whereNull('c.parent_course_key');
+            ->whereNull('c.parent_course_key')
+            ->where(fn($q) => $q->where('c.Is_Cancelled', '=', 0)->orWhereNull('c.Is_Cancelled'));
 
         $fy = $params['financial_year'] ?? $params['year'] ?? null;
         if (!empty($fy)) {
