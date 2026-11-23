@@ -4856,12 +4856,13 @@ class DataWarehouseSyncService
         $m = $this->initializeExtendedMetricArray();
 
         foreach ($consents as $consent) {
+
             $gender = strtolower(trim((string) ($consent->Gender ?? '')));
-            if ($gender === 'female') {
+            if (in_array($gender, ['female', 'f'], true)) {
                 $m['Count_Female']++;
-            } elseif ($gender === 'male') {
+            } elseif (in_array($gender, ['male', 'm'], true)) {
                 $m['Count_Male']++;
-            } elseif ($gender === 'other' || $gender === 'non-binary') {
+            } elseif (in_array($gender, ['other', 'non-binary', 'non_binary', 'o'], true)) {
                 $m['Count_Gender_Other']++;
             } else {
                 $m['Count_Gender_Not_Stated']++;
