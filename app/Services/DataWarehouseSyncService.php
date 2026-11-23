@@ -4564,7 +4564,8 @@ class DataWarehouseSyncService
             'bcrb', 'black_caribbean'                                  => 'BCRB',
             'bafr', 'black_african'                                    => 'BAFR',
             'both', 'black'                                            => 'BOTH',
-            'ooth', 'other', 'other_arab'                              => 'OOTH',
+            'ooth', 'other',                                           => 'OOTH',
+            'arab', 'other_arab'                                       => 'OARB',
             'na', 'n', 'refused', 'prefer_not_to_say'                   => 'NA',
             default                                                    => 'NA',
         };
@@ -4588,6 +4589,7 @@ class DataWarehouseSyncService
             'BAFR'  => 'Count_Ethnicity_Black_African',
             'BOTH'  => 'Count_Ethnicity_Black_Other',
             'OOTH'  => 'Count_Ethnicity_Other_Any',
+            'OARB'  => 'Count_Ethnicity_Other_Arab',
             default => 'Count_Ethnicity_Not_Stated',
         };
     }
