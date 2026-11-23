@@ -40,6 +40,8 @@ class BackfillDimCourseBookingData extends Command
             ->leftJoin('deliveries', 'courses.delivery_id', '=', 'deliveries.id')
             ->select([
                 'courses.id',
+                'courses.course_id',
+                'courses.year_group',
                 'courses.is_cancelled',
                 'courses.cancellation_reason',
                 'courses.has_confirmed_booked',
@@ -70,7 +72,7 @@ class BackfillDimCourseBookingData extends Command
                         ->update([
                             'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
                             'Cancellation_Reason'           => $course->cancellation_reason ?? null,
-                            'Has_Confirmed_Booked'          => DataWarehouseSyncService::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null),
+                            'Has_Confirmed_Booked'          => DataWarehouseSyncService::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null, $course->course_id ?? null, $course->year_group ?? null),
                             'Confirmed_By'                  => $course->confirmed_by ?? null,
                             'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                             'Confirmed_At'                  => $course->confirmed_at ?? null,
