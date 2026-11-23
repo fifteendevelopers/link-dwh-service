@@ -1029,7 +1029,7 @@ class DataWarehouseSyncService
                         'Year_Group'                    => $course->year_group,
                         'Is_Cancelled'                  => (bool) ($course->is_cancelled ?? false),
                         'Cancellation_Reason'           => $course->cancellation_reason ?? null,
-                        'Has_Confirmed_Booked'          => self::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null),
+                        'Has_Confirmed_Booked'          => self::resolveCourseConfirmed($course->id, $course->has_confirmed_booked ?? null, $course->delivery_details ?? null, $course->course_id ?? null, $course->year_group ?? null),
                         'Confirmed_By'                  => $course->confirmed_by ?? null,
                         'Confirmed_By_Email'            => $course->confirmed_by_email ?? null,
                         'Confirmed_At'                  => $course->confirmed_at ?? null,
@@ -4410,29 +4410,27 @@ class DataWarehouseSyncService
      * flag (delivery.confirmed = 1) takes priority over booked.status, and either one
      * overrides a 0 in courses.has_confirmed_booked.
      */
-    public static function resolveCourseConfirmed($courseId, $hasConfirmedBooked, ?string $deliveryDetails): bool
+    public static function resolveCourseConfirmed($courseId, $hasConfirmedBooked, ?string $deliveryDetails, ?string $courseLevel = null, ?string $yearGroup = null): bool
     {
         if (!empty($hasConfirmedBooked) && (int) $hasConfirmedBooked === 1) {
             return true;
         }
 
         $details = json_decode($deliveryDetails ?? '[]', true);
-        if (!is_array($details)) {
+        if (!is_array($details) || empty($courseId)) {
             return false;
         }
 
-        foreach ($details as $entry) {
-            if (!isset($entry['module']['entity_id']) || $entry['module']['entity_id'] != $courseId) {
-                continue;
-            }
-
-            $delivery = $entry['delivery'] ?? [];
-
-            return (isset($delivery['confirmed']) && (int) $delivery['confirmed'] === 1)
-                || (isset($delivery['booked']['status']) && strtolower(trim((string) $delivery['booked']['status'])) === 'confirmed');
+        // Matches by entity_id, falling back to level/year group for external-system modules without entity_id
+        $index = self::findLegacyModuleIndex($details, (int) $courseId, $courseLevel, $yearGroup);
+        if ($index === null) {
+            return false;
         }
 
-        return false;
+        $delivery = $details[$index]['delivery'] ?? [];
+
+        return (isset($delivery['confirmed']) && (int) $delivery['confirmed'] === 1)
+            || (isset($delivery['booked']['status']) && strtolower(trim((string) $delivery['booked']['status'])) === 'confirmed');
     }
 
     private function sourceHasColumn(string $table, string $column): bool
@@ -4709,6 +4707,65 @@ class DataWarehouseSyncService
         return $this->extractFromNormalizedTables($course);
     }
 
+    /**
+     * Some delivery_details modules were saved without module.entity_id even though a courses row exists
+     * (mostly non-digitised deliveries). When no module references the course by entity_id, match a module
+     * that has no entity_id on course level (courses.course_id), preferring the same year group and
+     * otherwise accepting a single level match (course year group can be e.g. "Mixed").
+     * Returns the index into $details, or null when there is no unambiguous match.
+     */
+    private function findLegacyModuleWithoutEntityId(array $details, int $courseId): ?int
+    {
+        if (self::findLegacyModuleIndex($details, $courseId) !== null) {
+            return null; // matched directly by entity_id
+        }
+
+        $course = $this->source->table('courses')->where('id', $courseId)->first(['course_id', 'year_group']);
+        if (!$course) {
+            return null;
+        }
+
+        return self::findLegacyModuleIndex($details, $courseId, $course->course_id, $course->year_group);
+    }
+
+    /**
+     * Locate the delivery_details module for a course. Matches module.entity_id first. When no module has the
+     * course's entity_id and a course level is supplied, falls back to a module with no entity_id at the same
+     * level (preferring the same year group, otherwise a single level match). Modules without entity_id come
+     * from external-system (API) deliveries, mainly Clarity integrations, created Sep 2025 - Oct 2026.
+     */
+    public static function findLegacyModuleIndex(array $details, int $courseId, ?string $courseLevel = null, ?string $yearGroup = null): ?int
+    {
+        foreach ($details as $index => $entry) {
+            if (is_array($entry) && !empty($entry['module']['entity_id']) && (int) $entry['module']['entity_id'] === $courseId) {
+                return $index;
+            }
+        }
+
+        if (empty($courseLevel)) {
+            return null;
+        }
+
+        $levelMatches = [];
+        $yearMatches  = [];
+        foreach ($details as $index => $entry) {
+            if (!is_array($entry) || !empty($entry['module']['entity_id']) || ($entry['module']['id'] ?? null) !== $courseLevel) {
+                continue;
+            }
+            $levelMatches[] = $index;
+            $entryYear = $entry['delivery']['year_group'] ?? null;
+            if ($entryYear !== null && $yearGroup !== null && strcasecmp((string) $entryYear, (string) $yearGroup) === 0) {
+                $yearMatches[] = $index;
+            }
+        }
+
+        if (count($yearMatches) === 1) {
+            return $yearMatches[0];
+        }
+
+        return count($levelMatches) === 1 ? $levelMatches[0] : null;
+    }
+
     private function extractFromLegacyJson($course)
     {
         $details = json_decode($course->delivery_details ?? '[]', true);
@@ -4728,9 +4785,20 @@ class DataWarehouseSyncService
             'Count_Pupil_Premium_Not_Stated' => 0,
         ]);
 
-        foreach ($details as $entry) {
+        if (!is_array($details)) {
+            $details = [];
+        }
+
+        $fallbackIndex = !is_null($course->id) ? $this->findLegacyModuleWithoutEntityId($details, (int) $course->id) : null;
+
+        foreach ($details as $index => $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
             $isTargetModule = is_null($course->id)
-                || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] !== '' && (int) $entry['module']['entity_id'] === (int) $course->id);
+                || (isset($entry['module']['entity_id']) && $entry['module']['entity_id'] !== '' && (int) $entry['module']['entity_id'] === (int) $course->id)
+                || $index === $fallbackIndex;
 
             if ($isTargetModule) {
                 $metrics['Extracted_Course_Level'] = $entry['module']['id'] ?? null;
