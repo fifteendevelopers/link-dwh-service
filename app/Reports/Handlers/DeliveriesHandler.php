@@ -77,8 +77,8 @@ class DeliveriesHandler extends AbstractStreamingReportHandler
                     ?? (int) ($rowData['Count_Attended_Raw'] ?? 0)
                     ?: (int) ($rowData['Riders_Completed_Count'] ?? 0);
 
-                $finalBooked = (int) ($rowData['Booked_Raw'] ?? 0)
-                    ?: (int) ($rowData['Count_Booked_Raw'] ?? 0)
+                $finalBooked = (int) ($rowData['Count_Booked_Raw'] ?? 0)
+                    ?: (int) ($rowData['Booked_Raw'] ?? 0)
                         ?: (int) ($rowData['Riders_Enrolled_Count'] ?? 0);
 
                 // Assign mutually exclusive columns based on confirmed status
