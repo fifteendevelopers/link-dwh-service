@@ -2139,9 +2139,10 @@ class DataWarehouseSyncService
                     ];
 
                     // Where the source delivery record holds a demographic breakdown for this module, it is the
-                    // TP-submitted register for the course and takes precedence over consent-derived counts.
-                    // Consent aggregation over-counts (e.g. union of riders across child courses of a combined
-                    // course), so it is only used as a fallback when the delivery record has no breakdown.
+                    // TP-submitted register for the course and takes precedence, wholesale, over the baseline
+                    // (consent-derived or course characteristics). Mixing per column leaves baseline values in
+                    // columns the delivery record has as 0, double counting. The baseline is only used as a
+                    // fallback when the delivery record has no breakdown.
                     $hasDetailDemographics = false;
                     foreach ($deliveryDetailMetrics as $col => $val) {
                         if (!in_array($col, $authoritativeKeys, true) && (int) $val > 0) {
@@ -2151,7 +2152,7 @@ class DataWarehouseSyncService
                     }
 
                     foreach ($deliveryDetailMetrics as $col => $val) {
-                        if ($isConsentAuthoritative && $hasDetailDemographics && !in_array($col, $authoritativeKeys, true)) {
+                        if ($hasDetailDemographics && !in_array($col, $authoritativeKeys, true)) {
                             $mergedMetrics[$col] = $val;
                             continue;
                         }
@@ -4996,16 +4997,9 @@ class DataWarehouseSyncService
 
         $ethnicity = $booked['ethnicity'] ?? [];
         foreach ($ethnicity as $sub => $val) {
-            if ($sub === 'white_traveller') {
-                $m['Count_Ethnicity_White_Traveller'] += (int) $val;
-                continue;
-            }
-            $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
-            if (array_key_exists($column, $m)) {
-                $m[$column] += (int) $val;
-            } else {
-                $m['Count_Ethnicity_Other_Any'] += (int) $val;
-            }
+            // Use the shared mapper: source keys such as 'white', 'black', 'mixed', 'refused' and
+            // 'prefer_not_to_say' do not match a column name directly and were previously dumped into Other_Any
+            $m[$this->mapEthnicityToColumn($sub)] += (int) $val;
         }
 
         $m['Count_SEND']                     += (int) ($booked['send'] ?? 0);
@@ -5048,16 +5042,7 @@ class DataWarehouseSyncService
             }
 
             if ($cat === 'ethnicity') {
-                if ($sub === 'white_traveller') {
-                    $m['Count_Ethnicity_White_Traveller'] += $val;
-                    continue;
-                }
-                $column = 'Count_Ethnicity_' . str_replace(' ', '_', ucwords(str_replace('_', ' ', $sub)));
-                if (array_key_exists($column, $m)) {
-                    $m[$column] += $val;
-                } else {
-                    $m['Count_Ethnicity_Other_Any'] += $val;
-                }
+                $m[$this->mapEthnicityToColumn($sub)] += $val;
             }
 
             if ($cat === 'pupil_premium') {
