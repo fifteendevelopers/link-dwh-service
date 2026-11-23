@@ -2082,7 +2082,7 @@ class DataWarehouseSyncService
                     $completedCount = $this->source->table('join_riders_courses')->where('course_id', $record->course_id)->where('has_completed_course', 1)->count();
 
                     // Baseline demographic metrics from Consents or Course Characteristics
-                    if ($record->consent_src_characteristics == 1) {
+                    if ((int) ($record->consent_src_characteristics ?? 0) === 1) {
                         $metrics = $this->aggregateFromDWHConsents((int) $delivery->Delivery_Key, (int) $record->course_id);
                     } else {
                         if ($useLegacyCourseCharacteristics) {
@@ -2109,8 +2109,12 @@ class DataWarehouseSyncService
                         'Count_Bikes_Recycled',
                     ];
 
+                    $isConsentAuthoritative = (int) ($record->consent_src_characteristics ?? 0) === 1;
+
                     foreach ($deliveryDetailMetrics as $col => $val) {
-                        if (in_array($col, $authoritativeKeys, true) || (int) $val > 0) {
+                        if (in_array($col, $authoritativeKeys, true)) {
+                            $mergedMetrics[$col] = $val;
+                        } elseif (!$isConsentAuthoritative && (int) $val > 0) {
                             $mergedMetrics[$col] = $val;
                         }
                     }
